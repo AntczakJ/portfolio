@@ -530,8 +530,10 @@ if (import.meta.main) {
       // broadcasts; cells just won't be populated).
     }
   }
-  app.listen(PORT);
-  console.log(`tape-server listening on http://localhost:${String(PORT)}`);
+  // hostname 0.0.0.0 so Fly's edge proxy reaches the container's
+  // private interface — Bun.serve sometimes binds to ::1 only.
+  app.listen({ port: PORT, hostname: '0.0.0.0' });
+  console.log(`tape-server listening on http://0.0.0.0:${String(PORT)}`);
 
   // Phase 6 hardening — log the resolved CORS policy at boot so the
   // source is visible without trial-and-error. The production-missing-
