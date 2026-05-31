@@ -15,7 +15,7 @@ primary_region = 'fra'
 [env]
   ALLOWED_ORIGINS = 'https://tape-demo.fly.dev'
   BINANCE_SYMBOL = 'btcusdt'
-  BINANCE_WS_ENABLED = '1'
+  BINANCE_WS_ENABLED = '0'
   BINANCE_WS_URL = 'wss://fstream.binance.com/ws'
   BRIDGE_PATH = '/tmp/tape-bridge.sock'
   BRIDGE_WORKER_BIN = '/app/worker/worker'
@@ -24,7 +24,7 @@ primary_region = 'fra'
   WEB_PORT = '3000'
   WORKER_PIPELINE_ENABLED = '0'
   WS_MAX_CONNECTIONS_PER_IP = '5'
-  WS_SYNTHESIZE = '0'
+  WS_SYNTHESIZE = '1'
 
 [http_service]
   # All external HTTPS traffic terminates at the Elysia server on 3001.
