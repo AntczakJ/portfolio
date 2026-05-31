@@ -6,7 +6,7 @@ Live BTC-PERP tick stream from Binance Futures, footprint cell aggregation on a 
 
 ## Demo
 
-`TBD — deploy pending`. The README will link the live URL once the deploy lands; capture instructions for the placeholder screenshots below live in [`docs/CAPTURE.md`](./docs/CAPTURE.md).
+**Live:** [https://tape-demo.fly.dev](https://tape-demo.fly.dev) — deployed on Fly.io (Frankfurt). Real Binance Futures aggTrade feed (the home-network geo-block from Task 1.3 does not apply on Fly's EU infra). Capture instructions for the screenshots below live in [`docs/CAPTURE.md`](./docs/CAPTURE.md).
 
 ## Screenshots
 
