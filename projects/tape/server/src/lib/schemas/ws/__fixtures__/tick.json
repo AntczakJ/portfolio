@@ -1,0 +1,10 @@
+{
+  "topic": "ticks.btc",
+  "kind": "tick",
+  "payload": {
+    "tsMs": 1748534400000,
+    "price": 71234.5,
+    "qty": 0.125,
+    "aggressor": "buy"
+  }
+}

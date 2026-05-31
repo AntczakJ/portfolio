@@ -1,0 +1,22 @@
+tape-server health endpoint — placeholder
+
+This text file is a stand-in for the real health-check screenshot. The
+backend-engineer who landed Task 1.1 could not capture a live response
+because Bun is not yet installed on the owner's machine (PowerShell:
+'bun' is not recognized; bash: command not found). The scaffold is
+type-clean and lint-clean against the strict base config; Bun-runtime
+verification is queued for the next agent that lands with Bun on PATH,
+or for a CI run.
+
+Expected response shape, once a Bun-equipped runtime curls /health:
+
+  $ curl http://localhost:3001/health
+  {"status":"ok","commit":"<short-sha-or-dev>","ts":1717000000000}
+
+Schema source of truth: src/lib/schemas/health.ts (Zod). Same schema is
+parsed on the server before send (boundary validation) and will be
+imported by the Next.js client once the contract aliasing decision lands
+in ADR-005.
+
+doc-writer (Phase 6 / Task 6.1) will replace this file with the real
+PNG capture during the docs pass.

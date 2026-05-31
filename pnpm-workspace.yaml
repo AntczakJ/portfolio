@@ -1,2 +1,11 @@
 packages:
   - 'projects/*'
+  - 'projects/*/server'
+  - 'projects/*/web'
+allowBuilds:
+  esbuild: true
+  msgpackr-extract: true
+  sharp: true
+  unrs-resolver: true
+minimumReleaseAgeExclude:
+  - zustand@5.0.14

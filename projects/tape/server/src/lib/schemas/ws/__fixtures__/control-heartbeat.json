@@ -1,0 +1,8 @@
+{
+  "topic": "control",
+  "kind": "control.heartbeat",
+  "payload": {
+    "serverTsMs": 1748534400000,
+    "framesPerSecOut": 174.2
+  }
+}

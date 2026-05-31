@@ -1,0 +1,177 @@
+# tape — Fly.io deployment descriptor.
+#
+# App-name choice — `tape-demo` over `tape-jan-antczak`:
+#   Fly.io app names live in a global namespace. `tape` itself is
+#   almost certainly taken; `tape-demo` is descriptive and short;
+#   `tape-jan-antczak` is also unique but ties the app name to the
+#   owner identity which we want to keep out of the demo URL (the
+#   commercial-seed pitch reads better without "jan-antczak" in the
+#   host string). If `tape-demo` is taken at registration time,
+#   `tape-demo-eu` or `tape-pro` are the fallbacks — update this
+#   value AND `ALLOWED_ORIGINS` AND the README demo URL together.
+#
+# Region — `fra` (Frankfurt):
+#   Closest Fly region to the owner (Poznan, PL) and to the senior
+#   recruiter audience the PLAN.md positions for. London (`lhr`)
+#   would also work; Frankfurt wins on Binance Futures WS latency
+#   (Binance edges in EU lean toward Frankfurt) and on Fly Managed
+#   Postgres availability.
+#
+# Postgres — separate flyctl step, NOT in this file:
+#   Run once after `flyctl launch`:
+#     flyctl postgres create --name tape-pg --region fra
+#     flyctl postgres attach tape-pg --app tape-demo
+#   The `attach` step writes `DATABASE_URL` into the app's secrets
+#   automatically — verify with `flyctl secrets list -a tape-demo`.
+#   See DEPLOY.md for the full one-time setup runbook.
+#
+# Bridge UDS — NOT a [[mounts]] entry:
+#   The Rust worker is co-located with the Bun server in the same
+#   container (single-image entrypoint), so the bridge socket at
+#   /tmp/tape-bridge.sock lives in the container's ephemeral
+#   filesystem. No Fly volume needed. A v2 split (server in one
+#   Machine, worker in another) would require either a different IPC
+#   mechanism or a Fly volume — see ADR-002 § "decision" for the
+#   transport rationale.
+
+app = "tape-demo"
+primary_region = "fra"
+
+[build]
+  # The build context is `projects/tape/` — run `flyctl deploy` from
+  # this directory. The .dockerignore at the same path trims the
+  # context to what the Dockerfile actually needs.
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3001"
+  WEB_PORT = "3000"
+
+  # Live Binance ingest ON in production. The owner's home network
+  # geo-blocks fstream.binance.com (documented in Task 1.3 — the
+  # smoke test reached `connected` state but no aggTrade frames
+  # arrived in 30 s, likely a regional restriction on the streaming
+  # layer rather than the connect path). Fly's Frankfurt Linux
+  # infrastructure is NOT in the affected zone, so production gets
+  # the real feed even though local dev cannot reliably reproduce it.
+  BINANCE_WS_ENABLED = "1"
+  BINANCE_WS_URL = "wss://fstream.binance.com/ws"
+  BINANCE_SYMBOL = "btcusdt"
+
+  # Dev synthesizer OFF in production. Real Binance feed wins
+  # anyway under the mutex policy (see src/server.ts), but setting
+  # to "0" explicitly is documentation: "this deploy is the real
+  # feed; nobody set the synth flag by accident".
+  WS_SYNTHESIZE = "0"
+
+  # Full Rust hot-path pipeline ON in production. The worker binary
+  # ships inside the runtime image at /app/worker/worker (see the
+  # Dockerfile + the BRIDGE_WORKER_BIN env below).
+  WORKER_PIPELINE_ENABLED = "1"
+  BRIDGE_WORKER_BIN = "/app/worker/worker"
+  BRIDGE_PATH = "/tmp/tape-bridge.sock"
+
+  # CORS allowlist. Same-origin requests bypass CORS entirely, so
+  # the demo URL itself does not need to be on this list for the
+  # web -> server hop. The entry is here for explicit documentation
+  # of which external origin is permitted: just the demo itself in
+  # v1. Add a custom domain here when one is wired:
+  #   ALLOWED_ORIGINS = "https://tape-demo.fly.dev,https://tape.jan.dev"
+  ALLOWED_ORIGINS = "https://tape-demo.fly.dev"
+
+  # Per-IP WS connection cap. Default 5 from the code; pinned here
+  # so production policy is visible in the descriptor that ships
+  # with the deploy. Raise only if a real visitor complaint
+  # ("legitimate user with 10 tabs is locked out") arrives.
+  WS_MAX_CONNECTIONS_PER_IP = "5"
+
+# Public HTTP service — serves the Next web bundle on port 3000
+# inside the container. Fly's edge proxies the public 80/443 to it.
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # Idle savings — Fly puts the machine to sleep after 5 min with no
+  # traffic; the next request wakes it (~1-2 s cold start). The 7-day
+  # uninterrupted-run success criterion in PLAN.md tolerates this
+  # because /health pings (and the docker HEALTHCHECK + Fly checks
+  # below) keep the machine warm during demo hours, and a cold
+  # wake-up does not break a session — the WS reconnects from a
+  # snapshot via the ADR-006 path.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    # WS hold count — each long-lived WS subscriber counts as 1 hard
+    # against this limit. 200 hard is generous for a demo machine
+    # (per-IP cap 5 × 40 distinct viewers); 150 soft tells the Fly
+    # autoscaler to spin a new machine if scaling is enabled later.
+    soft_limit = 150
+    hard_limit = 200
+
+# Internal service for the Bun server on port 3001. The Next app
+# server-side calls it via http://localhost:3001 inside the
+# container (same machine), so this section exposes it for the WS
+# clients in the browser to hit at wss://tape-demo.fly.dev/ws/stream
+# — Fly's edge handles the WS upgrade and routes by the path prefix.
+[[services]]
+  internal_port = 3001
+  protocol = "tcp"
+  processes = ["app"]
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [services.concurrency]
+    type = "connections"
+    soft_limit = 150
+    hard_limit = 200
+
+# Liveness check on the Bun server. Same shape the container's
+# HEALTHCHECK uses, but Fly runs this from the edge so it also
+# verifies the public path. 30 s grace period covers the cold-boot
+# window where the entrypoint is still waiting for /health to come
+# up before launching the web server (see entrypoint.sh).
+[[checks]]
+  name = "health"
+  type = "http"
+  port = 3001
+  interval = "15s"
+  timeout = "5s"
+  grace_period = "30s"
+  method = "get"
+  path = "/health"
+  protocol = "http"
+
+# VM size — shared 1x CPU + 512 MB RAM is the cheapest tier that
+# comfortably runs Bun + Rust worker + Next standalone at the v1
+# demo traffic profile. Bump to `shared-cpu-2x` + 1 GB if Lighthouse
+# CI shows TTFB above 500 ms under load. RSS budget per success
+# criterion is < 50 MB growth over 24h on the Bun side; the Rust
+# worker is bounded by its in-memory cell map (~5-10 KB per
+# open bar per symbol).
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+
+# Deploy strategy — rolling, single machine in v1, so a deploy
+# replaces the running instance directly. The "wait for /health
+# before flipping traffic" is enforced by Fly's [[checks]] block
+# above (grace_period 30s gives the entrypoint time to wait on the
+# Bun /health probe before the web server starts).
+[deploy]
+  strategy = "rolling"

@@ -1,0 +1,37 @@
+# tape — local development services
+#
+# Scope: Postgres for the Drizzle persistence layer (PLAN.md Phase 1 Task 1.2).
+# Port 5435 is deliberate — see AGENT_NOTES.md "Postgres port collision":
+#   5432 = system default (avoid)
+#   5434 = Mila (owner runs in parallel)
+#   5435 = tape (this file)
+#
+# Bring up:    docker compose -f projects/tape/docker-compose.yml up -d
+# Tear down:   docker compose -f projects/tape/docker-compose.yml down
+# Wipe data:   docker compose -f projects/tape/docker-compose.yml down -v
+#
+# The connection string the server reads from .env must match the credentials
+# and port below: postgres://tape:tape@localhost:5435/tape
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: tape-postgres
+    restart: unless-stopped
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_USER: tape
+      POSTGRES_PASSWORD: tape
+      POSTGRES_DB: tape
+    volumes:
+      - tape-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tape -d tape"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  tape-postgres-data:
+    name: tape-postgres-data

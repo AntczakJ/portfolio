@@ -1,0 +1,74 @@
+# Excludes from the Docker build context shipped to the daemon.
+# Anything matched here is NOT visible inside the build, regardless of
+# whether the Dockerfile would have COPY'd it. Trimming the context
+# keeps the per-build upload small and stops a stray .env from
+# accidentally landing in an image layer.
+
+# Workspace install artifacts — rebuilt inside the image.
+**/node_modules
+**/.next
+**/.turbo
+**/coverage
+**/dist
+**/out
+**/.cache
+
+# Rust build artifacts — rebuilt inside the image by the rust-builder stage.
+worker/target
+
+# Local environment files — secrets. Production env lives in Fly.io secrets.
+**/.env
+**/.env.*
+!**/.env.example
+
+# Editor / OS noise.
+.vscode/
+.idea/
+**/.DS_Store
+**/Thumbs.db
+
+# Logs.
+**/*.log
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+
+# Test surfaces — never executed at runtime.
+**/__tests__
+**/__fixtures__
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+**/e2e
+**/playwright-report
+**/test-results
+
+# Per-project docs — readable on GitHub, not needed in the runtime image.
+docs/
+**/README.md
+CHANGELOG.md
+PLAN.md
+PROGRESS.md
+DECISIONS.md
+AGENT_NOTES.md
+CRITIQUE-*.md
+
+# The build / deploy descriptors themselves — they tell the build what
+# to do; they do not belong inside the resulting image.
+docker-compose.yml
+docker-compose.*.yml
+fly.toml
+Dockerfile
+.dockerignore
+
+# Git metadata — not needed at runtime, and a stray fragment of the
+# repo's history in a layer is a leak surface.
+.git
+.gitignore
+.gitattributes
+
+# Misc per-project ignores.
+**/tsconfig.tsbuildinfo
+**/.eslintcache
+**/.next/cache

@@ -1,0 +1,8 @@
+{
+  "_doc": "Bridge conformance fixture — WorkerUnavailable pre-shutdown notice the Task 1.5 worker sends just before exit. The supervisor consumes this and emits a control.worker_unavailable frame on the public WS so the browser shows a calm indicator (per ADR-004 cell-state recovery semantics).",
+  "schema": "WorkerUnavailable",
+  "value": {
+    "reason": "shutdown"
+  },
+  "bigintFields": []
+}

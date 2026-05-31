@@ -1,0 +1,9 @@
+{
+  "topic": "control",
+  "kind": "control.overrun",
+  "payload": {
+    "reason": "queue.overflow",
+    "droppedFrames": 184,
+    "lastTickTsMs": 1748534399875
+  }
+}

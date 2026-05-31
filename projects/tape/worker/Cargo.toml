@@ -1,0 +1,46 @@
+[package]
+name = "tape-worker"
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+description = "Rust hot-path worker for tape — footprint cell aggregation and CVD rollups. Task 1.4a adds the transport scaffold + placeholder echo binary; the real aggregator lands in Task 1.5."
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+# Task 1.4a: placeholder bin the TS supervisor spawns for the smoke /
+# integration tests. Replaced by the real `tape-worker` bin in Task 1.5.
+[[bin]]
+name = "echo"
+path = "src/bin/echo.rs"
+
+# Task 1.5b: bridge conformance fixture generator. Run via
+# `cargo run --bin gen-fixtures` to (re)emit the canonical .msgpack
+# byte oracle into ../server/src/lib/schemas/bridge/fixtures/. Dev-time
+# only — fixtures are committed; CI verifies them, never regenerates.
+[[bin]]
+name = "gen-fixtures"
+path = "src/bin/gen-fixtures.rs"
+
+# Task 1.5: the real footprint cell aggregator + CVD rollup worker.
+# Connects to the bridge as a client, aggregates ticks into cells,
+# emits cell.delta / cell.close / snapshot frames back to Elysia.
+[[bin]]
+name = "worker"
+path = "src/bin/worker.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+rmp-serde = "1"
+ts-rs = "10"
+# Task 1.4a transport scaffold.
+tokio = { version = "1", features = ["rt-multi-thread", "io-util", "net", "macros", "signal", "time"] }
+# Cross-platform Unix-domain-socket + named-pipe abstraction. Bun's
+# `Bun.connect({ unix })` accepts both; interprocess gives us a single
+# Rust API that works the same way against either.
+interprocess = { version = "2", features = ["tokio"] }
+anyhow = "1"
+
+[dev-dependencies]
+pretty_assertions = "1"

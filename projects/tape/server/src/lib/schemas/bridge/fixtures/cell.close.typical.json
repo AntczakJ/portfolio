@@ -1,0 +1,14 @@
+{
+  "_doc": "Bridge conformance fixture — typical CellClose emitted by the Task 1.5 worker at bar boundary: absolute totals for one closed cell. Same shape as the persisted footprint_cells row but the schemas are independent — Drizzle owns the row type, ts-rs owns the bridge type. The companion .msgpack file is the byte-level oracle. Hand-edit this JSON to change the logical value, then regenerate the .msgpack via `cargo run --bin gen-fixtures` from projects/tape/worker/. NEVER hand-edit the .msgpack file. See ADR-003 § Consequences and ADR-005 § Cell-store options.",
+  "schema": "CellClose",
+  "value": {
+    "ts_ms": "1717000060000",
+    "symbol": "BTCUSDT-PERP",
+    "bucket_ts": "1717000000000",
+    "price_bucket": "14247",
+    "bid_volume": 5421.75,
+    "ask_volume": 6310.25,
+    "trades": 847
+  },
+  "bigintFields": ["ts_ms", "bucket_ts", "price_bucket"]
+}

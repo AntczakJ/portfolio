@@ -1,0 +1,12 @@
+{
+  "topic": "cells.btc",
+  "kind": "cell.close",
+  "payload": {
+    "symbol": "BTCUSDT-PERP",
+    "bucketTs": 1748534400000,
+    "priceBucket": 71235,
+    "bidVolume": 12.5,
+    "askVolume": 17.25,
+    "trades": 41
+  }
+}

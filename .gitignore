@@ -9,6 +9,9 @@ build/
 out/
 .turbo/
 
+# Rust build artifacts
+target/
+
 # Testing
 coverage/
 .playwright/

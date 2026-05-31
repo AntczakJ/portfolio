@@ -1,0 +1,12 @@
+{
+  "_doc": "Bridge conformance fixture — typical TickFrame (recent ts_ms, fractional price/qty, Sell side). The companion .msgpack file is the byte-level oracle: both sides (Rust rmp-serde + Bun msgpackr with useRecords:false) MUST produce and accept these exact bytes. Hand-edit this JSON to change the logical value, then regenerate the .msgpack via `cargo run --bin gen-fixtures` from projects/tape/worker/. NEVER hand-edit the .msgpack file. See ADR-003 § Consequences and projects/tape/server/README.md `Bridge conformance fixtures`.",
+  "schema": "TickFrame",
+  "value": {
+    "ts_ms": "1717000000000",
+    "symbol": "BTCUSDT",
+    "price": 71234.5,
+    "qty": 0.125,
+    "aggressor": "Sell"
+  },
+  "bigintFields": ["ts_ms"]
+}

@@ -4,7 +4,7 @@
 
 ## State
 
-- **Projects:** 0
+- **Projects:** 1 (`tape` — planned)
 - **Scaffold:** done (2026-05-28)
 - **CI:** green on empty repo (placeholder workflows)
 - **First commit:** pending owner ACK
@@ -16,25 +16,35 @@
 - [x] Eight Claude Code subagents in `.claude/agents/`.
 - [x] `docs/conventions.md` with stack policy, workflow, extraction triggers, do-not-share list.
 - [x] `docs/inspirations.md` with reference list and animation-library policy.
+- [x] First project — name + one-line pitch from owner: **`tape`** — production-grade real-time orderflow visualizer for crypto perpetual futures (CVD, footprint chart, tape replay over WebSocket).
+- [x] Planner subagent produced `projects/tape/PLAN.md`, `DECISIONS.md` (ADR-001), `PROGRESS.md`, `AGENT_NOTES.md`.
 
 ## In progress
 
-_(none)_
+- Project 1 (`tape`) planned — handing to `architect` for ADR-002 (Rust hot-path worker ↔ Elysia control plane bridge mechanism), then `frontend-engineer` + `backend-engineer` for parallel implementation of v1 scope.
 
 ## Next
 
-- [ ] First project — name + one-line pitch from owner.
-- [ ] Planner subagent produces `projects/<name>/PLAN.md` and initial `DECISIONS.md`.
-- [ ] Architect picks stack flavour (web-only vs api-heavy, backend choice) per `docs/conventions.md` § 10–12.
+- [ ] `architect` authors **ADR-002** (Rust ↔ Elysia bridge), **ADR-003** (persistence schema), **ADR-004** (WebSocket frame contract) in `projects/tape/DECISIONS.md`.
+- [ ] `backend-engineer` scaffolds Bun + Elysia under `projects/tape/server/` (PLAN.md task 1.1).
+- [ ] `frontend-engineer` scaffolds Next.js 15 + Tailwind v4 under `projects/tape/web/` (PLAN.md task 2.1).
 
 ## Portfolio composition tracker
 
 Per `docs/conventions.md` § 12 — minimum 2–3 `api-heavy` projects with backend variance.
 
-| Slot | Project | Category | Backend |
-| ---- | ------- | -------- | ------- |
-| 1    | —       | —        | —       |
-| 2    | —       | —        | —       |
-| 3    | —       | —        | —       |
-| 4    | —       | —        | —       |
-| 5    | —       | —        | —       |
+| Slot | Project | Category  | Backend       |
+| ---- | ------- | --------- | ------------- |
+| 1    | tape    | api-heavy | Elysia (Bun)  |
+| 2    | —       | —         | —             |
+| 3    | —       | —         | —             |
+| 4    | —       | —         | —             |
+| 5    | —       | —         | —             |
+
+Planned (pre-allocated, not yet ratified):
+
+- Slot 2 — local-first editor — api-heavy — Hono.
+- Slot 3 — AI agentic tool — api-heavy — NestJS.
+- Slot 4 — web-only creative (R3F + GSAP).
+- Slot 5 — edge-native voice/multimodal (Motion).
+- Slot 6 (optional) — WebGPU + TSL.

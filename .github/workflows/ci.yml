@@ -47,3 +47,78 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  bridge-conformance:
+    # Task 1.5b per ADR-003 — Rust ↔ Bun frame round-trip on the
+    # committed fixture set. The bridge crosses a language boundary
+    # (Rust worker ↔ Elysia control plane on Bun), so the contract
+    # has to hold on both the production Linux container and the
+    # owner's Windows dev box. Matrix runs cover both.
+    #
+    # CI verifies the committed `.msgpack` / `.from-ts.msgpack`
+    # fixtures — it never regenerates them. Regeneration is a dev-time
+    # action (`cargo run --bin gen-fixtures` for the Rust oracle,
+    # `BRIDGE_GEN_FROM_TS=1 bun test …` for the msgpackr oracle).
+    name: bridge conformance (Rust ↔ Bun) — ${{ matrix.os }}
+    needs: ci
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + git
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('projects/tape/worker/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: Cache worker target
+        uses: actions/cache@v4
+        with:
+          path: projects/tape/worker/target
+          key: worker-target-${{ runner.os }}-${{ hashFiles('projects/tape/worker/Cargo.lock', 'projects/tape/worker/src/**') }}
+          restore-keys: |
+            worker-target-${{ runner.os }}-
+
+      - name: Build worker (echo + gen-fixtures bins + tests compile)
+        working-directory: projects/tape/worker
+        run: cargo build --bin echo --tests
+
+      - name: Run Rust conformance test
+        working-directory: projects/tape/worker
+        run: cargo test
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Bun conformance test
+        working-directory: projects/tape/server
+        run: bun test src/lib/bridge/__tests__/conformance.test.ts

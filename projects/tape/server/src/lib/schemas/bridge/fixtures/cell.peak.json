@@ -1,0 +1,13 @@
+{
+  "_doc": "Bridge conformance fixture — peak-load CellSnapshot (large bid/ask volumes, hundreds of trades, realistic price_bucket and recent ts_ms). The companion .msgpack file is the byte-level oracle: both sides (Rust rmp-serde + Bun msgpackr with useRecords:false) MUST produce and accept these exact bytes. Hand-edit this JSON to change the logical value, then regenerate the .msgpack via `cargo run --bin gen-fixtures` from projects/tape/worker/. NEVER hand-edit the .msgpack file. See ADR-003 § Consequences and projects/tape/server/README.md `Bridge conformance fixtures`.",
+  "schema": "CellSnapshot",
+  "value": {
+    "ts_ms": "1717000060000",
+    "symbol": "BTCUSDT",
+    "price_bucket": "71235",
+    "bid_volume": 5421.75,
+    "ask_volume": 6310.25,
+    "trades": 847
+  },
+  "bigintFields": ["ts_ms", "price_bucket"]
+}

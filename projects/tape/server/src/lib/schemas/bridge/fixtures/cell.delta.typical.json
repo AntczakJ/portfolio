@@ -1,0 +1,14 @@
+{
+  "_doc": "Bridge conformance fixture — typical CellDelta emitted by the Task 1.5 worker on every tick: one symbol, one bucket, single-side bid + ask, single trade. The companion .msgpack file is the byte-level oracle. Hand-edit this JSON to change the logical value, then regenerate the .msgpack via `cargo run --bin gen-fixtures` from projects/tape/worker/. NEVER hand-edit the .msgpack file. See ADR-003 § Consequences.",
+  "schema": "CellDelta",
+  "value": {
+    "ts_ms": "1717000000500",
+    "symbol": "BTCUSDT-PERP",
+    "bucket_ts": "1717000000000",
+    "price_bucket": "14247",
+    "bid_volume_delta": 0.5,
+    "ask_volume_delta": 0.25,
+    "trades_delta": 1
+  },
+  "bigintFields": ["ts_ms", "bucket_ts", "price_bucket"]
+}

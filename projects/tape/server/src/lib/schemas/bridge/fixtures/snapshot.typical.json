@@ -1,0 +1,26 @@
+{
+  "_doc": "Bridge conformance fixture — typical SnapshotPayload emitted by the Task 1.5 worker on ControlCommand::Snapshot or supervisor poll. Carries every open cell across every symbol plus the cumulative ticks_processed counter. The cells_open array is a flat list of CellDelta values where the _delta fields hold the running absolute totals (deliberate shape reuse so the WS-side wsSnapshotPayloadSchema.cellsOpen accepts them without a renaming pass). The companion .msgpack file is the byte-level oracle. Hand-edit this JSON to change the logical value, then regenerate via `cargo run --bin gen-fixtures`. NEVER hand-edit the .msgpack file.",
+  "schema": "SnapshotPayload",
+  "value": {
+    "ts_ms": "1717000030500",
+    "cells_open": [
+      {
+        "ts_ms": "1717000030500",
+        "symbol": "BTCUSDT-PERP",
+        "bucket_ts": "1717000000000",
+        "price_bucket": "14247",
+        "bid_volume_delta": 2.5,
+        "ask_volume_delta": 3.25,
+        "trades_delta": 41
+      }
+    ],
+    "ticks_processed": "12345"
+  },
+  "bigintFields": [
+    "ts_ms",
+    "cells_open.0.ts_ms",
+    "cells_open.0.bucket_ts",
+    "cells_open.0.price_bucket",
+    "ticks_processed"
+  ]
+}

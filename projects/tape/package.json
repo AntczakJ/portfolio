@@ -1,0 +1,19 @@
+{
+  "name": "tape",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Real-time orderflow visualizer for crypto perpetual futures — umbrella package delegating to server/ (Elysia on Bun) and web/ (Next.js 15).",
+  "scripts": {
+    "dev": "pnpm -F tape-web dev",
+    "dev:server": "pnpm -F tape-server dev",
+    "dev:web": "pnpm -F tape-web dev",
+    "build": "pnpm -F tape-server build && pnpm -F tape-web build",
+    "build:server": "pnpm -F tape-server build",
+    "build:web": "pnpm -F tape-web build",
+    "start": "pnpm -F tape-server start",
+    "lint": "pnpm -F tape-server lint && pnpm -F tape-web lint",
+    "typecheck": "pnpm -F tape-server typecheck && pnpm -F tape-web typecheck",
+    "test": "pnpm -F tape-server test && pnpm -F tape-web test"
+  }
+}

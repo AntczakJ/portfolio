@@ -1,0 +1,50 @@
+{
+  "topic": "cells.btc",
+  "kind": "snapshot",
+  "payload": {
+    "symbol": "BTCUSDT-PERP",
+    "currentBarTs": 1748534400000,
+    "cells": [
+      {
+        "symbol": "BTCUSDT-PERP",
+        "bucketTs": 1748534280000,
+        "priceBucket": 71230,
+        "bidVolume": 8.75,
+        "askVolume": 11.5,
+        "trades": 28
+      },
+      {
+        "symbol": "BTCUSDT-PERP",
+        "bucketTs": 1748534340000,
+        "priceBucket": 71235,
+        "bidVolume": 12.5,
+        "askVolume": 17.25,
+        "trades": 41
+      }
+    ],
+    "cellsOpen": [
+      {
+        "tsMs": 1748534400125,
+        "bucketTs": 1748534400000,
+        "priceBucket": 71235,
+        "bidVolumeDelta": 0.05,
+        "askVolumeDelta": 0.125,
+        "tradesDelta": 2
+      }
+    ],
+    "recentTicks": [
+      {
+        "tsMs": 1748534399875,
+        "price": 71234,
+        "qty": 0.08,
+        "aggressor": "sell"
+      },
+      {
+        "tsMs": 1748534400000,
+        "price": 71234.5,
+        "qty": 0.125,
+        "aggressor": "buy"
+      }
+    ]
+  }
+}

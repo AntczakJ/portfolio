@@ -1,0 +1,12 @@
+# ts-rs 10.x writes generated TypeScript bindings into TS_RS_EXPORT_DIR
+# (default `./bindings`). We pin the base to the server-side schema dir so
+# `cargo test` from this crate writes straight into the location Bun reads
+# from. The `relative = true` flag tells Cargo to resolve the path relative
+# to this config file (i.e. the worker crate root), giving us a portable
+# absolute path on every host without committing one.
+#
+# Pinned by Task 1.4b — ADR-003 says generated TS files are committed under
+# `projects/tape/server/src/lib/schemas/bridge/generated/`. The `#[ts(export_to = "...")]`
+# attribute on each struct/enum is *relative to this* directory.
+[env]
+TS_RS_EXPORT_DIR = { value = "../server/src/lib/schemas/bridge/generated", relative = true }

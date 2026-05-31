@@ -1,0 +1,12 @@
+{
+  "topic": "cells.btc",
+  "kind": "cell.delta",
+  "payload": {
+    "tsMs": 1748534400125,
+    "bucketTs": 1748534400000,
+    "priceBucket": 71235,
+    "bidVolumeDelta": 0.05,
+    "askVolumeDelta": 0.125,
+    "tradesDelta": 2
+  }
+}

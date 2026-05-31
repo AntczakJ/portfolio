@@ -1,0 +1,9 @@
+{
+  "_doc": "Bridge conformance fixture — WorkerReady handshake the Task 1.5 worker sends as its FIRST outbound frame after connect. Per ADR-004, the supervisor flips BridgeClient state to `connected` only after this lands within the 5 s handshake timeout. pid + generation are u32 (TS number), no bigint. The companion .msgpack file is the byte-level oracle.",
+  "schema": "WorkerReady",
+  "value": {
+    "pid": 4242,
+    "generation": 1
+  },
+  "bigintFields": []
+}

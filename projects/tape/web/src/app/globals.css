@@ -1,0 +1,257 @@
+@import 'tailwindcss';
+
+/* -------------------------------------------------------------------------
+ * Tape theme tokens.
+ *
+ * Tailwind v4 is CSS-first: theme tokens are declared as CSS custom
+ * properties inside @theme so Tailwind generates the corresponding
+ * utility classes (bg-surface, text-fg-muted, etc.) at build time.
+ *
+ * Vibe: trader terminal. Dark by default, monospaced data, high
+ * information density without claustrophobia. Light mode is mandatory
+ * (CLAUDE.md § 4) but reads as the secondary appearance.
+ *
+ * Token names are domain-specific (surface / fg / accent / bid / ask /
+ * delta-up / delta-down) instead of generic shadcn naming so the
+ * Canvas2D footprint renderer can read them via getComputedStyle without
+ * an indirection layer. Per docs/conventions.md § 14 these tokens are
+ * NOT shared with any other project.
+ * --------------------------------------------------------------------- */
+
+@theme {
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:
+    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Monaco, 'Cascadia Mono',
+    Consolas, 'Courier New', monospace;
+
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  /* Default (dark) palette — the canonical look. */
+  --color-bg: oklch(0.16 0.012 250);
+  --color-surface: oklch(0.2 0.013 250);
+  --color-surface-raised: oklch(0.235 0.014 250);
+  --color-border: oklch(0.3 0.014 250);
+  --color-border-strong: oklch(0.42 0.016 250);
+
+  --color-fg: oklch(0.96 0.005 250);
+  --color-fg-muted: oklch(0.74 0.012 250);
+  --color-fg-subtle: oklch(0.55 0.012 250);
+
+  --color-accent: oklch(0.78 0.16 195);
+  --color-accent-fg: oklch(0.16 0.012 250);
+  --color-accent-soft: oklch(0.36 0.07 195);
+
+  --color-bid: oklch(0.74 0.16 155);
+  --color-ask: oklch(0.7 0.2 28);
+  --color-delta-up: oklch(0.8 0.18 150);
+  --color-delta-down: oklch(0.72 0.2 25);
+
+  --color-grid: oklch(0.27 0.012 250);
+  --color-grid-strong: oklch(0.36 0.014 250);
+
+  --color-success: oklch(0.78 0.16 150);
+  --color-warning: oklch(0.82 0.16 80);
+  --color-danger: oklch(0.7 0.2 28);
+
+  --color-focus-ring: oklch(0.82 0.18 195);
+
+  /* -----------------------------------------------------------------
+   * Footprint cell tokens (Task 2.5).
+   *
+   * Consumed by the Phase 3 Canvas2D footprint renderer via the
+   * `getComputedStyle` + `MutationObserver` bridge in
+   * `src/lib/theme/tokens.ts`. Names are intentionally narrow ("cell"
+   * vs the chrome's generic "surface") so the chart's render loop can
+   * read them without an indirection layer and so the contract is
+   * stable across future shadcn alias edits above. Per
+   * docs/conventions.md § 14 these tokens stay inside `tape`.
+   * ----------------------------------------------------------------- */
+
+  /* Base cell background. Sits just above --color-bg so the grid of
+   * cells reads as a distinct surface without lifting off the page. */
+  --color-cell-bg: oklch(0.19 0.013 250);
+
+  /* Brightest cell of the session — the extreme-volume anchor. ~3.5x
+   * perceptual jump from --color-cell-bg in OKLCH lightness so the
+   * brightest cell grabs attention without going neon. Slight cyan
+   * tint relates it to --color-accent without sharing the hue. */
+  --color-cell-bg-strong: oklch(0.4 0.04 220);
+
+  /* Text inside cells (printed volumes). Verified AA on both
+   * --color-cell-bg and --color-cell-bg-strong. */
+  --color-cell-fg: oklch(0.94 0.005 250);
+
+  /* Text for low-confidence cells (< 5 trades). Muted but still AA on
+   * --color-cell-bg. */
+  --color-cell-fg-subtle: oklch(0.62 0.012 250);
+
+  /* Imbalance gradient anchors. Buy and sell are perceptually opposite
+   * (bid green / ask red hue axes from --color-bid / --color-ask).
+   * Neutral is a desaturated mid-tone so a balanced cell reads as
+   * "neither". Renderer interpolates between {buy, neutral, sell}
+   * keyed on the signed imbalance ratio. */
+  --color-cell-imbalance-buy: oklch(0.72 0.2 152);
+  --color-cell-imbalance-sell: oklch(0.68 0.22 28);
+  --color-cell-imbalance-neutral: oklch(0.45 0.012 250);
+
+  /* 1-px hairline between cells. Subtler than --color-grid so the
+   * cell-internal volume bars stay the dominant visual. */
+  --color-cell-stroke: oklch(0.24 0.012 250);
+
+  /* Scrub cursor overlay (vertical bar following mouse / replay
+   * position). Slightly brighter than --color-accent for visibility
+   * over the dense cell field. */
+  --color-cell-cursor: oklch(0.82 0.16 195);
+
+  /* Soft halo around the cursor. OKLCH alpha — the renderer composites
+   * this directly with fillStyle (no manual mixing). */
+  --color-cell-cursor-glow: oklch(0.82 0.16 195 / 0.25);
+
+  /* Axis tick line. Reads as scaffolding, not data. */
+  --color-axis-tick: oklch(0.38 0.012 250);
+
+  /* Axis label text. Verified AA on --color-bg. */
+  --color-axis-label: oklch(0.7 0.012 250);
+
+  /* -----------------------------------------------------------------
+   * shadcn/ui token aliases.
+   *
+   * shadcn primitives (Button, Tooltip, Separator installed in Task 2.3)
+   * read a small vocabulary of generic tokens (`primary`, `foreground`,
+   * `background`, `ring`, `border`, etc.). Per AGENT_NOTES Task 2.1 we
+   * keep a single token vocabulary across the app — these aliases
+   * delegate every shadcn name to our existing OKLCH palette above so
+   * the primitives render correctly without introducing a second token
+   * set. New tokens are added here ONLY as aliases of pre-existing
+   * domain tokens, never with fresh OKLCH values.
+   * ----------------------------------------------------------------- */
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-fg);
+  --color-primary: var(--color-accent);
+  --color-primary-foreground: var(--color-accent-fg);
+  --color-secondary: var(--color-surface-raised);
+  --color-secondary-foreground: var(--color-fg);
+  --color-muted: var(--color-surface);
+  --color-muted-foreground: var(--color-fg-muted);
+  --color-accent-foreground: var(--color-accent-fg);
+  --color-destructive: var(--color-danger);
+  --color-destructive-foreground: var(--color-fg);
+  --color-input: var(--color-border);
+  --color-ring: var(--color-focus-ring);
+  --color-card: var(--color-surface);
+  --color-card-foreground: var(--color-fg);
+  --color-popover: var(--color-surface-raised);
+  --color-popover-foreground: var(--color-fg);
+}
+
+/* Light mode overrides — applied by next-themes setting `data-theme="light"`
+ * (or `class="light"` depending on the provider attribute) on <html>. We
+ * support both attribute strategies because the layout will pick one. */
+:root[data-theme='light'],
+:root.light {
+  --color-bg: oklch(0.985 0.005 100);
+  --color-surface: oklch(0.965 0.006 100);
+  --color-surface-raised: oklch(0.945 0.007 100);
+  --color-border: oklch(0.88 0.008 100);
+  --color-border-strong: oklch(0.74 0.01 100);
+
+  --color-fg: oklch(0.2 0.015 250);
+  --color-fg-muted: oklch(0.42 0.014 250);
+  --color-fg-subtle: oklch(0.58 0.012 250);
+
+  --color-accent: oklch(0.55 0.16 200);
+  --color-accent-fg: oklch(0.98 0.005 100);
+  --color-accent-soft: oklch(0.86 0.05 200);
+
+  --color-bid: oklch(0.5 0.16 155);
+  --color-ask: oklch(0.55 0.2 28);
+  --color-delta-up: oklch(0.46 0.18 150);
+  --color-delta-down: oklch(0.5 0.2 25);
+
+  --color-grid: oklch(0.9 0.006 100);
+  --color-grid-strong: oklch(0.82 0.008 100);
+
+  --color-focus-ring: oklch(0.55 0.18 200);
+
+  /* Footprint cell tokens — light variants (Task 2.5). Hue / lightness
+   * choices retuned so every text-on-cell pair clears WCAG AA on the
+   * warm off-white background. Imbalance anchors are darker on light
+   * to preserve perceptual opposition without washing out. */
+  --color-cell-bg: oklch(0.955 0.006 100);
+  --color-cell-bg-strong: oklch(0.78 0.04 220);
+  --color-cell-fg: oklch(0.22 0.015 250);
+  --color-cell-fg-subtle: oklch(0.48 0.014 250);
+  --color-cell-imbalance-buy: oklch(0.48 0.18 152);
+  --color-cell-imbalance-sell: oklch(0.52 0.22 28);
+  --color-cell-imbalance-neutral: oklch(0.78 0.01 100);
+  --color-cell-stroke: oklch(0.92 0.006 100);
+  --color-cell-cursor: oklch(0.5 0.18 200);
+  --color-cell-cursor-glow: oklch(0.5 0.18 200 / 0.18);
+  --color-axis-tick: oklch(0.76 0.008 100);
+  --color-axis-label: oklch(0.42 0.014 250);
+}
+
+/* -------------------------------------------------------------------------
+ * Base layer.
+ * --------------------------------------------------------------------- */
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    border-color: var(--color-border);
+  }
+
+  html {
+    color-scheme: dark light;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv11', 'ss01';
+    min-height: 100dvh;
+  }
+
+  /* Tabular numbers everywhere data lives. The footprint chart, the tape,
+   * the CVD readout, the replay timestamp — all benefit from columnar
+   * alignment of digits. Page-wide default; override only for prose. */
+  :where(table, [data-numeric]) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Visible focus ring. Never `outline: none` without a replacement. */
+  :focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
+
+  /* Respect prefers-reduced-motion globally. Components that wrap Motion
+   * still gate animations on `useReducedMotion()` — this is the safety
+   * net for CSS animations the React layer doesn't see. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  ::selection {
+    background-color: var(--color-accent-soft);
+    color: var(--color-fg);
+  }
+}

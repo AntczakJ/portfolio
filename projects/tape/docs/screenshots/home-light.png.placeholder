@@ -1,0 +1,1 @@
+Placeholder — replace with the captured PNG at this exact path: `projects/tape/docs/screenshots/home-light.png`. Capture from `pnpm -F tape-web dev` running with the dev stack up (see ../CAPTURE.md). Same view as home-dark but with the theme toggle flipped to light. Delete this `.placeholder` file once the real PNG is committed.

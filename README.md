@@ -4,9 +4,9 @@ Production-grade showcase monorepo. Each subfolder in `projects/*` is an indepen
 
 ## Projects
 
-| Name       | Pitch | Stack | Demo |
-| ---------- | ----- | ----- | ---- |
-| _none yet_ |       |       |      |
+| Name                       | Pitch                                                                                                | Stack                                                                                | Demo |
+| -------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---- |
+| [`tape`](./projects/tape/) | Production-grade real-time orderflow visualizer for crypto perpetual futures.                        | Next 15 + React 19 + Tailwind v4 + Elysia (Bun) + Rust + Postgres + Drizzle          | TBD  |
 
 ## Philosophy
 

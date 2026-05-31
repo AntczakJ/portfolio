@@ -1,0 +1,16 @@
+# Bridge conformance fixtures — Task 1.5b per ADR-003.
+#
+# The .msgpack files are binary byte oracles authored by the Rust
+# `gen-fixtures` binary (`<name>.msgpack`) and by the TS conformance
+# test under `BRIDGE_GEN_FROM_TS=1` (`<name>.from-ts.msgpack`). They
+# must never be touched by git's text-normalisation pipeline — a
+# stray autocrlf or eol conversion would silently corrupt the byte
+# oracle and flip the conformance suite to red without any
+# meaningful diff in the source tree.
+*.msgpack binary
+*.from-ts.msgpack binary
+
+# The .json source-of-truth files are plain text and must stay LF
+# on every host so a Windows checkout does not produce diff noise
+# during regeneration.
+*.json text eol=lf
