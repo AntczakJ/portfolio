@@ -94,11 +94,19 @@ if [ "$elapsed" -ge "$HEALTH_TIMEOUT_SEC" ]; then
 fi
 
 echo "[entrypoint] starting tape-web on :${WEB_PORT}" >&2
-# Next 15 standalone output preserves the monorepo path inside the
-# bundle: /app/web/web/server.js. The Dockerfile COPYed
-# .next/standalone/ to /app/web/, so server.js + node_modules sit
-# under /app/web/web (mirroring projects/tape/web from the source).
-cd /app/web/web
+# Next 15 standalone output mirrors the cwd path under outputFileTracingRoot.
+# In the container the tracing root resolves to / (web/next.config.ts uses
+# `new URL('../../../', import.meta.url)` which climbs above /build/) so the
+# standalone bundle nests as /app/web/build/web/server.js. Find it
+# defensively in case future Next versions change the layout.
+WEB_SERVER_JS=$(find /app/web -maxdepth 5 -name 'server.js' -type f | head -1)
+if [ -z "$WEB_SERVER_JS" ]; then
+    echo "[entrypoint] could not locate web server.js under /app/web — aborting" >&2
+    exit 1
+fi
+WEB_DIR=$(dirname "$WEB_SERVER_JS")
+echo "[entrypoint] web server.js at $WEB_SERVER_JS" >&2
+cd "$WEB_DIR"
 # The standalone server.js binds to PORT (Next reads it). HOSTNAME
 # is set to 0.0.0.0 so Fly's proxy can reach it on the container's
 # private interface. We exec into the foreground so the web process

@@ -22,7 +22,7 @@ primary_region = 'fra'
   NODE_ENV = 'production'
   PORT = '3001'
   WEB_PORT = '3000'
-  WORKER_PIPELINE_ENABLED = '1'
+  WORKER_PIPELINE_ENABLED = '0'
   WS_MAX_CONNECTIONS_PER_IP = '5'
   WS_SYNTHESIZE = '0'
 
