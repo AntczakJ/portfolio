@@ -1,0 +1,9 @@
+# Force LF for shell scripts + Docker assets so Linux containers do
+# not see CRLF (which kernels treat as part of the shebang interpreter
+# name — "sh\r: No such file or directory"). Windows checkouts of
+# these files will use LF too; editors handle it transparently.
+*.sh text eol=lf
+*.bash text eol=lf
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf
+entrypoint.sh text eol=lf

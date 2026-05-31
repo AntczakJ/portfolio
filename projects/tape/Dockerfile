@@ -189,7 +189,10 @@ COPY --from=web-builder --chown=bun:bun /build/web/public /app/web/web/public
 
 # 4. Entrypoint script.
 COPY --chown=bun:bun entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+# Strip CRLF in case Windows git autocrlf checked the file out with
+# CRLF endings — the kernel reads `#!/usr/bin/env sh\r` as interpreter
+# `sh\r` and refuses to exec.
+RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 USER bun
 
