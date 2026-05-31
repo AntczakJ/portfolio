@@ -55,7 +55,7 @@ cd /app/server
 # migration set is a fast NOOP. If the migration fails the whole
 # container fails fast so Fly's restart policy stops cycling on a
 # broken schema.
-if ! bunx drizzle-kit migrate; then
+if ! pnpm exec drizzle-kit migrate; then
     echo "[entrypoint] drizzle migration failed — aborting" >&2
     exit 1
 fi

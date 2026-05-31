@@ -152,6 +152,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl \
         ca-certificates && \
+    curl -fsSL "https://github.com/pnpm/pnpm/releases/download/v9.14.4/pnpm-linux-x64" \
+        -o /usr/local/bin/pnpm && chmod +x /usr/local/bin/pnpm && \
     rm -rf /var/lib/apt/lists/*
 
 # Non-root user — `bun` is provided by the oven/bun base image at UID
