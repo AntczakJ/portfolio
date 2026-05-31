@@ -137,6 +137,12 @@ RUN pnpm install --frozen-lockfile=false --filter tape-server...
 
 COPY server ./server
 
+# pnpm deploy: produces a self-contained per-package install at
+# /build/server-deploy with a node_modules tree that does NOT depend
+# on the workspace root .pnpm store. Including dev deps because
+# drizzle-kit (entrypoint migration runner) lives there.
+RUN pnpm deploy --filter tape-server --legacy /build/server-deploy
+
 
 # ---- Stage 4: runtime ----------------------------------------------------
 # The image Fly.io actually runs. Contains the Bun runtime + the Rust
@@ -174,8 +180,7 @@ RUN chmod +x /app/worker/worker
 # node_modules. The server's package.json + tsconfig stay so the
 # runtime's `import` resolution and any `process.env` reads behave
 # identically to dev.
-COPY --from=server-builder --chown=bun:bun /build/server /app/server
-COPY --from=server-builder --chown=bun:bun /build/node_modules /app/server/node_modules
+COPY --from=server-builder --chown=bun:bun /build/server-deploy /app/server
 
 # 3. Next standalone bundle. Next 15's standalone output puts a
 # self-contained server.js + the minimal node_modules in
