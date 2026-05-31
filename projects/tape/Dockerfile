@@ -76,7 +76,10 @@ WORKDIR /build
 # version so the build is reproducible.
 ENV PNPM_HOME=/pnpm
 ENV PATH=/pnpm:$PATH
-RUN corepack enable && corepack prepare pnpm@9.14.4 --activate
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
+    curl -fsSL "https://github.com/pnpm/pnpm/releases/download/v9.14.4/pnpm-linux-x64" \
+        -o /usr/local/bin/pnpm && chmod +x /usr/local/bin/pnpm && \
+    rm -rf /var/lib/apt/lists/*
 
 # Workspace skeleton — a thin pnpm-workspace.yaml + a minimal root
 # package.json so pnpm resolves the workspace links between
@@ -115,7 +118,10 @@ WORKDIR /build
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=/pnpm:$PATH
-RUN corepack enable && corepack prepare pnpm@9.14.4 --activate
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
+    curl -fsSL "https://github.com/pnpm/pnpm/releases/download/v9.14.4/pnpm-linux-x64" \
+        -o /usr/local/bin/pnpm && chmod +x /usr/local/bin/pnpm && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY package.json ./
 COPY server/package.json ./server/
