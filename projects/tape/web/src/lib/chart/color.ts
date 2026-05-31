@@ -38,8 +38,12 @@ export interface OklchTriple {
 // emitted by Tailwind v4's @theme as a bare number (no `deg` suffix),
 // so we don't tolerate units here on purpose — if the upstream token
 // changes shape, we want to surface that loudly.
+// Lightness allows an optional `%` (Tailwind v4 / browser serialization
+// emits `oklch(19% .013 250)` in production builds — see Tailwind v4
+// theme token resolution). Components accept leading-dot floats
+// like `.013` (no leading zero) — common in minified CSS.
 const OKLCH_RE =
-  /^oklch\(\s*([0-9.+\-]+)\s+([0-9.+\-]+)\s+([0-9.+\-]+)(?:\s*\/\s*([0-9.+\-]+))?\s*\)$/i;
+  /^oklch\(\s*([+\-]?(?:\d+\.?\d*|\.\d+))(%?)\s+([+\-]?(?:\d+\.?\d*|\.\d+))\s+([+\-]?(?:\d+\.?\d*|\.\d+))(?:\s*\/\s*([+\-]?(?:\d+\.?\d*|\.\d+))(%?))?\s*\)$/i;
 
 /**
  * Parse an `oklch(...)` string into its components. Throws on
@@ -56,11 +60,17 @@ export function parseOklch(value: string): OklchTriple {
         'emitted as oklch(L C H) or oklch(L C H / A) — check globals.css.',
     );
   }
-  const L = Number(match[1]);
-  const C = Number(match[2]);
-  const H = Number(match[3]);
-  const alphaRaw = match[4];
-  const alpha = alphaRaw === undefined ? undefined : Number(alphaRaw);
+  // Lightness: `19%` → 0.19, `0.19` → 0.19.
+  const L = match[2] === '%' ? Number(match[1]) / 100 : Number(match[1]);
+  const C = Number(match[3]);
+  const H = Number(match[4]);
+  const alphaRaw = match[5];
+  const alpha =
+    alphaRaw === undefined
+      ? undefined
+      : match[6] === '%'
+        ? Number(alphaRaw) / 100
+        : Number(alphaRaw);
   return { L, C, H, alpha };
 }
 
