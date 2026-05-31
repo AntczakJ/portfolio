@@ -48,8 +48,19 @@ shutdown() {
 
 trap shutdown TERM INT
 
-echo "[entrypoint] starting tape-server on :${SERVER_PORT}" >&2
+echo "[entrypoint] running drizzle migrations" >&2
 cd /app/server
+# drizzle-kit reads DATABASE_URL from the env Fly injected via
+# `flyctl postgres attach`. Idempotent — re-applying a no-op
+# migration set is a fast NOOP. If the migration fails the whole
+# container fails fast so Fly's restart policy stops cycling on a
+# broken schema.
+if ! bunx drizzle-kit migrate; then
+    echo "[entrypoint] drizzle migration failed — aborting" >&2
+    exit 1
+fi
+
+echo "[entrypoint] starting tape-server on :${SERVER_PORT}" >&2
 # bun runs the TypeScript entrypoint directly. The server reads
 # DATABASE_URL, ALLOWED_ORIGINS, BINANCE_WS_ENABLED, etc. from the
 # environment Fly.io injected from `[env]` + `flyctl secrets`.
