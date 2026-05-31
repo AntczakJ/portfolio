@@ -86,6 +86,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 # `tape-server` and `tape-web`. The Next build needs `tape-server`
 # resolved (types-only import via `tape-web/src/lib/api/treaty.ts`).
 COPY package.json ./
+COPY tsconfig.base.json ./
 COPY server/package.json ./server/
 COPY web/package.json ./web/
 # Write a tiny isolated workspace descriptor — the repo-root one
@@ -124,6 +125,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
     rm -rf /var/lib/apt/lists/*
 
 COPY package.json ./
+COPY tsconfig.base.json ./
 COPY server/package.json ./server/
 COPY web/package.json ./web/
 RUN printf 'packages:\n  - "server"\n  - "web"\n' > pnpm-workspace.yaml
