@@ -191,8 +191,14 @@ COPY --from=server-builder --chown=bun:bun /build/server-deploy /app/server
 # its own location, so the layout under /app/web mirrors what `next
 # build` produced.
 COPY --from=web-builder --chown=bun:bun /build/web/.next/standalone /app/web
-COPY --from=web-builder --chown=bun:bun /build/web/.next/static /app/web/web/.next/static
-COPY --from=web-builder --chown=bun:bun /build/web/public /app/web/web/public
+# Static + public paths mirror the standalone server's own nesting.
+# Because Next's outputFileTracingRoot resolves to / inside the
+# container, the bundle nests as /app/web/build/web/server.js, and
+# the standalone server expects its sibling .next/static + public
+# alongside the server.js — so the COPY targets must point there,
+# not at /app/web/web/.
+COPY --from=web-builder --chown=bun:bun /build/web/.next/static /app/web/build/web/.next/static
+COPY --from=web-builder --chown=bun:bun /build/web/public /app/web/build/web/public
 
 # 4. Entrypoint script.
 COPY --chown=bun:bun entrypoint.sh /app/entrypoint.sh
