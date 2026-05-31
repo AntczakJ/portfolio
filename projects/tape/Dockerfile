@@ -141,7 +141,7 @@ COPY server ./server
 # /build/server-deploy with a node_modules tree that does NOT depend
 # on the workspace root .pnpm store. Including dev deps because
 # drizzle-kit (entrypoint migration runner) lives there.
-RUN pnpm deploy --filter tape-server --legacy /build/server-deploy
+RUN pnpm deploy --filter tape-server /build/server-deploy
 
 
 # ---- Stage 4: runtime ----------------------------------------------------
