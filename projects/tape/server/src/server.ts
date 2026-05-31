@@ -489,6 +489,24 @@ export const app = new Elysia()
         heartbeatLoop.stop();
       }
     },
+  })
+  // Catch-all proxy: forward any HTTP request not handled above
+  // (everything except /health, /swagger, /ws/stream) to the
+  // co-located Next.js standalone server on localhost:3000.
+  // Production deploy collapses both processes behind a single
+  // external port — Fly only routes 443 to one internal port, so
+  // the server takes the role of edge reverse proxy.
+  .all('*', async ({ request }) => {
+    const url = new URL(request.url);
+    const target = `http://127.0.0.1:3000${url.pathname}${url.search}`;
+    const init: RequestInit = {
+      method: request.method,
+      headers: request.headers,
+    };
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      init.body = await request.arrayBuffer();
+    }
+    return fetch(target, init);
   });
 
 if (import.meta.main) {

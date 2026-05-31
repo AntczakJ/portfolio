@@ -27,7 +27,12 @@ primary_region = 'fra'
   WS_SYNTHESIZE = '0'
 
 [http_service]
-  internal_port = 3000
+  # All external HTTPS traffic terminates at the Elysia server on 3001.
+  # Server obsługuje /health and /ws/stream natively; everything else
+  # (including the Next.js page tree) is proxied to localhost:3000 by
+  # the catch-all route in server.ts. This avoids the dual-services
+  # collision Fly's edge proxy hits when two services share port 443.
+  internal_port = 3001
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
@@ -36,29 +41,6 @@ primary_region = 'fra'
 
   [http_service.concurrency]
     type = 'requests'
-    hard_limit = 200
-    soft_limit = 150
-
-[[services]]
-  protocol = 'tcp'
-  internal_port = 3001
-  auto_stop_machines = 'stop'
-  auto_start_machines = true
-  min_machines_running = 0
-  processes = ['app']
-
-  [[services.ports]]
-    port = 443
-    handlers = ['tls', 'http']
-    force_https = true
-
-  [[services.ports]]
-    port = 80
-    handlers = ['http']
-    force_https = true
-
-  [services.concurrency]
-    type = 'connections'
     hard_limit = 200
     soft_limit = 150
 
