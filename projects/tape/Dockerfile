@@ -104,6 +104,16 @@ RUN pnpm install --frozen-lockfile=false
 COPY server ./server
 COPY web ./web
 
+# Next inlines NEXT_PUBLIC_* env vars at BUILD time, not runtime.
+# In production the browser reaches the same Fly hostname for HTTP
+# (proxied through the Elysia server's catch-all) and for WS
+# (Elysia's /ws/stream handler), so both URLs are the canonical app
+# URL with wss:// for the WS scheme.
+ARG NEXT_PUBLIC_API_URL=https://tape-demo.fly.dev
+ARG NEXT_PUBLIC_WS_URL=wss://tape-demo.fly.dev
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL}
+
 # Next 15 emits a standalone server at web/.next/standalone when
 # `output: 'standalone'` is set in next.config.ts (verified Phase 6).
 RUN pnpm -F tape-web build
