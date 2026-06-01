@@ -337,7 +337,24 @@ export const app = new Hono<{ Variables: MeldVariables }>()
       init.duplex = 'half';
     }
     try {
-      return await fetch(target, init);
+      const upstream = await fetch(target, init);
+      // Node's fetch transparently decompresses the upstream body when
+      // the response carries `Content-Encoding: gzip` (or br/deflate),
+      // but it leaves the original encoding + length headers on the
+      // Headers object. If we forward those headers verbatim the
+      // browser tries to decompress an already-decompressed stream and
+      // fails with `ERR_CONTENT_DECODING_FAILED`. Strip the three
+      // transport-encoding headers so the browser sees the
+      // post-decoded body for what it is.
+      const headers = new Headers(upstream.headers);
+      headers.delete('content-encoding');
+      headers.delete('content-length');
+      headers.delete('transfer-encoding');
+      return new Response(upstream.body, {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        headers,
+      });
     } catch (err) {
       console.error('[meld-server] proxy to Next failed:', err);
       return new Response('upstream error', { status: 502 });
