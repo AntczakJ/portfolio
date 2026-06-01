@@ -1,0 +1,29 @@
+{
+  "name": "meld-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Playwright E2E harness for meld — Phase 5.1, deploy-verification + post-Phase-4.2 surface coverage. 9 v1 test cases per ADR-007 plus the Phase 3.2 drawing primitives + Phase 3.3 cursor presence + Phase 3.4 / ADR-009 offline-mode UX. Run against any deployed URL via the BASE_URL env var.",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:report": "playwright show-report",
+    "report": "playwright show-report",
+    "trace": "playwright show-trace",
+    "list": "playwright test --list",
+    "install:browsers": "playwright install --with-deps chromium",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.9.0",
+    "dotenv": "^16.4.5",
+    "typescript": "^5.6.3",
+    "zod": "^3.23.8"
+  }
+}

@@ -1,0 +1,303 @@
+@import 'tailwindcss';
+
+/* -------------------------------------------------------------------------
+ * meld theme tokens.
+ *
+ * Tailwind v4 is CSS-first: theme tokens are declared as CSS custom
+ * properties inside @theme so Tailwind generates the corresponding
+ * utility classes (bg-surface, text-fg-muted, etc.) at build time. No
+ * tailwind.config.js exists in this project — the @theme block IS the
+ * configuration.
+ *
+ * Visual identity: collaborative creative tool / paper-like canvas.
+ * Light is canonical, dark is supported but secondary. The reference
+ * vibe is Linear-restraint + tldraw-warmth — confident, not loud,
+ * legible at a glance, with an accent that reads as "purpose-built
+ * software" rather than "generic SaaS purple".
+ *
+ * Per docs/conventions.md § 14 these tokens are SOVEREIGN to meld.
+ * No reuse from tape (which is deep slate + electric cyan for a
+ * trader-terminal vibe). If a future agent is tempted to import
+ * tape tokens here, the answer is "no — build meld's own".
+ *
+ * Palette summary:
+ *   bg      oklch(0.985 0.005 90)   warm off-white (paper, not bleach)
+ *   fg      oklch(0.20 0.018 285)   ink, with the same violet hue
+ *                                   bias as the accent so text and
+ *                                   accent feel like one family
+ *   accent  oklch(0.55 0.18 285)    confident violet — sits between
+ *                                   indigo and magenta; reads as
+ *                                   "creative tool", NOT cyan/green/
+ *                                   red signal palette from tape.
+ *
+ * The accent doubles as the BASE of the awareness-cursor palette
+ * (assignment scheme documented below). Picking a single accent hue
+ * that sits inside the awareness wheel lets the brand color blend
+ * naturally with the multi-user color swarm — when one user is
+ * present, the cursor color matches the brand; when many are present,
+ * the swarm spirals out from there.
+ * --------------------------------------------------------------------- */
+
+@theme {
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', Menlo, Monaco, 'Cascadia Mono', Consolas,
+    'Courier New', monospace;
+
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* Default (light) palette — the canonical look. */
+  --color-bg: oklch(0.985 0.005 90);
+  --color-surface: oklch(0.96 0.006 90);
+  --color-surface-raised: oklch(0.92 0.008 90);
+  --color-border: oklch(0.86 0.01 90);
+  --color-border-strong: oklch(0.72 0.012 90);
+
+  --color-fg: oklch(0.2 0.018 285);
+  --color-fg-muted: oklch(0.44 0.016 285);
+  /* fg-subtle bumped from L=0.60 to L=0.45 during Task 2.3 — the
+   * StatusRow attribution + canvas-placeholder eyebrow sit on both
+   * --color-bg and --color-surface, and at L=0.60 the surface pair
+   * fell to ~2.9:1 (FAIL AA normal). L=0.45 clears AA on both
+   * surfaces (~5.2:1 on bg, ~4.9:1 on surface) and keeps the
+   * "subtle" semantic — visibly quieter than --color-fg-muted at
+   * L=0.44 without crossing the legibility floor. Adjusting the
+   * token here propagates to every consumer; no inline overrides
+   * required. */
+  --color-fg-subtle: oklch(0.45 0.012 285);
+
+  --color-accent: oklch(0.55 0.18 285);
+  --color-accent-fg: oklch(0.985 0.005 90);
+  --color-accent-soft: oklch(0.9 0.05 285);
+  --color-accent-strong: oklch(0.46 0.2 285);
+
+  --color-success: oklch(0.6 0.14 155);
+  /* Warm amber surface for the Phase 3.4 / ADR-009 offline banner.
+   * Picked sovereign per `docs/conventions.md` § 14 (NOT copied from
+   * tape). L=0.86 keeps the paper-canvas warmth and reads as "caution"
+   * not "danger"; hue 75° sits between the 60° amber awareness slot
+   * and the 80° generic warning so the banner harmonises with the
+   * 8-slot awareness wheel without colliding with any single user
+   * color. Chroma 0.13 stays under the awareness L=0.6 ring's saturation
+   * so the banner does not pull focus from collaborators. The narrower
+   * warning-only token at L=0.74 (above) stays for any future non-
+   * banner amber surfaces. */
+  --color-warning-surface: oklch(0.86 0.13 75);
+  --color-warning-border: oklch(0.7 0.16 70);
+  /* Dark fg on amber — pairs with the surface above for ≥ 7:1 contrast
+   * (AA Large + AAA Normal). Shares the brand violet hue so the
+   * banner copy reads as part of the meld family rather than a system
+   * yellow strip. */
+  --color-warning-foreground: oklch(0.25 0.04 75);
+  --color-warning: oklch(0.74 0.14 80);
+  --color-danger: oklch(0.58 0.2 28);
+  /* --color-error is a semantic alias of --color-danger, added in Task
+   * 2.2 for the ApiStatusDot offline indicator. Same OKLCH value (a
+   * desaturated warm-red at L=0.58, chroma 0.20, hue 28° — well clear
+   * of the 285° violet brand so the offline state never reads as a
+   * brand color). The alias exists so component code can use a status-
+   * semantic name ("API errored") rather than a UI-semantic name
+   * ("dangerous action"); the distinction surfaces in code review and
+   * keeps `--color-danger` available for true destructive-action
+   * affordances (delete board, etc.) in later phases. Contrast on
+   * --color-bg light: ~4.5:1 (AA normal text passes); the dot is
+   * non-text so only AA non-text 3:1 is required and is comfortably
+   * cleared. */
+  --color-error: var(--color-danger);
+
+  --color-focus-ring: oklch(0.55 0.18 285);
+
+  /* -----------------------------------------------------------------
+   * Awareness palette — 8 OKLCH triples assigned per session.
+   *
+   * Assignment scheme: hash the anonymous-session cookie's session id
+   * (a string) to an integer via FNV-1a, take modulo 8, look up the
+   * slot below. Same session id => same color across reloads. Two
+   * different session ids => different colors (modulo 8). The 8-slot
+   * size matches "5 visible avatars + overflow pill" from PLAN.md
+   * Task 3.2 with headroom; collisions become noticeable around
+   * 4–5 concurrent users (birthday paradox) which is the realistic
+   * upper bound for a portfolio-demo board.
+   *
+   * All slots share the same lightness (0.6) and chroma (0.17) so no
+   * user feels visually louder than another. Hues are evenly spaced
+   * 45° around the wheel, starting at the brand accent's 285° so the
+   * first-assigned cursor matches the brand. Verified perceptually
+   * distinct on the warm off-white canvas via OKLCH; verified WCAG
+   * AA contrast against --color-bg for the name-pill text-on-color
+   * use case (the cursor dot itself doesn't need a contrast check).
+   *
+   * The runtime contract for this array lives in
+   *   src/lib/identity/color-assignment.ts (Task 2.5 will wire it),
+   * shared between the server welcome-frame generator and the client
+   * awareness state seeder per AGENT_NOTES.md "Cross-cutting concerns".
+   *
+   * Order is load-bearing — slot 0 IS the brand accent's hue.
+   * Re-ordering breaks the "first user matches the brand" guarantee.
+   * Adding a 9th slot is permitted; removing or shuffling is not.
+   * ----------------------------------------------------------------- */
+  --color-awareness-0: oklch(0.6 0.17 285); /* violet (brand anchor)  */
+  --color-awareness-1: oklch(0.6 0.17 330); /* magenta                */
+  --color-awareness-2: oklch(0.6 0.17 15); /* warm red               */
+  --color-awareness-3: oklch(0.6 0.17 60); /* amber                  */
+  --color-awareness-4: oklch(0.6 0.17 105); /* olive-green            */
+  --color-awareness-5: oklch(0.6 0.17 150); /* emerald                */
+  --color-awareness-6: oklch(0.6 0.17 195); /* teal-cyan              */
+  --color-awareness-7: oklch(0.6 0.17 240); /* indigo                 */
+
+  /* -----------------------------------------------------------------
+   * shadcn/ui-friendly token aliases.
+   *
+   * Even though Task 2.1 does not install shadcn primitives yet
+   * (PLAN.md Task 2.3 does), pre-aliasing the generic names now means
+   * the primitives drop in cleanly without a second token vocabulary.
+   * New tokens are added here ONLY as aliases of pre-existing domain
+   * tokens above, never with fresh OKLCH values.
+   * ----------------------------------------------------------------- */
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-fg);
+  --color-primary: var(--color-accent);
+  --color-primary-foreground: var(--color-accent-fg);
+  --color-secondary: var(--color-surface-raised);
+  --color-secondary-foreground: var(--color-fg);
+  --color-muted: var(--color-surface);
+  --color-muted-foreground: var(--color-fg-muted);
+  --color-accent-foreground: var(--color-accent-fg);
+  --color-destructive: var(--color-danger);
+  --color-destructive-foreground: var(--color-accent-fg);
+  --color-input: var(--color-border);
+  --color-ring: var(--color-focus-ring);
+  --color-card: var(--color-surface);
+  --color-card-foreground: var(--color-fg);
+  --color-popover: var(--color-surface-raised);
+  --color-popover-foreground: var(--color-fg);
+}
+
+/* -------------------------------------------------------------------------
+ * Dark mode overrides — applied by next-themes setting
+ * `data-theme="dark"` on <html>. Dark is supported per CLAUDE.md § 4 but
+ * is secondary to the canonical light "paper canvas" feel. The dark
+ * palette stays warm-violet rather than cold-blue so the brand identity
+ * survives the flip; if a viewer prefers OS dark, meld stays meld.
+ * --------------------------------------------------------------------- */
+
+:root[data-theme='dark'],
+:root.dark {
+  --color-bg: oklch(0.18 0.012 285);
+  --color-surface: oklch(0.22 0.013 285);
+  --color-surface-raised: oklch(0.26 0.014 285);
+  --color-border: oklch(0.32 0.014 285);
+  --color-border-strong: oklch(0.44 0.016 285);
+
+  --color-fg: oklch(0.96 0.005 285);
+  --color-fg-muted: oklch(0.72 0.012 285);
+  /* fg-subtle bumped from L=0.54 to L=0.65 during Task 2.3 — same
+   * reason as the light-mode bump: the dark surface pair fell to
+   * ~3.0:1 (FAIL AA normal) at L=0.54. L=0.65 clears AA on both
+   * dark surfaces (~5.2:1 on bg, ~4.6:1 on surface) and stays
+   * visibly quieter than --color-fg-muted at L=0.72. */
+  --color-fg-subtle: oklch(0.65 0.012 285);
+
+  --color-accent: oklch(0.72 0.17 285);
+  --color-accent-fg: oklch(0.18 0.012 285);
+  --color-accent-soft: oklch(0.34 0.08 285);
+  --color-accent-strong: oklch(0.8 0.18 285);
+
+  --color-success: oklch(0.74 0.14 155);
+  /* Dark-mode amber — same hue as light, lifted lightness so the
+   * banner reads as a warm strip against the deep-violet bg rather
+   * than a muddy ochre. Surface L=0.62 + foreground L=0.96 produces
+   * the same dark-on-light readability flip as light mode in reverse
+   * (light fg on a slightly less bright surface) at ≥ 7:1. Border
+   * stays one notch deeper to anchor the strip. */
+  --color-warning-surface: oklch(0.62 0.15 75);
+  --color-warning-border: oklch(0.5 0.16 70);
+  --color-warning-foreground: oklch(0.96 0.02 75);
+  --color-warning: oklch(0.82 0.14 80);
+  --color-danger: oklch(0.72 0.2 28);
+
+  --color-focus-ring: oklch(0.78 0.18 285);
+
+  /* Awareness palette — lighter variants for the dark canvas so the
+   * name-pill text-on-color contrast still clears AA. Same hue
+   * positions, lifted lightness from 0.6 to 0.72 so cursors read as
+   * "vivid" rather than "muddy" against the deep-violet bg. */
+  --color-awareness-0: oklch(0.72 0.17 285);
+  --color-awareness-1: oklch(0.72 0.17 330);
+  --color-awareness-2: oklch(0.72 0.17 15);
+  --color-awareness-3: oklch(0.72 0.17 60);
+  --color-awareness-4: oklch(0.72 0.17 105);
+  --color-awareness-5: oklch(0.72 0.17 150);
+  --color-awareness-6: oklch(0.72 0.17 195);
+  --color-awareness-7: oklch(0.72 0.17 240);
+}
+
+/* -------------------------------------------------------------------------
+ * Base layer.
+ * --------------------------------------------------------------------- */
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    border-color: var(--color-border);
+  }
+
+  html {
+    color-scheme: light dark;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv11', 'ss01';
+    min-height: 100dvh;
+  }
+
+  /* Tabular numbers for any data readout (presence count, board id
+   * fragment, future stats panel). Page-wide default; override only
+   * for prose. */
+  :where(table, [data-numeric]) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Visible focus ring — accessibility floor per docs/conventions.md
+   * § 1 and CLAUDE.md § 4. Never `outline: none` without a
+   * replacement. */
+  :focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
+
+  /* Respect prefers-reduced-motion globally. Phase 3.1 + 3.2 motion
+   * components will additionally gate via `useReducedMotion()` —
+   * this is the safety net for CSS animations the React layer
+   * doesn't see. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  ::selection {
+    background-color: var(--color-accent-soft);
+    color: var(--color-fg);
+  }
+}

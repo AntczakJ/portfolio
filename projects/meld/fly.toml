@@ -1,0 +1,116 @@
+# fly.toml app configuration file for meld-demo
+#
+# See https://fly.io/docs/reference/configuration/ for the schema. The
+# `[http_service]` block (NOT the legacy `[[services]]` array) is the
+# current Fly recommendation for single-service apps — tape's Phase 6
+# first deploy hit the dual-services-port-443 collision with the
+# legacy form, and ADR-006 / AGENT_NOTES "fly.toml shape" pin the
+# single-block fix forward.
+#
+# meld's deploy posture (ADR-006 verbatim):
+#   - Single Fly Machine in `fra` (EU — owner is in Poznań).
+#   - Single external port (443) → Fly edge TLS terminator → container
+#     internal port 3001 (Hono + Hocuspocus).
+#   - Next.js standalone runs on the same container at :3000 in the
+#     loopback interface — v1 reaches it via the entrypoint fan-out
+#     and a future v1.1 catch-all on the Hono side proxies HTTP to it.
+#   - `auto_stop_machines = 'off'` + `min_machines_running = 1` keep
+#     live `HocuspocusProvider` connections warm; a scale-to-zero
+#     would drop them and recruiters expect to load without a 5–10 s
+#     cold-start delay.
+
+app = 'meld-demo'
+primary_region = 'fra'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[deploy]
+  strategy = 'rolling'
+
+[env]
+  NODE_ENV = 'production'
+  # Hono + Hocuspocus listen on 3001 (the canonical external surface
+  # for the demo). Fly's edge forwards 443 → 3001 per `internal_port`
+  # below.
+  PORT = '3001'
+  # Next standalone listens on 3000 inside the container. Not directly
+  # external; reachable from the Hono catch-all proxy via 127.0.0.1.
+  WEB_PORT = '3000'
+  # ADR-002 origin allowlist — single canonical entry per ADR-006.
+  # NO `www.` redirect, NO preview-URL wildcard (tape's lesson; meld
+  # inherits it). Override via `flyctl secrets set MELD_ALLOWED_ORIGINS=...`
+  # if a follow-up needs additional origins.
+  MELD_ALLOWED_ORIGINS = 'https://meld-demo.fly.dev'
+  # ADR-003 Hocuspocus debounce config — flush a per-board snapshot
+  # when no new ops arrive for 5 s, force one at most every 30 s.
+  WS_DEBOUNCE_MS = '5000'
+  WS_MAX_DEBOUNCE_MS = '30000'
+  # ADR-003 in-adapter early-flush threshold. 100 ops in the in-memory
+  # counter triggers a snapshot regardless of the debounce window.
+  WS_OPS_FLUSH_THRESHOLD = '100'
+  # ADR-006 retention horizon — nightly sweep drops boards inactive
+  # longer than this many days. ON DELETE CASCADE on board_ops
+  # removes the associated ops rows in the same transaction.
+  BOARD_RETENTION_DAYS = '30'
+  # Task 1.5 compaction-sweep backstop — 6 h rolling sweep early-
+  # flushes any room with this many un-flushed ops.
+  WS_COMPACTION_OPS_THRESHOLD = '100'
+  # entrypoint.sh gate — when '1', drizzle-kit migrate runs on boot.
+  # Set to '0' for ops scenarios where the operator wants to apply
+  # migrations manually.
+  RUN_MIGRATIONS = '1'
+  # NEXT_PUBLIC_* baked at BUILD time in the Dockerfile — listing them
+  # here is defence-in-depth + an audit signal during `flyctl status`.
+  # If the Dockerfile ARG ever drifts these become the runtime
+  # canonical (Next reads `process.env.NEXT_PUBLIC_*` at build OR
+  # runtime — the build-time inline wins for client bundles but
+  # server-side reads honour runtime overrides).
+  NEXT_PUBLIC_API_URL = 'https://meld-demo.fly.dev'
+  NEXT_PUBLIC_WS_URL = 'wss://meld-demo.fly.dev'
+
+[http_service]
+  # All external HTTPS traffic terminates at the Hono + Hocuspocus
+  # server on 3001. The server owns `/health`, `/ws/board/:boardId`,
+  # `/api/boards`, and `/api/session`; everything else (the Next.js
+  # page tree under `/board/:boardId` and the landing page) is
+  # served from the same hostname via the entrypoint fan-out (v1
+  # standalone Next on :3000 reachable via the container's edge in
+  # parallel) — the catch-all reverse proxy from server → Next is
+  # the v1.1 path documented in DEPLOY.md.
+  internal_port = 3001
+  force_https = true
+  # Keep the machine warm — every active board is a long-lived
+  # `HocuspocusProvider` connection and a stopped Machine drops it.
+  # Recruiters expect the demo to load without a 5–10 s cold start
+  # ("the 5-second wow moment" window from PLAN.md).
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+  [http_service.concurrency]
+    type = 'requests'
+    hard_limit = 200
+    soft_limit = 150
+
+[checks]
+  [checks.health]
+    port = 3001
+    type = 'http'
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '30s'
+    method = 'get'
+    path = '/health'
+    protocol = 'http'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512
+  # Upgrade path: if Hocuspocus per-room memory grows past expectation
+  # (each Y.Doc holds the document state in-memory, plus the awareness
+  # snapshot per connected client), bump memory to 1024 MB. No ADR
+  # needed for the bump; recorded as an observability follow-up in
+  # AGENT_NOTES.md.

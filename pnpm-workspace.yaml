@@ -2,6 +2,7 @@ packages:
   - 'projects/*'
   - 'projects/*/server'
   - 'projects/*/web'
+  - 'projects/*/e2e'
 allowBuilds:
   esbuild: true
   msgpackr-extract: true

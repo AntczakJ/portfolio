@@ -1,0 +1,22 @@
+{
+  "name": "meld",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Local-first collaborative whiteboard — umbrella package delegating to server/ (Hono on Node 22) and web/ (Next.js 15). CRDT layer is Yjs 13.x + y-websocket protocol; persistence is hybrid ops-log + debounced snapshots via a Hocuspocus Storage adapter against Postgres. See DECISIONS.md ADR-001 / ADR-002 / ADR-003.",
+  "scripts": {
+    "dev": "pnpm -F meld-web dev",
+    "dev:server": "pnpm -F meld-server dev",
+    "dev:web": "pnpm -F meld-web dev",
+    "build": "pnpm -F meld-server build && pnpm -F meld-web build",
+    "build:server": "pnpm -F meld-server build",
+    "build:web": "pnpm -F meld-web build",
+    "start": "pnpm -F meld-server start",
+    "lint": "pnpm -F meld-server lint && pnpm -F meld-web lint",
+    "typecheck": "pnpm -F meld-server typecheck && pnpm -F meld-web typecheck",
+    "test": "pnpm -F meld-server test && pnpm -F meld-web test",
+    "e2e": "pnpm -F meld-e2e test",
+    "e2e:smoke": "pnpm -F meld-e2e test --grep @smoke",
+    "e2e:report": "pnpm -F meld-e2e report"
+  }
+}

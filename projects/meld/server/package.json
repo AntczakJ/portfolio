@@ -1,0 +1,53 @@
+{
+  "name": "meld-server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Hono 4.x on Node 22 LTS control plane for meld — HTTP control routes (board creation, health, RPC surface) and the Hocuspocus WebSocket framework mounted on the same http.Server. Yjs / Hocuspocus / Drizzle land in Tasks 1.2 - 1.7.",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/app.ts"
+    }
+  },
+  "types": "./src/app.ts",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc --noEmit",
+    "start": "node --import tsx src/server.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --import tsx \"src/**/*.test.ts\"",
+    "ws:smoke": "tsx scripts/ws-smoke.ts",
+    "welcome:smoke": "tsx scripts/welcome-cookie-smoke.ts",
+    "storage:smoke": "tsx scripts/storage-smoke.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@hocuspocus/server": "^4.1.0",
+    "@hono/node-server": "^1.13.7",
+    "@hono/zod-validator": "^0.4.1",
+    "drizzle-orm": "^0.45.2",
+    "drizzle-zod": "^0.8.3",
+    "hono": "^4.6.10",
+    "postgres": "^3.4.9",
+    "ws": "^8.21.0",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.31",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@hocuspocus/provider": "^4.1.0",
+    "@types/node": "^22.9.0",
+    "@types/ws": "^8.18.1",
+    "drizzle-kit": "^0.31.10",
+    "lib0": "^0.2.117",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

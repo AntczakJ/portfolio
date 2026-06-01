@@ -1,0 +1,147 @@
+name: meld-deploy
+
+# Phase 6.1 — Fly.io deploy workflow for the meld demo.
+#
+# Trigger model:
+#
+#   - `workflow_dispatch` only. No push trigger — production deploys
+#     are owner-initiated, not automatic on every merge to main. This
+#     matches the portfolio policy "do not push without explicit owner
+#     direction" (CLAUDE.md § 10) extended to the deploy surface.
+#
+# Inputs:
+#
+#   - `env`: 'prod' for now (single environment). A future staging slot
+#     would extend the enum without breaking the matrix.
+#   - `smoke`: optional boolean — when true, kicks the meld-e2e
+#     workflow against the production URL once `flyctl deploy` returns.
+#     Off by default to keep the deploy fast; the owner flips it on
+#     for verified-deploy runs.
+#
+# Required repo secret: `FLY_API_TOKEN` (Fly personal access token
+# with deploy scope on the meld-demo app).
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - prod
+        default: prod
+      smoke:
+        description: 'Run @smoke E2E sweep against the live URL after deploy'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: meld-deploy-${{ github.event.inputs.env || 'prod' }}
+  # Serialize deploys against the same Fly app — a concurrent deploy
+  # would race the rolling-strategy health-check window.
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy (${{ github.event.inputs.env || 'prod' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Fly CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Verify Fly token + app exists
+        # Fail fast if FLY_API_TOKEN is missing or the meld-demo app
+        # has not been created yet. Without this the next step's
+        # error surface is a 30-line flyctl trace; this gives a one-
+        # line preflight signal.
+        run: |
+          if [ -z "${FLY_API_TOKEN:-}" ]; then
+            echo "::error::FLY_API_TOKEN secret is missing. Set it under Settings → Secrets → Actions."
+            exit 1
+          fi
+          if ! flyctl status --app meld-demo > /dev/null 2>&1; then
+            echo "::error::flyctl status failed for app 'meld-demo'. Run 'flyctl launch --name meld-demo --region fra --no-deploy' first."
+            exit 1
+          fi
+
+      - name: Deploy to Fly
+        # --remote-only ships the build to Fly's builder rather than
+        # building on the GHA runner. --config + --dockerfile point at
+        # the project-scoped artifacts so the build context is
+        # `projects/meld/` (NOT the repo root) — matches what the
+        # Dockerfile's COPY paths expect.
+        run: |
+          flyctl deploy \
+            --remote-only \
+            --app meld-demo \
+            --config projects/meld/fly.toml \
+            --dockerfile projects/meld/Dockerfile \
+            projects/meld
+
+      - name: Verify health
+        # Probe the live URL once Fly's rolling deploy reports done.
+        # Five retries with 5 s spacing covers the 30 s grace period
+        # configured in fly.toml without inflating the workflow time.
+        run: |
+          for i in $(seq 1 5); do
+            if curl -sf https://meld-demo.fly.dev/health > /dev/null; then
+              echo "meld-demo /health 200 OK"
+              exit 0
+            fi
+            echo "waiting for /health ($i / 5)"
+            sleep 5
+          done
+          echo "::error::meld-demo /health did not return 200 within 25 s of deploy"
+          exit 1
+
+  smoke:
+    name: smoke (e2e @smoke against live URL)
+    needs: deploy
+    if: ${{ github.event.inputs.smoke == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MELD_E2E_TARGET_URL: https://meld-demo.fly.dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright (chromium only)
+        run: pnpm -F meld-e2e exec playwright install --with-deps chromium
+
+      - name: Run @smoke subset against ${{ env.MELD_E2E_TARGET_URL }}
+        # The @smoke tag is the 5-case subset defined in Phase 5.1 for
+        # deploy-verification (landing, board-creation, identity-cookie,
+        # multi-user-presence, theme-toggle). Full sweep runs nightly
+        # via the meld-e2e workflow's cron, not on every deploy.
+        run: pnpm -F meld-e2e test --project=chromium --grep @smoke
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meld-deploy-smoke-report-${{ github.run_id }}
+          path: projects/meld/e2e/playwright-report
+          retention-days: 30

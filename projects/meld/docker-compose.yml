@@ -1,0 +1,39 @@
+# meld — local development services
+#
+# Scope: Postgres for the Drizzle persistence layer (PLAN.md Phase 1 Task 1.2,
+# ADR-003 — hybrid ops-log + debounced snapshot Hocuspocus Storage adapter).
+# Port 5436 is deliberate — see AGENT_NOTES.md "Postgres port collision":
+#   5432 = system default (avoid)
+#   5434 = Mila (owner runs in parallel)
+#   5435 = tape (owner runs in parallel)
+#   5436 = meld (this file)
+#
+# Bring up:    docker compose -f projects/meld/docker-compose.yml up -d
+# Tear down:   docker compose -f projects/meld/docker-compose.yml down
+# Wipe data:   docker compose -f projects/meld/docker-compose.yml down -v
+#
+# The connection string the server reads from .env must match the credentials
+# and port below: postgres://meld:meld@localhost:5436/meld
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: meld-postgres
+    restart: unless-stopped
+    ports:
+      - "5436:5432"
+    environment:
+      POSTGRES_USER: meld
+      POSTGRES_PASSWORD: meld
+      POSTGRES_DB: meld
+    volumes:
+      - meld-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meld -d meld"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  meld-postgres-data:
+    name: meld-postgres-data

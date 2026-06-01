@@ -1,0 +1,1 @@
+ALTER TABLE "boards" ADD COLUMN "last_compacted_op_seq" bigint DEFAULT 0 NOT NULL;

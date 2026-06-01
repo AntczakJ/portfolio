@@ -18,7 +18,9 @@
     "build": "pnpm -r --if-present build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "meld:e2e": "pnpm -F meld-e2e test",
+    "meld:e2e:smoke": "pnpm -F meld-e2e test --grep @smoke"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.5.0",

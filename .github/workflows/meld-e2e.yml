@@ -1,0 +1,210 @@
+name: meld-e2e
+
+# Phase 5.1 — Playwright E2E harness for meld.
+#
+# Trigger model:
+#
+#   - workflow_dispatch with an optional `target_url` input. Manual
+#     fire against any deployed URL (defaults to https://meld-demo.fly.dev,
+#     the production demo per ADR-006). The owner can also point this
+#     at an ephemeral staging URL for a pre-promotion gate without
+#     changing workflow YAML.
+#   - push to main with paths under projects/meld/** — gates the
+#     project on a passing E2E sweep against the LOCAL dev stack
+#     brought up inside the job (Postgres service, meld-server +
+#     meld-web background processes).
+#
+# The two triggers exercise different surfaces: workflow_dispatch
+# proves the live demo still works; push verifies the meld surface
+# stays green against the in-job stack on every change to the project.
+#
+# Concurrency: sweeps against the same URL serialize so a manual
+# dispatch retry does not race a push trigger arriving in the same
+# minute.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target URL to test against (e.g. https://meld-demo.fly.dev)'
+        required: false
+        type: string
+        default: 'https://meld-demo.fly.dev'
+  push:
+    branches: [main]
+    paths:
+      - 'projects/meld/**'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/meld-e2e.yml'
+
+concurrency:
+  group: meld-e2e-${{ github.event.inputs.target_url || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+jobs:
+  e2e-dispatch:
+    name: e2e (dispatch — against ${{ github.event.inputs.target_url }})
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MELD_E2E_TARGET_URL: ${{ github.event.inputs.target_url || 'https://meld-demo.fly.dev' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright (chromium only)
+        run: pnpm -F meld-e2e exec playwright install --with-deps chromium
+
+      - name: Run Playwright tests against ${{ env.MELD_E2E_TARGET_URL }}
+        run: pnpm -F meld-e2e test --project=chromium
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meld-e2e-report-${{ github.run_id }}
+          path: projects/meld/e2e/playwright-report
+          retention-days: 30
+
+  e2e-push:
+    name: e2e (push — local stack)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # ADR-005 + Task 1.2 dev defaults
+      DATABASE_URL: postgres://meld:meld@localhost:5436/meld
+      MELD_ALLOWED_ORIGINS: http://localhost:3055
+      NODE_ENV: production
+      PORT: '3099'
+      MELD_SERVER_PORT: '3099'
+      NEXT_PUBLIC_API_URL: http://localhost:3099
+      NEXT_PUBLIC_WS_URL: ws://localhost:3099
+      BASE_URL: http://localhost:3055
+      WS_BASE_URL: ws://localhost:3099
+      API_BASE_URL: http://localhost:3099
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: meld
+          POSTGRES_PASSWORD: meld
+          POSTGRES_DB: meld
+        ports:
+          - 5436:5432
+        options: >-
+          --health-cmd "pg_isready -U meld -d meld"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright (chromium only)
+        run: pnpm -F meld-e2e exec playwright install --with-deps chromium
+
+      - name: Run database migrations
+        run: pnpm -F meld-server db:migrate
+
+      - name: Build meld-web
+        run: pnpm -F meld-web build
+
+      - name: Start meld-server
+        run: |
+          nohup pnpm -F meld-server start > /tmp/meld-server.log 2>&1 &
+          echo "MELD_SERVER_PID=$!" >> $GITHUB_ENV
+
+      - name: Start meld-web (Next standalone via 'next start')
+        run: |
+          nohup pnpm -F meld-web exec next start -p 3055 > /tmp/meld-web.log 2>&1 &
+          echo "MELD_WEB_PID=$!" >> $GITHUB_ENV
+
+      - name: Wait for meld-server /health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3099/health > /dev/null; then
+              echo "meld-server up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "meld-server never came up. Last log:"
+          tail -n 200 /tmp/meld-server.log || true
+          exit 1
+
+      - name: Wait for meld-web /
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3055 > /dev/null; then
+              echo "meld-web up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "meld-web never came up. Last log:"
+          tail -n 200 /tmp/meld-web.log || true
+          exit 1
+
+      - name: Run Playwright tests
+        run: pnpm -F meld-e2e test --project=chromium
+
+      - name: Stop background processes
+        if: always()
+        run: |
+          if [ -n "${MELD_SERVER_PID:-}" ]; then kill "$MELD_SERVER_PID" || true; fi
+          if [ -n "${MELD_WEB_PID:-}" ]; then kill "$MELD_WEB_PID" || true; fi
+
+      - name: Upload meld-server log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meld-server-log-${{ github.run_id }}
+          path: /tmp/meld-server.log
+          retention-days: 14
+
+      - name: Upload meld-web log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meld-web-log-${{ github.run_id }}
+          path: /tmp/meld-web.log
+          retention-days: 14
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meld-e2e-report-${{ github.run_id }}
+          path: projects/meld/e2e/playwright-report
+          retention-days: 30
