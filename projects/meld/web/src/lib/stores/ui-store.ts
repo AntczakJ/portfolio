@@ -38,8 +38,14 @@ export type ThemePreference = 'system' | 'light' | 'dark';
  *   - `'offline'`      — provider has been `disconnected` for ≥ 1500
  *                        ms OR `navigator.onLine === false`. Banner
  *                        + aria-live announcement fire on entry.
+ *   - `'overrun'`      — ADR-010: the server closed us with `4290`
+ *                        (backpressure / rate-exceeded). A transient,
+ *                        recoverable throttle — surfaced through the
+ *                        SAME banner + aria-live chrome as `'offline'`
+ *                        with overrun-specific copy + a `retryAfterMs`
+ *                        hint. Clears back to `'live'` on reconnect.
  */
-export type ConnectionState = 'live' | 'reconnecting' | 'offline';
+export type ConnectionState = 'live' | 'reconnecting' | 'offline' | 'overrun';
 
 interface UiState {
   themePreference: ThemePreference;
@@ -68,6 +74,26 @@ interface UiState {
    */
   connectionState: ConnectionState;
   setConnectionState: (state: ConnectionState) => void;
+  /**
+   * ADR-010 overrun window. When the server closes us with `4290`, the
+   * overrun handler sets `connectionState: 'overrun'` AND records the
+   * server-advised cool-off here so `<ConnectionBanner />` can render
+   * the "reconnecting in a moment" hint. `null` outside an overrun
+   * window. NOT persisted — transient connection state.
+   */
+  overrunRetryMs: number | null;
+  /**
+   * Enter the overrun window: flip `connectionState` to `'overrun'` and
+   * stash the retry hint. The reconnect cycle (provider disconnect +
+   * reconnect-after-retry) is driven by the host, not the store.
+   */
+  setOverrun: (retryMs: number) => void;
+  /**
+   * Leave the overrun window (on reconnect). Clears the retry hint;
+   * the host sets `connectionState` back to `'live'` via the normal
+   * connection-status mirror once the provider is connected.
+   */
+  clearOverrun: () => void;
   /**
    * The reconcile delta — count of shapes that materialised between
    * the start of the most recent offline window and the moment we
@@ -103,6 +129,13 @@ export const useUiStore = create<UiState>()(
       setConnectionState: (state) => {
         set({ connectionState: state });
       },
+      overrunRetryMs: null,
+      setOverrun: (retryMs) => {
+        set({ connectionState: 'overrun', overrunRetryMs: retryMs });
+      },
+      clearOverrun: () => {
+        set({ overrunRetryMs: null });
+      },
       lastReconcileMs: null,
       recordReconcile: (count) => {
         set({ lastReconcileMs: count });
@@ -113,8 +146,8 @@ export const useUiStore = create<UiState>()(
       // Persist only the user-facing preference. Functions are not
       // round-trippable through JSON.stringify and would replay as
       // `undefined` on rehydrate, silently shadowing the live setter.
-      // `showConflictViz`, `connectionState`, and `lastReconcileMs`
-      // are transient session state — also excluded.
+      // `showConflictViz`, `connectionState`, `overrunRetryMs`, and
+      // `lastReconcileMs` are transient session state — also excluded.
       partialize: (state) => ({ themePreference: state.themePreference }),
     },
   ),

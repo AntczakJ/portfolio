@@ -12,6 +12,7 @@ import {
 } from '@/lib/yjs/provider';
 import { AwarenessProvider } from '@/lib/yjs/awareness-context';
 import { useConnectionStatus } from '@/lib/yjs/use-connection-status';
+import { useOverrunHandler } from '@/lib/yjs/use-overrun-handler';
 import { useReconciliationCount } from '@/lib/yjs/use-reconciliation-count';
 import { BoardEngine } from '@/lib/canvas/engine';
 import { getThemeTokensBridge } from '@/lib/canvas/theme-tokens';
@@ -126,6 +127,16 @@ export function BoardCanvasHost({
   // a non-owning reference for the JSX consumer.
   const [doc, setDoc] = useState<Y.Doc | null>(null);
 
+  // ADR-010 — overrun (`4290`) handler. The hook returns a STABLE
+  // `onUnknownControlFrame` callback (it reads the live provider via an
+  // internal ref) so we can hand it to `createBoardProvider` from the
+  // construction effect WITHOUT re-running the effect when the provider
+  // state settles. The callback is captured in a ref so the effect's
+  // `[boardId]` dependency stays minimal.
+  const { onUnknownControlFrame } = useOverrunHandler(provider);
+  const onUnknownControlFrameRef = useRef(onUnknownControlFrame);
+  onUnknownControlFrameRef.current = onUnknownControlFrame;
+
   useEffect(() => {
     const shapeCanvas = shapeCanvasRef.current;
     const cursorCanvas = cursorCanvasRef.current;
@@ -143,7 +154,15 @@ export function BoardCanvasHost({
     // is also torn down. We construct the doc here and hand it to
     // the factory so the engine can hold the same reference.
     const localDoc = new Y.Doc();
-    const hocuspocusProvider = createBoardProvider(boardId, { doc: localDoc });
+    const hocuspocusProvider = createBoardProvider(boardId, {
+      doc: localDoc,
+      // ADR-010: route `control.overrun` (server `4290`) into the
+      // overrun handler. The ref indirection keeps this stable closure
+      // pointing at the live handler without re-running the effect.
+      onUnknownControlFrame: (raw) => {
+        onUnknownControlFrameRef.current(raw);
+      },
+    });
     providerRef.current = hocuspocusProvider;
     setProvider(hocuspocusProvider);
     setDoc(localDoc);
@@ -194,7 +213,7 @@ export function BoardCanvasHost({
     // window between two monitors with different scaling). The
     // matchMedia change event is the documented hook.
     const dprMedia = window.matchMedia(
-      `(resolution: ${window.devicePixelRatio}dppx)`,
+      `(resolution: ${String(window.devicePixelRatio)}dppx)`,
     );
     const onDprChange = (): void => {
       handleResize();
@@ -253,13 +272,33 @@ export function BoardCanvasHost({
   });
   const setConnectionState = useUiStore((s) => s.setConnectionState);
   const recordReconcile = useUiStore((s) => s.recordReconcile);
+  const overrunRetryMs = useUiStore((s) => s.overrunRetryMs);
+  const clearOverrun = useUiStore((s) => s.clearOverrun);
 
   // Sync the resolved connection state into the ui store. Selector
   // mirroring means the banner + aria-live region subscribe to the
   // store directly and stay decoupled from this host's render path.
+  //
+  // ADR-010 overrun coordination: `useConnectionStatus` is unaware of
+  // the `'overrun'` state — it only ever resolves `live | reconnecting
+  // | offline`. During an overrun window (`overrunRetryMs !== null`) we
+  // must NOT clobber the store's `'overrun'` with the disconnect-driven
+  // `'reconnecting'` / `'offline'` the status hook reports while the
+  // provider is intentionally down. We only act when the provider comes
+  // back `'live'`: that ends the overrun window (clear the retry hint)
+  // and restores the live state through the normal mirror.
   useEffect(() => {
+    if (overrunRetryMs !== null) {
+      if (connectionState === 'live') {
+        clearOverrun();
+        setConnectionState('live');
+      }
+      // Otherwise hold the `'overrun'` banner — the provider is down on
+      // purpose, awaiting the server-advised reconnect.
+      return;
+    }
     setConnectionState(connectionState);
-  }, [connectionState, setConnectionState]);
+  }, [connectionState, overrunRetryMs, clearOverrun, setConnectionState]);
 
   // Sync the reconcile delta. The hook resets to `0` outside offline
   // windows and refreshes on `offline → live`; we mirror it 1:1.

@@ -23,12 +23,15 @@ import { useUiStore } from '@/lib/stores/ui-store';
 
 const COPY_OFFLINE =
   'Offline. Your edits are saved locally and will sync when the connection returns.';
+const COPY_OVERRUN =
+  "Connection paused — you're editing too fast. Reconnecting shortly. Your work is saved.";
 const COPY_RESTORED_BARE = 'Connection restored.';
 
 function resetUiStore(): void {
   useUiStore.setState({
     connectionState: 'live',
     lastReconcileMs: null,
+    overrunRetryMs: null,
   });
 }
 
@@ -60,7 +63,7 @@ describe('<OfflineAriaLiveRegion />', () => {
   it('starts empty when mounted in the "live" state', () => {
     const { container } = render(<OfflineAriaLiveRegion />);
     const region = getRegion(container);
-    expect(region.textContent ?? '').toBe('');
+    expect(region.textContent).toBe('');
   });
 
   it('emits the verbatim offline copy on live → offline', () => {
@@ -121,6 +124,30 @@ describe('<OfflineAriaLiveRegion />', () => {
     expect(region.textContent).toBe('Connection restored. 5 shapes synced.');
   });
 
+  // ADR-010 — overrun announcement + its restore.
+  it('emits the overrun copy on * → overrun', () => {
+    const { container } = render(<OfflineAriaLiveRegion />);
+
+    act(() => {
+      useUiStore.setState({ connectionState: 'overrun' });
+    });
+    const region = getRegion(container);
+    expect(region.textContent).toBe(COPY_OVERRUN);
+  });
+
+  it('emits the restored copy on overrun → live (same path as offline restore)', () => {
+    const { container } = render(<OfflineAriaLiveRegion />);
+
+    act(() => {
+      useUiStore.setState({ connectionState: 'overrun' });
+    });
+    act(() => {
+      useUiStore.setState({ connectionState: 'live', lastReconcileMs: 2 });
+    });
+    const region = getRegion(container);
+    expect(region.textContent).toBe('Connection restored. 2 shapes synced.');
+  });
+
   it('stays silent on intermediate transitions (live → reconnecting → live)', () => {
     const { container } = render(<OfflineAriaLiveRegion />);
 
@@ -131,6 +158,6 @@ describe('<OfflineAriaLiveRegion />', () => {
       useUiStore.setState({ connectionState: 'live' });
     });
     const region = getRegion(container);
-    expect(region.textContent ?? '').toBe('');
+    expect(region.textContent).toBe('');
   });
 });

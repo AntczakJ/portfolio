@@ -1,7 +1,7 @@
 'use client';
 
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { WifiOff } from 'lucide-react';
+import { Gauge, WifiOff } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { useUiStore } from '@/lib/stores/ui-store';
@@ -15,9 +15,16 @@ import { useUiStore } from '@/lib/stores/ui-store';
  *     overlays the canvas without forcing a layout shift; z-index
  *     above the toolbar (`z-30` vs the toolbar's default stack) so
  *     it survives any future side-rail or dialog.
- *   - Copy verbatim per ADR-009:
+ *   - Copy verbatim per ADR-009 (offline):
  *         "Offline — your edits will sync when you reconnect"
- *   - Icon: lucide `WifiOff` at 16 px on the left.
+ *     and per ADR-010 (server `4290` overrun / rate-limit close):
+ *         "Slow down — reconnecting in a moment…"
+ *     The overrun copy reuses this exact banner surface rather than a
+ *     new toast (ADR-010 U1: no `sonner` dependency); an overrun is a
+ *     recoverable, temporary throttle — the same "your edits are safe,
+ *     reconnecting" meaning the offline banner already carries.
+ *   - Icon: lucide `WifiOff` (offline) / `Gauge` (overrun) at 16 px on
+ *     the left.
  *   - Motion: slide-down from `y: -32` to `y: 0` over 240 ms `easeOutCubic`
  *     on entry, slide-up exit over 200 ms. Reduced-motion short-
  *     circuits both to `duration: 0` per the ADR + `docs/conventions.md`
@@ -37,28 +44,33 @@ import { useUiStore } from '@/lib/stores/ui-store';
  * on awareness ticks or shape edits.
  */
 
-const BANNER_COPY = 'Offline — your edits will sync when you reconnect';
+const OFFLINE_COPY = 'Offline — your edits will sync when you reconnect';
+const OVERRUN_COPY = 'Slow down — reconnecting in a moment…';
 
 export function ConnectionBanner(): ReactNode {
   const connectionState = useUiStore((s) => s.connectionState);
   const reduceMotion = useReducedMotion();
 
   const isOffline = connectionState === 'offline';
+  const isOverrun = connectionState === 'overrun';
+  // Both degraded states share the banner surface; the icon + copy
+  // differ. The banner is visible whenever EITHER fires.
+  const isVisible = isOffline || isOverrun;
+  const copy = isOverrun ? OVERRUN_COPY : OFFLINE_COPY;
 
-  // Easings: easeOutCubic on entry, easeInCubic on exit. Picked to
-  // match the slide-in feel of the theme-toggle microinteraction
-  // (`[0.33, 1, 0.68, 1]` from Task 2.3) so the banner feels like
-  // part of the same chrome vocabulary, not a foreign component.
+  // Easing: easeOutCubic on entry. Picked to match the slide-in feel of
+  // the theme-toggle microinteraction (`[0.33, 1, 0.68, 1]` from Task
+  // 2.3) so the banner feels like part of the same chrome vocabulary,
+  // not a foreign component. The element only renders while visible, so
+  // `transition` always resolves to the enter config — Motion applies it
+  // to both the animate-in and the AnimatePresence exit.
   const enterTransition = reduceMotion
     ? { duration: 0 }
     : { duration: 0.24, ease: [0.33, 1, 0.68, 1] as const };
-  const exitTransition = reduceMotion
-    ? { duration: 0 }
-    : { duration: 0.2, ease: [0.32, 0, 0.67, 0] as const };
 
   return (
     <AnimatePresence>
-      {isOffline ? (
+      {isVisible ? (
         <motion.div
           key="connection-banner"
           // Banner element IS the aria-live region for the appearance
@@ -71,7 +83,7 @@ export function ConnectionBanner(): ReactNode {
           initial={reduceMotion ? { y: 0, opacity: 1 } : { y: -32, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={reduceMotion ? { y: 0, opacity: 0 } : { y: -32, opacity: 0 }}
-          transition={isOffline ? enterTransition : exitTransition}
+          transition={enterTransition}
           // Position: absolute pin to the top of the canvas region's
           // bounding box. The host already has `position: relative` on
           // its scroll-clipping div, so absolute positioning is
@@ -81,12 +93,20 @@ export function ConnectionBanner(): ReactNode {
           // below any future dialog (z-50).
           className="absolute inset-x-0 top-0 z-30 flex h-8 items-center justify-center gap-2 border-b border-(--color-warning-border) bg-(--color-warning-surface) px-4 text-xs font-medium text-(--color-warning-foreground)"
         >
-          <WifiOff
-            className="size-4 shrink-0"
-            aria-hidden="true"
-            strokeWidth={2.25}
-          />
-          <span>{BANNER_COPY}</span>
+          {isOverrun ? (
+            <Gauge
+              className="size-4 shrink-0"
+              aria-hidden="true"
+              strokeWidth={2.25}
+            />
+          ) : (
+            <WifiOff
+              className="size-4 shrink-0"
+              aria-hidden="true"
+              strokeWidth={2.25}
+            />
+          )}
+          <span>{copy}</span>
         </motion.div>
       ) : null}
     </AnimatePresence>

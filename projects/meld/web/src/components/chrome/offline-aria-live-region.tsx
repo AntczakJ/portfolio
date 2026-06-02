@@ -27,6 +27,14 @@ import { useUiStore } from '@/lib/stores/ui-store';
  *      announcement:
  *        "Connection restored."
  *
+ *   4. `* → overrun` (ADR-010 server `4290` rate-limit close) —
+ *      assertive announcement:
+ *        "Connection paused — you're editing too fast. Reconnecting
+ *         shortly. Your work is saved."
+ *      The overrun → live restore re-uses the same `buildRestoredCopy`
+ *      path as the offline restore (case 2/3), so a synced delta is
+ *      announced identically.
+ *
  * Reduced-motion is IRRELEVANT to this component — the aria-live
  * announcement is content, not motion, per ADR-009. We always emit.
  *
@@ -42,6 +50,8 @@ import { useUiStore } from '@/lib/stores/ui-store';
 
 const COPY_OFFLINE =
   'Offline. Your edits are saved locally and will sync when the connection returns.';
+const COPY_OVERRUN =
+  "Connection paused — you're editing too fast. Reconnecting shortly. Your work is saved.";
 const COPY_RESTORED_NO_DELTA = 'Connection restored.';
 
 function buildRestoredCopy(incomingShapeCount: number): string {
@@ -71,12 +81,21 @@ export function OfflineAriaLiveRegion(): ReactNode {
       return;
     }
 
-    // Coming back live from offline — three sub-cases all reduce to
-    // `buildRestoredCopy(N)`:
+    // Entering overrun (ADR-010 server `4290`) — its own assertive copy.
+    if (connectionState === 'overrun') {
+      setMessage(COPY_OVERRUN);
+      return;
+    }
+
+    // Coming back live from a degraded state (offline OR overrun) —
+    // three sub-cases all reduce to `buildRestoredCopy(N)`:
     //   - N >  1 → "Connection restored. N shapes synced."
     //   - N === 1 → "Connection restored. 1 shape synced."
     //   - N === 0 → "Connection restored."
-    if (previousState === 'offline' && connectionState === 'live') {
+    if (
+      (previousState === 'offline' || previousState === 'overrun') &&
+      connectionState === 'live'
+    ) {
       const count = lastReconcileMs ?? 0;
       setMessage(buildRestoredCopy(count));
       return;

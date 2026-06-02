@@ -1,4 +1,5 @@
 import { cleanup, render, screen } from '@testing-library/react';
+import type * as MotionReact from 'motion/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ConnectionBanner } from '../connection-banner';
@@ -27,19 +28,20 @@ import { useUiStore } from '@/lib/stores/ui-store';
  */
 
 const BANNER_COPY = 'Offline — your edits will sync when you reconnect';
+const OVERRUN_COPY = 'Slow down — reconnecting in a moment…';
 
 function resetUiStore(): void {
   useUiStore.setState({
     connectionState: 'live',
     lastReconcileMs: null,
+    overrunRetryMs: null,
   });
 }
 
 // Mock `useReducedMotion` to `false` by default — jsdom does not fully
 // implement matchMedia in a way Motion's reduced-motion hook trusts.
 vi.mock('motion/react', async () => {
-  const actual =
-    await vi.importActual<typeof import('motion/react')>('motion/react');
+  const actual = await vi.importActual<typeof MotionReact>('motion/react');
   return {
     ...actual,
     useReducedMotion: vi.fn(() => false),
@@ -73,7 +75,7 @@ describe('<ConnectionBanner />', () => {
     useUiStore.setState({ connectionState: 'offline' });
     render(<ConnectionBanner />);
     const status = screen.getByRole('status');
-    expect(status.textContent ?? '').toContain(BANNER_COPY);
+    expect(status.textContent).toContain(BANNER_COPY);
   });
 
   it('exposes role="status" + aria-live="polite" on the banner', () => {
@@ -106,5 +108,25 @@ describe('<ConnectionBanner />', () => {
     expect(status.className).toContain('bg-(--color-warning-surface)');
     expect(status.className).toContain('border-(--color-warning-border)');
     expect(status.className).toContain('text-(--color-warning-foreground)');
+  });
+
+  // ADR-010 — the overrun (`4290`) state reuses this banner surface.
+  it('renders the overrun copy when connectionState is "overrun"', () => {
+    useUiStore.setState({ connectionState: 'overrun' });
+    render(<ConnectionBanner />);
+    const status = screen.getByRole('status');
+    expect(status.textContent).toContain(OVERRUN_COPY);
+    // It must NOT show the offline copy.
+    expect(status.textContent).not.toContain(BANNER_COPY);
+  });
+
+  it('renders the lucide Gauge icon (not WifiOff) in the overrun state', () => {
+    useUiStore.setState({ connectionState: 'overrun' });
+    const { container } = render(<ConnectionBanner />);
+    const icon = container.querySelector('svg');
+    expect(icon).not.toBeNull();
+    const cls = (icon?.getAttribute('class') ?? '').toLowerCase();
+    expect(cls).toContain('gauge');
+    expect(cls).not.toContain('wifi-off');
   });
 });

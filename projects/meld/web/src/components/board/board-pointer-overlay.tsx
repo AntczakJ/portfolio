@@ -3,17 +3,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import type { Awareness } from 'y-protocols/awareness';
-import * as Y from 'yjs';
+import type * as Y from 'yjs';
 
+import { paintPreviewFreehand } from '@/lib/canvas/painters/freehand-preview';
+import { FreehandDraft } from '@/lib/canvas/freehand-draft';
 import { colorSlotFor } from '@/lib/identity/fnv1a';
 import type { ToolKind } from '@/lib/shapes/kinds';
 import {
-  appendFreehandPoint,
   createShape,
   DEFAULT_TEXT_FONT_SIZE,
-  type FreehandPoint,
   SHAPES_ROOT_KEY,
 } from '@/lib/shapes/types';
+import { OpRateGuard, nowMs } from '@/lib/yjs/op-rate-guard';
 import { useToolStore } from '@/lib/stores/tool-store';
 import { useWelcomeStore } from '@/lib/stores/welcome-store';
 
@@ -44,12 +45,22 @@ import { useWelcomeStore } from '@/lib/stores/welcome-store';
  *                      the preview, pointerup commits to the root
  *                      shapes Y.Map inside one `doc.transact`.
  *   - `'ellipse'`    — same as rectangle, different preview render.
- *   - `'freehand'`   — pointerdown inserts a fresh `Y.Map` with an
- *                      empty `Y.Array<FreehandPoint>` into the root
- *                      map (inside `doc.transact`), pointermove
- *                      appends points (throttled to ~60 Hz via a
- *                      lastAppendMs check; the engine's rAF loop
- *                      paints them out of the Yjs observer fire).
+ *   - `'freehand'`   — ADR-010 (option F2). pointerdown starts an
+ *                      in-memory `FreehandDraft` (NO Yjs write);
+ *                      pointermove samples the pointer into the draft
+ *                      (decimated — min-distance 2 px OR 16 ms gate,
+ *                      2000-point ceiling) and repaints the stroke-
+ *                      so-far on the preview canvas for instant LOCAL
+ *                      feedback; pointerup commits the WHOLE stroke as
+ *                      ONE shape — `createShape({ kind: 'freehand',
+ *                      initialPoints: <full draft list> })` + a single
+ *                      root `set` inside one `doc.transact`. No
+ *                      per-point Yjs writes — the wire sees one op per
+ *                      stroke, not ~60/sec. Remote tabs see the
+ *                      completed stroke on release (the DoS-aligned
+ *                      trade ADR-010 accepts for v1). The engine's
+ *                      shallow `Y.Map.observe` catches the single root
+ *                      insert — NO `observeDeep`.
  *   - `'text'`       — pointerdown drops a DOM `<input type="text">`
  *                      anchored at the click point, auto-focused.
  *                      Enter / blur commits to a new text shape;
@@ -111,13 +122,17 @@ interface RectDraft {
   endY: number;
 }
 
-interface FreehandDraft {
+/**
+ * The active freehand stroke draft (ADR-010 F2). Wraps the in-memory
+ * `FreehandDraft` accumulator — NO Yjs shapeMap is created until the
+ * single commit on pointerup. `colorSlot` is snapshotted at pointerdown
+ * for the live preview color; the commit re-resolves identity so a
+ * welcome frame landing mid-stroke colours the committed shape.
+ */
+interface FreehandDraftState {
   kind: 'freehand';
-  shapeId: string;
-  shapeMap: Y.Map<unknown>;
-  baseX: number;
-  baseY: number;
-  lastAppendMs: number;
+  draft: FreehandDraft;
+  colorSlot: number;
 }
 
 interface TextDraft {
@@ -126,9 +141,8 @@ interface TextDraft {
   y: number;
 }
 
-type ActiveDraft = RectDraft | FreehandDraft | null;
+type ActiveDraft = RectDraft | FreehandDraftState | null;
 
-const FREEHAND_APPEND_INTERVAL_MS = 16;
 /** Minimum on-canvas pixels before a rect / ellipse commit is allowed. */
 const MIN_RECT_DIMENSION = 4;
 
@@ -146,6 +160,43 @@ export function BoardPointerOverlay({
 
   const draftRef = useRef<ActiveDraft>(null);
   const [textDraft, setTextDraft] = useState<TextDraft | null>(null);
+
+  // ADR-010 §3 — client op-rate guard. A token bucket on Yjs op COMMITS
+  // (one `doc.transact` = one op). Applied at the commit boundary, NOT
+  // per-shape, so a 50-shape paste in one transact counts as one op and
+  // is never throttled. Calibrated under the server `maxRate: 100`
+  // (CLIENT_OP_RATE_CEILING = 40 / CLIENT_OP_BURST_ALLOWANCE = 20) so a
+  // runaway client self-limits before earning a `4290`. Lazily created
+  // so the clock seed is the first commit's `nowMs()`.
+  const opGuardRef = useRef<OpRateGuard | null>(null);
+
+  // Guarded commit boundary. Every Yjs write the overlay makes flows
+  // through here so the op guard + the dev `[meld-ops]` counter see one
+  // op per `doc.transact`. When the bucket is empty the commit is
+  // deferred (the per-tool contract means this effectively never fires
+  // for a normal user — it is the runaway-client safety net). The whole
+  // mutation runs inside a single `doc.transact`.
+  const commitOp = useCallback(
+    (mutate: () => void): boolean => {
+      let guard = opGuardRef.current;
+      const t = nowMs();
+      if (guard === null) {
+        guard = new OpRateGuard(t);
+        opGuardRef.current = guard;
+      }
+      const decision = guard.tryConsume(t);
+      if (!decision.allowed) {
+        // Bucket empty — defer this commit to stay under the server
+        // limit. The local preview already gave the user feedback; the
+        // dropped commit is the graceful-degradation path for a runaway
+        // client, not a normal-use path.
+        return false;
+      }
+      doc.transact(mutate);
+      return true;
+    },
+    [doc],
+  );
 
   // Cursor-write throttle. We snapshot `performance.now()` at every
   // write; a write fires only if `now - lastCursorWriteMs >= 30 ms`.
@@ -235,7 +286,7 @@ export function BoardPointerOverlay({
     // discipline does not apply at pointer cadence.
     const fill = window
       .getComputedStyle(document.documentElement)
-      .getPropertyValue(`--color-awareness-${colorSlot}`)
+      .getPropertyValue(`--color-awareness-${String(colorSlot)}`)
       .trim();
     if (fill === '') return;
 
@@ -261,6 +312,33 @@ export function BoardPointerOverlay({
     }
     ctx.setLineDash([]);
   }, []);
+
+  // ADR-010 F2 — paint the in-progress freehand stroke onto the preview
+  // canvas every pointermove. Same preview-canvas + same per-frame
+  // `getComputedStyle` colour resolution as `paintPreviewRect`; the
+  // polyline geometry is delegated to `paintPreviewFreehand` which
+  // mirrors the committed-shape painter (`painters/shapes.ts`) so the
+  // live stroke is visually identical to the shape that lands on commit.
+  const paintFreehandPreview = useCallback(
+    (draft: FreehandDraft, colorSlot: number): void => {
+      const previewCanvas = previewCanvasRef.current;
+      if (previewCanvas === null) return;
+      const ctx = previewCanvas.getContext('2d');
+      if (ctx === null) return;
+      const overlay = overlayRef.current;
+      if (overlay === null) return;
+      const rect = overlay.getBoundingClientRect();
+
+      const color = window
+        .getComputedStyle(document.documentElement)
+        .getPropertyValue(`--color-awareness-${String(colorSlot)}`)
+        .trim();
+      if (color === '') return;
+
+      paintPreviewFreehand(ctx, rect.width, rect.height, draft, color);
+    },
+    [],
+  );
 
   /* ---------------------------------------------------------- *\
      Pointer event handlers
@@ -291,12 +369,11 @@ export function BoardPointerOverlay({
   const writeCursor = useCallback(
     (x: number, y: number): void => {
       if (awareness === null) return;
-      const nowMs =
-        typeof performance !== 'undefined' ? performance.now() : Date.now();
-      if (nowMs - lastCursorWriteMsRef.current < CURSOR_WRITE_THROTTLE_MS) {
+      const t = nowMs();
+      if (t - lastCursorWriteMsRef.current < CURSOR_WRITE_THROTTLE_MS) {
         return;
       }
-      lastCursorWriteMsRef.current = nowMs;
+      lastCursorWriteMsRef.current = t;
       awareness.setLocalStateField('cursor', { x, y });
       cursorReportedRef.current = true;
     },
@@ -342,7 +419,7 @@ export function BoardPointerOverlay({
       // the canvas region, etc.).
       event.currentTarget.setPointerCapture(event.pointerId);
 
-      const { sessionId, colorSlot } = resolveIdentity();
+      const { colorSlot } = resolveIdentity();
 
       if (tool === 'rectangle' || tool === 'ellipse') {
         draftRef.current = {
@@ -357,41 +434,27 @@ export function BoardPointerOverlay({
       }
 
       if (tool === 'freehand') {
-        // Build the shape immediately so remote tabs see the stroke
-        // grow live. The single `doc.transact` boundary collapses the
-        // insert into one update frame for awareness peers.
-        const initialPoint: FreehandPoint = { x: 0, y: 0 };
-        const { id: shapeId, map: shapeMap } = createShape({
-          kind: 'freehand',
+        // ADR-010 F2 — start an IN-MEMORY draft. NO Yjs write on
+        // pointerdown: the shape is built and committed once on
+        // pointerup. The preview canvas gives the live local feedback.
+        const draft = new FreehandDraft({
           x: point.x,
           y: point.y,
-          initialPoints: [initialPoint],
-          colorSlot,
-          sessionId,
+          tMs: nowMs(),
         });
-        doc.transact(() => {
-          doc.getMap(SHAPES_ROOT_KEY).set(shapeId, shapeMap);
-        });
-        draftRef.current = {
-          kind: 'freehand',
-          shapeId,
-          shapeMap,
-          baseX: point.x,
-          baseY: point.y,
-          lastAppendMs: performance.now(),
-        };
+        draftRef.current = { kind: 'freehand', draft, colorSlot };
+        clearPreview();
+        paintFreehandPreview(draft, colorSlot);
         return;
       }
 
-      if (tool === 'text') {
-        // Drop a DOM input at the click point; the actual text shape
-        // is created only on commit. Cancel-on-Escape keeps an empty
-        // text shape from materialising on remote tabs.
-        setTextDraft({ kind: 'text', x: point.x, y: point.y });
-        return;
-      }
+      // Only `'text'` remains (select / rectangle / ellipse / freehand
+      // each returned above). Drop a DOM input at the click point; the
+      // actual text shape is created only on commit. Cancel-on-Escape
+      // keeps an empty text shape from materialising on remote tabs.
+      setTextDraft({ kind: 'text', x: point.x, y: point.y });
     },
-    [tool, localPoint, doc, clearPreview, resolveIdentity],
+    [tool, localPoint, clearPreview, resolveIdentity, paintFreehandPreview],
   );
 
   const handlePointerMove = useCallback(
@@ -405,30 +468,39 @@ export function BoardPointerOverlay({
 
       const draft = draftRef.current;
       if (draft === null) return;
-      const { sessionId, colorSlot } = resolveIdentity();
 
-      if (draft.kind === 'rectangle' || draft.kind === 'ellipse') {
-        draft.endX = point.x;
-        draft.endY = point.y;
-        paintPreviewRect(draft, colorSlot);
-        return;
-      }
-
-      if (draft.kind === 'freehand') {
-        const nowMs = performance.now();
-        if (nowMs - draft.lastAppendMs < FREEHAND_APPEND_INTERVAL_MS) return;
-        draft.lastAppendMs = nowMs;
-        const nextPoint: FreehandPoint = {
-          x: point.x - draft.baseX,
-          y: point.y - draft.baseY,
-        };
-        doc.transact(() => {
-          appendFreehandPoint(draft.shapeMap, nextPoint, sessionId);
-        });
-        return;
+      // Switch on the draft discriminant so each branch narrows cleanly
+      // (a plain `if (kind === 'freehand')` after the rect/ellipse return
+      // is a no-op guard the type-checker proves redundant, yet TS does
+      // not collapse the union without it — the switch gives both the
+      // narrowing AND a lint-clean exhaustive shape).
+      switch (draft.kind) {
+        case 'rectangle':
+        case 'ellipse': {
+          const { colorSlot } = resolveIdentity();
+          draft.endX = point.x;
+          draft.endY = point.y;
+          paintPreviewRect(draft, colorSlot);
+          return;
+        }
+        case 'freehand': {
+          // ADR-010 F2 — sample into the in-memory draft (decimated by
+          // min-distance / time gate inside `FreehandDraft.push`) and
+          // repaint the stroke-so-far on the preview canvas. NO Yjs write
+          // here — the whole stroke commits once on pointerup.
+          const admitted = draft.draft.push({
+            x: point.x,
+            y: point.y,
+            tMs: nowMs(),
+          });
+          if (admitted) {
+            paintFreehandPreview(draft.draft, draft.colorSlot);
+          }
+          return;
+        }
       }
     },
-    [doc, localPoint, paintPreviewRect, resolveIdentity, writeCursor],
+    [localPoint, paintPreviewRect, paintFreehandPreview, resolveIdentity, writeCursor],
   );
 
   const handlePointerLeave = useCallback(
@@ -484,36 +556,54 @@ export function BoardPointerOverlay({
           colorSlot,
           sessionId,
         });
-        doc.transact(() => {
+        // ONE op through the rate-guarded commit boundary (ADR-010 §3).
+        commitOp(() => {
           doc.getMap(SHAPES_ROOT_KEY).set(shapeId, shapeMap);
         });
         return;
       }
 
       if (draft.kind === 'freehand') {
-        // Final append (in case the last `pointermove` was throttled
-        // out by the 16 ms gate). Skip if pointer left the overlay
-        // (`point === null`).
-        if (point !== null) {
-          const last: FreehandPoint = {
-            x: point.x - draft.baseX,
-            y: point.y - draft.baseY,
-          };
-          doc.transact(() => {
-            appendFreehandPoint(draft.shapeMap, last, sessionId);
-          });
-        }
+        // ADR-010 F2 — commit the WHOLE stroke as ONE shape. Finalize
+        // the draft with the pointerup point (always kept), build the
+        // shape from the full decimated point list, and insert it once.
+        // The engine's shallow root `observe` fires on this single root
+        // `set` and repaints the finished stroke. Drop the preview.
+        const finalPoint = point ?? {
+          x: draft.draft.baseX,
+          y: draft.draft.baseY,
+        };
+        const initialPoints = draft.draft.finalize(finalPoint);
+        clearPreview();
         draftRef.current = null;
+        // A degenerate stroke (the draft only ever held the single
+        // origin point and the pointerup coincided) still commits as a
+        // one-point dot — the painter renders it. No minimum-length gate
+        // for freehand (a deliberate tap IS a dot).
+        const { id: shapeId, map: shapeMap } = createShape({
+          kind: 'freehand',
+          x: draft.draft.baseX,
+          y: draft.draft.baseY,
+          initialPoints,
+          colorSlot,
+          sessionId,
+        });
+        commitOp(() => {
+          doc.getMap(SHAPES_ROOT_KEY).set(shapeId, shapeMap);
+        });
         return;
       }
     },
-    [doc, clearPreview, localPoint, resolveIdentity],
+    [doc, clearPreview, localPoint, resolveIdentity, commitOp],
   );
 
   // If the pointer is cancelled (page hidden, OS-level interruption),
-  // discard the draft. For rect / ellipse this drops the preview; for
-  // freehand the partial stroke stays committed (Yjs has no rollback
-  // and the user's intent up to the cancel is "I drew this much").
+  // discard the draft entirely — including the preview. Under ADR-010
+  // F2 nothing is committed to Yjs during the drag (freehand points
+  // live only in the in-memory draft until pointerup), so a cancel
+  // cleanly drops the whole in-progress stroke with no Yjs rollback
+  // needed. The user simply starts over — the correct intent for an OS
+  // interruption mid-gesture.
   const handlePointerCancel = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>): void => {
       const draft = draftRef.current;
@@ -521,9 +611,7 @@ export function BoardPointerOverlay({
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
       if (draft === null) return;
-      if (draft.kind === 'rectangle' || draft.kind === 'ellipse') {
-        clearPreview();
-      }
+      clearPreview();
       draftRef.current = null;
     },
     [clearPreview],
@@ -550,7 +638,8 @@ export function BoardPointerOverlay({
         colorSlot,
         sessionId,
       });
-      doc.transact(() => {
+      // ONE op through the rate-guarded commit boundary (ADR-010 §3).
+      commitOp(() => {
         doc.getMap(SHAPES_ROOT_KEY).set(shapeId, shapeMap);
       });
       // Revert to select after committing a text shape — same
@@ -558,7 +647,7 @@ export function BoardPointerOverlay({
       // another text input.
       setTool('select');
     },
-    [doc, textDraft, resolveIdentity, setTool],
+    [doc, textDraft, resolveIdentity, setTool, commitOp],
   );
 
   const cancelTextDraft = useCallback((): void => {

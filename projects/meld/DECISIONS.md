@@ -1170,6 +1170,106 @@ The remote-cursor unfreeze is **free** from ADR-008: the cursor engine's `setRem
 
 ---
 
+## ADR-010: Client-side DoS prevention + the per-tool drawing-commit contract
+
+**Status:** accepted
+**Date:** 2026-06-02
+
+### Context
+
+ADR-002 (Hocuspocus adoption) pinned the SERVER-side backpressure boundary: `maxRate` messages/sec/client, `maxMessageSize` 1 MB, `timeout` 30 s, and a forced close with code `4290` (the tape ADR-006 pattern) when a client exceeds the rate. ADR-004 defined the `control.overrun` payload (`reason`, `closeCode: 4290`, `retryAfterMs`) emitted immediately before that close, and ADR-011 moved its transport onto Hocuspocus Stateless (the client now receives it through the `onStateless` → `handleStatelessControlMessage` → `onUnknownControlFrame` route, currently a dev-only warn).
+
+What was never ratified is the CLIENT side of that contract: **how the drawing tools commit Yjs operations so a normal user never trips `maxRate` in the first place, and what the user sees if `4290` ever fires anyway.** ADR-008 established the engine's paint discipline (subscribe-once shallow `Y.Map.observe` on the shapes root + boolean dirty flag + rAF loop) and the per-tool preview-canvas pattern, but it deferred the commit cadence to Phase 3.2. The Phase 3.2 implementation shipped a freehand path that is both broken AND adversarial to the server limit, which forces this ADR now.
+
+**The owner-reported freehand bug (root cause, already traced in code).** The pen/freehand tool does not render the stroke while drawing — the line appears only when the button is released. Trace:
+
+- `web/src/components/board/board-pointer-overlay.tsx` `handlePointerDown` (freehand branch, ~lines 359–384) inserts the shape on pointerdown via a ROOT write — `doc.getMap(SHAPES_ROOT_KEY).set(shapeId, shapeMap)` inside `doc.transact`. Then `handlePointerMove` (~lines 417–429) appends each point on every pointermove (throttled to a 16 ms gate, `FREEHAND_APPEND_INTERVAL_MS`) via `appendFreehandPoint(draft.shapeMap, ...)` inside `doc.transact` — a write into the shape's NESTED `Y.Array<FreehandPoint>` structure (`web/src/lib/shapes/types.ts:361`, `points.push([point])`).
+- The engine observes the shapes root with the SHALLOW `Y.Map.observe`, NOT `observeDeep` (`web/src/lib/canvas/engine.ts:363`, `this.#shapesMap.observe(shapeObserver)`). A nested point append does not mutate a ROOT key, so the shallow observer never fires, `#shapeDirty` never flips, and the shape layer is never repainted while the stroke grows. The stroke becomes visible only when some LATER root-level change flips the flag (e.g. the next pointerdown insert).
+
+So the current "write points to Yjs live" approach is doubly wrong: it produces no live repaint (locally OR remotely), and it is exactly the ~60-ops-per-second-on-the-wire pattern this ADR exists to suppress — a single sustained freehand stroke is the most likely way a NORMAL user would otherwise approach `maxRate`. Fixing the bug and removing the DoS vector are the SAME change.
+
+### Options considered
+
+**Freehand commit model (resolve the bug + the wire-spam together):**
+
+- **F1. Keep live nested Yjs appends; fix the repaint by switching the engine to `observeDeep`.** Makes the stroke grow live locally and remotely. REJECTED: it ratifies the ~60-ops/sec-on-the-wire pattern as the steady state for the single most common drawing gesture, drives straight at `maxRate`, and `observeDeep` fires the engine dirty flag on EVERY nested mutation of EVERY shape (text edits, future drag/resize) — re-coupling paint cost to mutation depth and undoing ADR-008's "one boolean flip per root change" discipline. Wrong on both the DoS axis and the paint-budget axis.
+- **F2. Live LOCAL preview into the in-memory draft (no Yjs writes during the drag); commit the whole stroke as ONE Yjs op on pointerup.** During the drag, accumulate points in the in-memory `FreehandDraft` and render them on the dedicated preview canvas (the SAME preview canvas rect/ellipse already use, ADR-008). On pointerup, build the shape with its full point list and insert it once — `doc.getMap(SHAPES_ROOT_KEY).set(shapeId, fullShapeMap)` inside a single `doc.transact`. Local feedback is instant (preview canvas, no Yjs round-trip); the wire sees ONE op per stroke, not ~60/sec; the engine's shallow `observe` fires exactly once (the root insert) and repaints the completed stroke. Fixes the bug AND removes the DoS vector in one move. Cost: remote tabs see the stroke appear whole on release, not growing live. PICKED.
+- **F3. Throttled live-remote stroke growth — batch nested appends to ~5–10 Hz, engine uses `observeDeep`.** A middle path: the stroke grows on remote tabs at a coarse cadence. REJECTED for v1 (deferred to v1.1/v2): it still needs `observeDeep` (paint-budget regression) AND still puts a sustained op stream on the wire (5–10 ops/sec × N concurrent drawers), eating into the `maxRate` headroom this ADR is protecting. The bandwidth/headroom cost is documented as the explicit deferred option so v1.1 can revisit if "watch them draw live" becomes a wow-moment requirement.
+
+**Overrun (`4290`) user-visible behaviour:**
+
+- **U1. Reuse the existing ADR-009 connection-banner chrome surface; no new dependency.** The board already ships `<ConnectionBanner />` + `<OfflineAriaLiveRegion />` (ADR-009) driven by the `ui-store` `connectionState` slot (`'live' | 'reconnecting' | 'offline'`). An overrun is a recoverable, temporary throttle — semantically a transient disconnect with a retry hint — so it routes through the same banner vocabulary with overrun-specific copy + the `retryAfterMs` hint, and the same `aria-live` announcement. PICKED.
+- **U2. Add a shadcn/sonner toast.** meld has NO toast library installed (`sonner` / `@radix-ui/react-toast` absent — verified). Adding one for a rare, recoverable event introduces a new dependency + a new chrome vocabulary that competes with the banner the project already uses for connection state. REJECTED: the banner is the established surface for "connection is degraded, your edits are safe", which is exactly the overrun's meaning.
+
+**Burst vs abuse boundary (client-side cooldown ahead of the server limit):**
+
+- **B1. No client guard; rely solely on the server `maxRate`.** REJECTED: a client-side bug or a future high-frequency tool could spam the wire and earn a `4290` close that the user experiences as a disconnect — a bad portfolio look. A client cooldown calibrated UNDER the server ceiling means a well-behaved client never reaches `4290` even under a runaway-loop bug.
+- **B2. A client-side op-emission guard with a token-bucket-style burst allowance, ceilinged safely below the server `maxRate`.** PICKED — numbers below.
+
+### Decision
+
+#### 1. Per-tool commit contract
+
+The canonical rule for every tool: **render in-progress feedback on the LOCAL preview canvas from the in-memory draft; commit to Yjs exactly ONCE, at the natural end of the gesture, inside a single `doc.transact`.** No tool writes to Yjs on pointermove / keystroke cadence.
+
+- **freehand / pen (F2 — fixes the owner bug).** On pointerdown, start an in-memory `FreehandDraft` (points accumulate in component memory, NOT in Yjs — the `shapeMap` is no longer created or inserted on pointerdown). On pointermove, push the sampled point into the draft and repaint the stroke-so-far on the preview canvas (the same preview canvas rect/ellipse use), giving instant local feedback. On pointerup, call `createShape({ kind: 'freehand', initialPoints: <full draft point list>, ... })` and insert it ONCE — `doc.getMap(SHAPES_ROOT_KEY).set(shapeId, shapeMap)` inside one `doc.transact`. The engine's shallow root `observe` fires once on that insert and repaints the finished stroke. **Consequence (accepted for v1):** remote tabs see the completed stroke on release as a single op, not growing live — the correct DoS-aligned trade (one op/stroke instead of ~60/sec). **Deferred (v1.1/v2):** "throttled live-remote stroke growth" (F3 — batched ~5–10 Hz nested append with `observeDeep`), explicitly noting its bandwidth + `maxRate`-headroom cost; not done in v1.
+  - **Point decimation policy (bounds the point array).** While sampling into the draft, admit a new point only if it is at least `FREEHAND_MIN_POINT_DISTANCE_PX = 2` CSS px from the last admitted point OR at least `FREEHAND_MIN_POINT_INTERVAL_MS = 16` ms have elapsed since the last admitted sample (min-distance gate primary, time gate as the fallback so a slow deliberate drag still records). This keeps a long stroke from becoming an unbounded point array (and keeps the single commit op small). A hard ceiling `FREEHAND_MAX_POINTS = 2000` caps a pathological stroke; on overflow the draft drops the oldest-to-newest sampling rate further (admit every Nth sample) rather than refusing to draw. These constants live beside the existing `FREEHAND_APPEND_INTERVAL_MS` in the overlay.
+- **rectangle / ellipse (canonical pattern — confirmed, unchanged).** Already preview-on-drag + single commit on pointerup (`handlePointerUp`, ~lines 470–491). This IS the canonical pattern the other tools conform to. Pinned as-is.
+- **shape drag / move / resize (contract for when selection lands, Phase 3.2b).** When a shape is dragged or resized, paint the moved/resized ghost on the preview canvas (or via the React-DOM selection chrome) during the gesture and commit ONE op on drag-END / resize-END (`doc.transact` once), NOT per pointermove. Same rule as the create tools. Stated here so Phase 3.2b implements it against this contract from day one.
+- **text (confirmed, unchanged).** Commits on Enter / blur (`commitTextDraft`, ~lines 536–562), NOT per keystroke. The DOM `<input>` is the live local feedback; the Yjs write is a single op on commit. Pinned as-is.
+
+#### 2. User-visible behaviour on server `4290` close (U1)
+
+The client already receives `control.overrun` (`{ reason, closeCode: 4290, retryAfterMs }`) over Stateless (ADR-011), routed through `handleStatelessControlMessage` → `onUnknownControlFrame`. ADR-010 directs that route to a real overrun handler (replacing the dev-only warn for this kind) that:
+
+1. Sets the `ui-store` `connectionState` to a transient throttled state surfaced through the EXISTING `<ConnectionBanner />` chrome — overrun-specific copy ("Slow down — reconnecting in a moment…", reinforced by the `retryAfterMs` hint) and the existing `aria-live` announcement via `<OfflineAriaLiveRegion />`. No new toast dependency.
+2. Lets the `HocuspocusProvider` go through its disconnect (the server has already closed with `4290`), and schedules a reconnect after `retryAfterMs` (multiplied by the provider's own backoff curve to avoid a reconnect storm if many connections hit `4290` at once — ADR-004's `retryAfterMs` intent). On reconnect the banner clears and `connectionState` returns to `'live'`.
+3. Keeps it CALM and RECOVERABLE: local edits live in the `Y.Doc` throughout and sync on reconnect (the ADR-009 offline guarantee — overrun is just a server-initiated variant of the same temporary-disconnect story). The user loses nothing.
+
+#### 3. Legitimate burst vs abuse boundary (B2 — the numbers)
+
+The server ceiling is `maxRate: 100` msgs/sec/client (ADR-002). The client guard sits well under it:
+
+- **A `doc.transact` is ONE op on the wire regardless of how many shapes it mutates.** A 50-shape paste wrapped in one `doc.transact` is ONE message — legitimate, never throttled. The contract is "batch related mutations into one transaction", which the per-tool contract above already enforces (one transact per gesture).
+- **Client-side op-emission guard:** a token-bucket with `CLIENT_OP_RATE_CEILING = 40` ops/sec sustained (40% of the server's 100/sec — comfortable headroom for awareness coalescing + sync deltas already on the wire) and `CLIENT_OP_BURST_ALLOWANCE = 20` ops (absorbs a legitimate burst — a multi-shape paste, a rapid sequence of single-shape commits — without throttling). When the bucket empties, the client applies a short cooldown (coalesces / briefly defers further commits) BEFORE the server's `maxRate` would fire, so a runaway client self-limits rather than earning a `4290`. These constants are calibrated to sit safely under `maxRate` with margin for the non-shape traffic (awareness, sync) that shares the same per-client rate budget.
+- The guard is defensive (a normal user with the per-tool contract above emits ~1 op/gesture and never approaches it); its job is to make a CLIENT bug or a future high-frequency tool degrade gracefully instead of disconnecting.
+
+#### 4. Dev-only telemetry
+
+An "ops emitted per second" counter, gated on `process.env.NODE_ENV === 'development'` + Terser DCE — the SAME strip pattern as ADR-008's paint-cost log (`[meld-engine]`) and the dev conflict-viz overlay. A `[meld-ops]` dev console line every ~10 s reports the current commit cadence (ops/sec, burst-bucket level, any cooldowns applied) so the per-tool contract's wire behaviour is observable in dev. Production builds carry no log emit (the counter struct is cheap; the log gating is what strips). Auditable via `grep .next/static/chunks` for `[meld-ops]` returning ZERO matches in a production build, exactly like the existing dev literals.
+
+### Consequences
+
+- **Positive.**
+  - The owner-reported freehand bug is fixed: the stroke renders live and smoothly on the local preview canvas during the drag, and the finished stroke appears on commit. Instant local feedback, zero Yjs round-trip during the gesture.
+  - The single worst client-side wire-spam vector (per-point freehand appends, ~60 ops/sec) is eliminated — freehand now emits ONE op per stroke. A normal user cannot trip `maxRate`.
+  - The engine's shallow `observe` STAYS shallow — no `observeDeep`. Because the live nested writes go away, there is no nested mutation to observe; the root insert on pointerup is a root-key change the existing shallow observer already catches. ADR-008's one-boolean-flip-per-root-change paint discipline is preserved intact. (Call-out for the implementer: do NOT reach for `observeDeep` to "fix" the repaint — removing the live writes is the fix.)
+  - Overrun UX reuses the existing connection-banner + aria-live chrome — no new dependency, one consistent "your edits are safe, reconnecting" vocabulary for both offline (ADR-009) and overrun (ADR-010).
+  - The client op-guard makes a runaway client self-limit gracefully instead of earning a user-visible `4290` disconnect.
+  - Dev ops/sec telemetry makes the commit cadence observable without shipping anything to production (same audited strip as ADR-008).
+
+- **Negative.**
+  - Remote tabs see freehand strokes appear whole on release, not growing live. Accepted for v1 as the DoS-aligned trade; the live-remote-growth option (F3) is deferred with its documented bandwidth cost.
+  - The freehand draft now holds the full point list in component memory until commit — bounded by the decimation policy + the 2000-point ceiling, so the memory is small, but it is a new in-memory accumulation the previous Yjs-live approach did not have.
+  - The client op-guard is a second rate-limit surface (after the server's) — two places that must stay calibrated relative to each other. Mitigated by deriving the client ceiling as an explicit fraction of the server `maxRate` constant and documenting the relationship in code so a future `maxRate` change prompts a guard recalibration.
+
+- **Follow-up tasks.**
+  - **Task 3.X-commit-contract — `frontend-engineer` (queued against this ADR):** implement the per-tool commit contract. (a) Freehand: replace the pointerdown root-insert + pointermove nested-append path with a live-preview-on-drag (accumulate points in the in-memory `FreehandDraft`, render the stroke-so-far on the preview canvas) + a SINGLE commit on pointerup (`createShape({ kind: 'freehand', initialPoints })` → one `doc.getMap(SHAPES_ROOT_KEY).set(...)` inside one `doc.transact`). **REMOVE the pointermove `appendFreehandPoint` live writes and the pointerdown freehand root-insert** in `board-pointer-overlay.tsx`; add the decimation constants (`FREEHAND_MIN_POINT_DISTANCE_PX`, `FREEHAND_MIN_POINT_INTERVAL_MS`, `FREEHAND_MAX_POINTS`). **The engine's shallow `observe` STAYS shallow — do NOT switch to `observeDeep`** (the live nested writes are gone, so there is nothing nested to observe; the pointerup root insert is caught by the existing `Y.Map.observe`). (b) Wire the `control.overrun` handler: route the `onUnknownControlFrame` overrun kind (coordinate with the ADR-011 `handleStatelessControlMessage` handler that already receives it) to set the `ui-store` connection state surfaced through `<ConnectionBanner />` with overrun copy + `retryAfterMs`, and trigger the provider disconnect + reconnect-after-`retryAfterMs` cycle; local edits stay in the `Y.Doc` and sync on reconnect. (c) Add the client-side burst-cooldown guard (token bucket, `CLIENT_OP_RATE_CEILING = 40` ops/sec, `CLIENT_OP_BURST_ALLOWANCE = 20`, calibrated under the server `maxRate: 100`). (d) Add the dev-only `[meld-ops]` ops/sec log (`process.env.NODE_ENV === 'development'` + Terser DCE; `grep .next/static/chunks` for `[meld-ops]` returns ZERO in a prod build). Smoke gate: draw a long freehand stroke — it renders live locally, and a remote tab sees exactly ONE op on release; the dev `[meld-ops]` log shows ~1 op/stroke, not ~60/sec.
+
+### References
+
+- **ADR-002** — server `maxRate: 100` / `timeout` / `4290` backpressure boundary this ADR's client guard sits under.
+- **ADR-004** — `control.overrun` payload (`reason`, `closeCode: 4290`, `retryAfterMs`); the `retryAfterMs` reconnect-backoff intent ADR-010's overrun handler honours.
+- **ADR-008** — engine paint discipline (shallow `Y.Map.observe` + boolean dirty flag + rAF loop), the preview-canvas pattern reused for freehand, and the dev-log Terser-DCE strip pattern the `[meld-ops]` counter mirrors.
+- **ADR-009** — the connection-banner + `aria-live` offline chrome the overrun UX reuses; the "local edits stay in the Y.Doc and sync on reconnect" guarantee extended to the overrun case.
+- **ADR-011** — moved `control.overrun` onto Stateless; ADR-010's overrun handler consumes the `handleStatelessControlMessage` → `onUnknownControlFrame` route that ADR-011's client handler already receives.
+- **`web/src/components/board/board-pointer-overlay.tsx`** — freehand pointerdown root-insert (~359–384) + pointermove nested-append (~417–429) REMOVED by Task 3.X-commit-contract; rect/ellipse single-commit (~470–491) + text commit (~536–562) confirmed canonical.
+- **`web/src/lib/canvas/engine.ts:363`** — the shallow `Y.Map.observe` that STAYS shallow.
+- **`web/src/lib/shapes/types.ts`** — `createShape({ kind: 'freehand', initialPoints })` (the single-commit factory call) + `appendFreehandPoint` (~361, the live-append helper whose call sites are removed).
+- **tape `DECISIONS.md` ADR-006** — the cross-project `4290` backpressure convention the server side adopted (ADR-002) and the client side completes here.
+
+---
+
 ## ADR-011: Move control messages from raw TEXT frames to Hocuspocus Stateless
 
 **Status:** accepted
