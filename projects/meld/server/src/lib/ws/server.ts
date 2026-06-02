@@ -245,14 +245,16 @@ class OriginNotAllowedError extends Error {
  *   - `connected` fires AFTER the framework has built the `Connection`
  *     object, registered it in `documentConnections`, and flushed any
  *     queued incoming messages. The `Connection<Context>` instance is
- *     on `payload.connection` and exposes `connection.webSocket` per
- *     the `WebSocketLike` contract (line 718 of the upstream `.d.ts`).
+ *     on `payload.connection` and exposes `connection.sendStateless`
+ *     (line 779 of the upstream `.d.ts`).
  *
  * The welcome emit picks `payload.connection`, derives identity from
  * `payload.context.sessionId` (Task 1.7b will populate the real value;
  * until then the welcome.ts builder substitutes a stub UUID — see
  * `welcome.ts` for the explicit fallback semantics), and ships the
- * frame via `connection.webSocket.send(JSON.stringify(payload))`.
+ * frame via `connection.sendStateless(JSON.stringify(payload))` per
+ * ADR-011 (was a raw TEXT `webSocket.send` before — the provider
+ * binary-decoded that and threw `Unexpected end of array`).
  */
 function createWelcomeExtension(
   allowedOrigins: readonly string[],

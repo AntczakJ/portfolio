@@ -1,62 +1,62 @@
 /**
- * welcome-cookie-smoke — verifies the Task 1.7b cookie ↔ welcome-frame
- * identity wire end-to-end.
+ * welcome-cookie-smoke — verifies the welcome control message + the Task
+ * 1.7b cookie ↔ welcome identity wire end-to-end over the ADR-011
+ * **Stateless** transport.
  *
- * Three checks, run sequentially against a fresh `pnpm -F meld-server dev`:
+ * This smoke opens a canonical `@hocuspocus/provider` client (the SAME
+ * provider the web app uses) instead of a raw `ws` socket, so it exercises
+ * the real ADR-011 path: the server sends the welcome via
+ * `Connection.sendStateless`, the provider decodes the y-protocol stateless
+ * envelope natively and fires its `onStateless` callback with
+ * `{ payload: string }`. The pre-ADR-011 TEXT-frame path made the provider's
+ * internal binary decoder throw `Unexpected end of array` once per connect;
+ * this smoke asserts that error (and any other) NEVER fires on the client
+ * during connect.
  *
- *   1. **No-cookie connect mints (mintedAt: 'ws-onConnect').** Opens a
- *      WS to `/ws/board/<random-uuid>` WITHOUT a Cookie header, drives
- *      the Hocuspocus Auth handshake, asserts the welcome frame's
- *      `session.id` is a UUID v4, `session.mintedAt === 'ws-onConnect'`.
+ * Four checks, run sequentially against a fresh `meld-server`:
  *
- *   2. **Cookie connect reuses (mintedAt: 'cookie').** Hits
- *      `GET /api/session` to obtain a server-set cookie value, then
- *      reconnects to the same `/ws/board/<id>` WITH the `Cookie:
- *      meld_session=<id>` header attached, asserts the welcome frame's
+ *   1. **Welcome arrives via onStateless + no decode error.** Opens a
+ *      provider to `/ws/board/<random-uuid>` WITHOUT a cookie, waits for
+ *      the `onStateless` callback, parses the payload against the control-
+ *      frame schema, asserts `kind === 'welcome'`. Simultaneously a
+ *      global error trap asserts NO `Unexpected end of array` (or any
+ *      uncaught) error fired during connect.
+ *
+ *   2. **No-cookie connect mints (mintedAt: 'ws-onConnect').** Same connect
+ *      as (1); asserts `session.id` is a UUID v4 and
+ *      `session.mintedAt === 'ws-onConnect'`.
+ *
+ *   3. **Cookie connect reuses (mintedAt: 'cookie').** Hits
+ *      `GET /api/session` for a server-set cookie, reconnects WITH the
+ *      `Cookie: meld_session=<id>` header, asserts the welcome's
  *      `session.id === <id>` AND `session.mintedAt === 'cookie'`.
  *
- *   3. **Two tabs same cookie produce matching session.id.** Opens two
- *      concurrent WS connections to the SAME board with the SAME cookie,
- *      asserts both welcome frames carry the same `session.id` AND that
- *      both connections each receive the welcome frame independently
- *      (the framework assigns a distinct awarenessId per connection — we
- *      do not assert on the awareness id here since the welcome frame
- *      is the load-bearing contract for session identity).
+ *   4. **Two tabs same cookie produce matching session.id.** Opens two
+ *      concurrent providers to the SAME board with the SAME cookie, asserts
+ *      both welcome payloads carry the same `session.id` and both arrive
+ *      over `onStateless`.
  *
- * Hocuspocus 4.1 wire format: the same Auth handshake from `ws-smoke.ts`
- * applies — `varString(documentName) + varUint(MessageType.Auth=2) +
- * varUint(AuthMessageType.Token=0) + varString(token) +
- * varString(providerVersion)`. The framework queues binary frames until
- * Auth completes, so without sending the Auth message the `connected`
- * hook never fires and we never see the welcome frame.
+ * Usage (after a `meld-server` is listening — see the verify section of
+ * the Task 1.X-stateless brief for the local-boot recipe; set PORT +
+ * MELD_ALLOWED_ORIGINS to match):
  *
- * Usage (after `pnpm -F meld-server dev` in another terminal, with
- * DATABASE_URL set so `POST /api/boards` works — though this smoke does
- * NOT call `POST /api/boards`, it uses arbitrary UUID-shaped board ids
- * because the welcome wire shape requires UUID v4 board ids and the
- * Hocuspocus `onConnect` storage extension short-circuits unknown UUIDs
- * to a no-op load per AGENT_NOTES "isPersistableBoardId belt-and-braces"):
- *
- *     pnpm -F meld-server tsx scripts/welcome-cookie-smoke.ts
+ *     PORT=3002 pnpm -F meld-server welcome:smoke
  *
  * Exit code 0 on success, 1 on any failed check.
  */
 import { randomUUID } from 'node:crypto';
 
-import * as encoding from 'lib0/encoding';
-import { WebSocket } from 'ws';
+import { HocuspocusProvider } from '@hocuspocus/provider';
+import * as Y from 'yjs';
+import { WebSocket as WsWebSocket } from 'ws';
 
 import { wsControlFrameSchema } from '../src/lib/schemas/ws/frame';
 
 const PORT = process.env.PORT ?? '3002';
 const HTTP_BASE = `http://127.0.0.1:${PORT}`;
+const WS_BASE = `ws://127.0.0.1:${PORT}`;
 const ORIGIN = 'http://localhost:3000';
-const UPGRADE_TIMEOUT_MS = 2_000;
-const WELCOME_TIMEOUT_MS = 3_000;
-
-const HP_MESSAGE_TYPE_AUTH = 2;
-const HP_AUTH_TOKEN_KIND = 0;
-const PROVIDER_VERSION = 'welcome-cookie-smoke-1.0.0';
+const WELCOME_TIMEOUT_MS = 4_000;
 
 interface CheckResult {
   name: string;
@@ -71,156 +71,123 @@ function record(name: string, ok: boolean, reason: string): void {
   console.log(`[welcome-cookie-smoke] ${ok ? 'PASS' : 'FAIL'} — ${name}: ${reason}`);
 }
 
-function buildAuthMessage(documentName: string, token: string): Uint8Array {
-  const encoder = encoding.createEncoder();
-  encoding.writeVarString(encoder, documentName);
-  encoding.writeVarUint(encoder, HP_MESSAGE_TYPE_AUTH);
-  encoding.writeVarUint(encoder, HP_AUTH_TOKEN_KIND);
-  encoding.writeVarString(encoder, token);
-  encoding.writeVarString(encoder, PROVIDER_VERSION);
-  return encoding.toUint8Array(encoder);
+/**
+ * Global error trap — the load-bearing ADR-011 assertion. The pre-ADR-011
+ * TEXT-frame welcome made the provider's internal lib0 decoder throw
+ * `Unexpected end of array` on the raw 'message' event; under Stateless no
+ * such error should ever fire. We watch BOTH `unhandledRejection` and
+ * `uncaughtException` plus the provider's own message-decode path (whose
+ * throw would surface as an uncaughtException in `ws`'s message listener).
+ */
+const trappedErrors: string[] = [];
+process.on('unhandledRejection', (reason) => {
+  trappedErrors.push(`unhandledRejection: ${String(reason)}`);
+});
+process.on('uncaughtException', (err) => {
+  trappedErrors.push(`uncaughtException: ${String(err)}`);
+});
+
+/**
+ * Build a `ws`-backed `WebSocketPolyfill` bound to a fixed Origin header
+ * and (optionally) a Cookie header. The provider constructs the polyfill
+ * as `new WebSocketPolyfill(url, protocols)`; subclassing lets us inject
+ * the upgrade-request headers the server's Origin allowlist + cookie-read
+ * extension need.
+ */
+function makeWebSocketPolyfill(
+  cookie: string | undefined,
+): typeof WsWebSocket {
+  const headers: Record<string, string> = {};
+  if (cookie !== undefined) headers.cookie = cookie;
+  return class extends WsWebSocket {
+    constructor(address: string | URL, protocols?: string | string[]) {
+      super(address, protocols, { origin: ORIGIN, headers });
+    }
+  } as unknown as typeof WsWebSocket;
 }
 
-interface ConnectResult {
+interface WelcomeResult {
   sessionId: string;
   mintedAt: 'cookie' | 'ws-onConnect';
   emojiName: string;
 }
 
 /**
- * Open a WS, drive the Auth handshake, wait for the welcome TEXT frame,
- * parse + validate it, return the session id + mintedAt. Closes the WS
- * on completion or timeout.
+ * Open a provider, wait for the first `onStateless` welcome payload, parse
+ * + validate it, then destroy the provider. Returns the welcome identity
+ * or null on timeout / non-welcome.
+ *
+ * The `keepOpen` callback (used by the two-tab check) receives the live
+ * provider so both can be alive at once before either is destroyed.
  */
 async function connectAndCaptureWelcome(
   boardId: string,
   cookie: string | undefined,
-): Promise<ConnectResult | null> {
-  const url = `ws://127.0.0.1:${PORT}/ws/board/${boardId}`;
-  const headers: Record<string, string> = {};
-  if (cookie !== undefined) {
-    headers.cookie = cookie;
-  }
-  const ws = new WebSocket(url, { origin: ORIGIN, headers });
-
-  const upgraded = await new Promise<boolean>((resolve) => {
-    const timer = setTimeout(() => resolve(false), UPGRADE_TIMEOUT_MS);
-    ws.once('open', () => {
-      clearTimeout(timer);
-      resolve(true);
-    });
-    ws.once('error', () => {
-      clearTimeout(timer);
-      resolve(false);
-    });
-  });
-
-  if (!upgraded) {
-    return null;
-  }
-
-  ws.send(buildAuthMessage(boardId, ''));
-
-  const welcome = await new Promise<ConnectResult | null>((resolve) => {
+  keepOpen?: (provider: HocuspocusProvider) => void,
+): Promise<WelcomeResult | null> {
+  const doc = new Y.Doc();
+  let settle: (value: WelcomeResult | null) => void = () => undefined;
+  const welcomePromise = new Promise<WelcomeResult | null>((resolve) => {
     const timer = setTimeout(() => resolve(null), WELCOME_TIMEOUT_MS);
-    const onMessage = (data: Buffer, isBinary: boolean): void => {
-      if (isBinary) return;
+    settle = (value) => {
       clearTimeout(timer);
-      ws.off('message', onMessage);
-      try {
-        const json: unknown = JSON.parse(data.toString('utf8'));
-        const frame = wsControlFrameSchema.parse(json);
-        if (frame.kind !== 'welcome') {
-          resolve(null);
-          return;
-        }
-        resolve({
-          sessionId: frame.session.id,
-          mintedAt: frame.session.mintedAt,
-          emojiName: frame.session.emojiName,
-        });
-      } catch {
-        resolve(null);
-      }
+      resolve(value);
     };
-    ws.on('message', onMessage);
   });
 
-  try {
-    ws.close(1000, 'smoke complete');
-  } catch {
-    /* ignore */
+  const provider = new HocuspocusProvider({
+    // Full board path in the URL — `HocuspocusProviderWebsocket` connects
+    // to `configuration.url` verbatim (the document `name` rides inside
+    // the y-protocol Sync message, NOT the URL). Mirrors the web app's
+    // `composeBoardUrl` (`${wsUrl}/ws/board/<id>`).
+    url: `${WS_BASE}/ws/board/${encodeURIComponent(boardId)}`,
+    name: boardId,
+    document: doc,
+    token: null,
+    WebSocketPolyfill: makeWebSocketPolyfill(cookie),
+    onStateless: ({ payload }) => {
+      settle(parseWelcome(payload));
+    },
+  });
+
+  const welcome = await welcomePromise;
+
+  if (keepOpen !== undefined) {
+    keepOpen(provider);
+  } else {
+    try {
+      provider.destroy();
+    } catch {
+      /* ignore */
+    }
+    doc.destroy();
   }
-  await new Promise((r) => setTimeout(r, 100));
   return welcome;
 }
 
 /**
- * Open a WS WITHOUT closing it. Used by the two-tab concurrent test
- * where both connections must be live at the same time so they share
- * the same Hocuspocus room. Returns the welcome result + the WS so the
- * caller can close it.
+ * Parse a stateless payload string against the control-frame schema and
+ * project the welcome identity. Returns null on a parse failure or a
+ * non-welcome kind — both are silent here because the caller treats a
+ * null welcome as the failure.
  */
-async function connectAndKeepOpen(
-  boardId: string,
-  cookie: string,
-): Promise<{ welcome: ConnectResult | null; ws: WebSocket } | null> {
-  const url = `ws://127.0.0.1:${PORT}/ws/board/${boardId}`;
-  const ws = new WebSocket(url, {
-    origin: ORIGIN,
-    headers: { cookie },
-  });
-
-  const upgraded = await new Promise<boolean>((resolve) => {
-    const timer = setTimeout(() => resolve(false), UPGRADE_TIMEOUT_MS);
-    ws.once('open', () => {
-      clearTimeout(timer);
-      resolve(true);
-    });
-    ws.once('error', () => {
-      clearTimeout(timer);
-      resolve(false);
-    });
-  });
-
-  if (!upgraded) {
+function parseWelcome(payload: string): WelcomeResult | null {
+  try {
+    const json: unknown = JSON.parse(payload);
+    const frame = wsControlFrameSchema.parse(json);
+    if (frame.kind !== 'welcome') return null;
+    return {
+      sessionId: frame.session.id,
+      mintedAt: frame.session.mintedAt,
+      emojiName: frame.session.emojiName,
+    };
+  } catch {
     return null;
   }
-
-  ws.send(buildAuthMessage(boardId, ''));
-
-  const welcome = await new Promise<ConnectResult | null>((resolve) => {
-    const timer = setTimeout(() => resolve(null), WELCOME_TIMEOUT_MS);
-    const onMessage = (data: Buffer, isBinary: boolean): void => {
-      if (isBinary) return;
-      clearTimeout(timer);
-      ws.off('message', onMessage);
-      try {
-        const json: unknown = JSON.parse(data.toString('utf8'));
-        const frame = wsControlFrameSchema.parse(json);
-        if (frame.kind !== 'welcome') {
-          resolve(null);
-          return;
-        }
-        resolve({
-          sessionId: frame.session.id,
-          mintedAt: frame.session.mintedAt,
-          emojiName: frame.session.emojiName,
-        });
-      } catch {
-        resolve(null);
-      }
-    };
-    ws.on('message', onMessage);
-  });
-
-  return { welcome, ws };
 }
 
 /**
- * Hit `GET /api/session` and return the Set-Cookie value for the
- * `meld_session` name. The Hono middleware mints + writes the cookie on
- * any cookie-less request.
+ * Hit `GET /api/session` and return the `meld_session` Set-Cookie value.
  */
 async function fetchSessionCookie(): Promise<string | null> {
   const res = await fetch(`${HTTP_BASE}/api/session`);
@@ -236,7 +203,6 @@ async function fetchSessionCookie(): Promise<string | null> {
     console.error('[welcome-cookie-smoke] no Set-Cookie on /api/session');
     return null;
   }
-  // Parse `meld_session=<uuid>; Max-Age=...; ...`
   const match = /meld_session=([^;]+)/.exec(setCookieHeader);
   if (match === null || match[1] === undefined) {
     console.error('[welcome-cookie-smoke] meld_session not in Set-Cookie');
@@ -245,19 +211,50 @@ async function fetchSessionCookie(): Promise<string | null> {
   return match[1];
 }
 
-async function checkNoCookieMints(): Promise<void> {
+async function checkWelcomeOverStateless(): Promise<void> {
   const boardId = randomUUID();
+  const errorsBefore = trappedErrors.length;
   const result = await connectAndCaptureWelcome(boardId, undefined);
-  if (result === null) {
-    record('no-cookie-mints', false, 'no welcome frame');
-    return;
-  }
-  const ok = result.mintedAt === 'ws-onConnect';
-  record(
-    'no-cookie-mints',
-    ok,
-    `mintedAt=${result.mintedAt} sessionId=${result.sessionId} (emoji=${result.emojiName})`,
+  // Give any late error a tick to surface before we read the trap.
+  await new Promise((r) => setTimeout(r, 150));
+  const newErrors = trappedErrors.slice(errorsBefore);
+  const decodeError = newErrors.find((e) =>
+    e.includes('Unexpected end of array'),
   );
+
+  if (result === null) {
+    record('welcome-over-stateless', false, 'no welcome via onStateless');
+  } else if (decodeError !== undefined) {
+    record(
+      'welcome-over-stateless',
+      false,
+      `welcome arrived but decode error fired: ${decodeError}`,
+    );
+  } else if (newErrors.length > 0) {
+    record(
+      'welcome-over-stateless',
+      false,
+      `welcome arrived but ${String(newErrors.length)} error(s) fired: ${newErrors.join('; ')}`,
+    );
+  } else {
+    record(
+      'welcome-over-stateless',
+      true,
+      `welcome via onStateless, kind=welcome, ZERO client errors on connect (emoji=${result.emojiName})`,
+    );
+  }
+
+  // (2) no-cookie mints — same connect, separate assertion.
+  if (result !== null) {
+    const ok = result.mintedAt === 'ws-onConnect';
+    record(
+      'no-cookie-mints',
+      ok,
+      `mintedAt=${result.mintedAt} sessionId=${result.sessionId}`,
+    );
+  } else {
+    record('no-cookie-mints', false, 'no welcome via onStateless');
+  }
 }
 
 async function checkCookieReuses(): Promise<{
@@ -273,11 +270,10 @@ async function checkCookieReuses(): Promise<{
   const boardId = randomUUID();
   const result = await connectAndCaptureWelcome(boardId, cookieHeader);
   if (result === null) {
-    record('cookie-reuses', false, 'no welcome frame');
+    record('cookie-reuses', false, 'no welcome via onStateless');
     return null;
   }
-  const ok =
-    result.mintedAt === 'cookie' && result.sessionId === cookieValue;
+  const ok = result.mintedAt === 'cookie' && result.sessionId === cookieValue;
   record(
     'cookie-reuses',
     ok,
@@ -291,56 +287,45 @@ async function checkTwoTabsSameCookie(
   expectedSessionId: string,
 ): Promise<void> {
   const boardId = randomUUID();
-  // Open both concurrently so they share the live room.
-  const [tabA, tabB] = await Promise.all([
-    connectAndKeepOpen(boardId, cookieHeader),
-    connectAndKeepOpen(boardId, cookieHeader),
+  const openProviders: HocuspocusProvider[] = [];
+  const keep = (provider: HocuspocusProvider): void => {
+    openProviders.push(provider);
+  };
+
+  const [welcomeA, welcomeB] = await Promise.all([
+    connectAndCaptureWelcome(boardId, cookieHeader, keep),
+    connectAndCaptureWelcome(boardId, cookieHeader, keep),
   ]);
-
-  if (tabA === null || tabB === null) {
-    record('two-tabs-same-cookie', false, 'one or both upgrades failed');
-    return;
-  }
-
-  const welcomeA = tabA.welcome;
-  const welcomeB = tabB.welcome;
 
   if (welcomeA === null || welcomeB === null) {
     record('two-tabs-same-cookie', false, 'one or both welcomes missing');
+  } else {
+    const idsMatch = welcomeA.sessionId === welcomeB.sessionId;
+    const matchesExpected = welcomeA.sessionId === expectedSessionId;
+    const bothCookie =
+      welcomeA.mintedAt === 'cookie' && welcomeB.mintedAt === 'cookie';
+    const ok = idsMatch && matchesExpected && bothCookie;
+    record(
+      'two-tabs-same-cookie',
+      ok,
+      `A.id=${welcomeA.sessionId.slice(0, 8)}… B.id=${welcomeB.sessionId.slice(0, 8)}… match=${String(idsMatch)} bothCookie=${String(bothCookie)}`,
+    );
+  }
+
+  for (const provider of openProviders) {
     try {
-      tabA.ws.close();
-      tabB.ws.close();
+      provider.destroy();
     } catch {
       /* ignore */
     }
-    return;
-  }
-
-  const idsMatch = welcomeA.sessionId === welcomeB.sessionId;
-  const matchesExpected = welcomeA.sessionId === expectedSessionId;
-  const bothCookie =
-    welcomeA.mintedAt === 'cookie' && welcomeB.mintedAt === 'cookie';
-
-  const ok = idsMatch && matchesExpected && bothCookie;
-  record(
-    'two-tabs-same-cookie',
-    ok,
-    `A.id=${welcomeA.sessionId.slice(0, 8)}… B.id=${welcomeB.sessionId.slice(0, 8)}… match=${String(idsMatch)} bothCookie=${String(bothCookie)}`,
-  );
-
-  try {
-    tabA.ws.close(1000, 'smoke complete');
-    tabB.ws.close(1000, 'smoke complete');
-  } catch {
-    /* ignore */
   }
   await new Promise((r) => setTimeout(r, 100));
 }
 
 async function main(): Promise<void> {
-  console.log(`[welcome-cookie-smoke] target ${HTTP_BASE}`);
+  console.log(`[welcome-cookie-smoke] target ${HTTP_BASE} (ADR-011 Stateless)`);
 
-  await checkNoCookieMints();
+  await checkWelcomeOverStateless();
   const reusesResult = await checkCookieReuses();
   if (reusesResult !== null) {
     await checkTwoTabsSameCookie(reusesResult.cookie, reusesResult.sessionId);
@@ -348,10 +333,15 @@ async function main(): Promise<void> {
     record('two-tabs-same-cookie', false, 'skipped — cookie-reuses failed');
   }
 
-  const allOk = results.every((r) => r.ok);
+  const allOk = results.every((r) => r.ok) && trappedErrors.length === 0;
   console.log(
-    `[welcome-cookie-smoke] summary: ${results.filter((r) => r.ok).length}/${String(results.length)} checks PASS`,
+    `[welcome-cookie-smoke] summary: ${results.filter((r) => r.ok).length}/${String(results.length)} checks PASS; ${String(trappedErrors.length)} client error(s) trapped`,
   );
+  if (trappedErrors.length > 0) {
+    console.log(
+      `[welcome-cookie-smoke] trapped errors: ${trappedErrors.join(' | ')}`,
+    );
+  }
   process.exit(allOk ? 0 : 1);
 }
 

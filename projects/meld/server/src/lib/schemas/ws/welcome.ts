@@ -7,11 +7,12 @@ import { z } from 'zod';
  * the framework's `connected` hook fires (which itself fires after
  * `onConnect` + `onAuthenticate` complete and the Connection object is
  * registered in `Hocuspocus.documentConnections`). The wire form is a
- * TEXT frame — `connection.webSocket.send(JSON.stringify(payload))`
- * sends a TEXT frame via the underlying `ws` library, distinct from the
- * BINARY frames that carry the y-websocket sync + awareness opcodes per
- * AGENT_NOTES "WS control frames are TEXT frames, NOT Yjs binary
- * opcodes".
+ * Hocuspocus **Stateless** message (ADR-011, supersedes ADR-004's TEXT
+ * transport) — `connection.sendStateless(JSON.stringify(payload))` wraps
+ * this JSON string in a y-protocol stateless envelope (opcode 5) that the
+ * provider decodes and routes to its `onStateless` callback. The payload
+ * byte-shape is unchanged from ADR-004; only the transport moved. See
+ * `src/lib/ws/welcome.ts` for the full rationale and verified API lines.
  *
  * Canonical fields (ADR-004 verbatim):
  *

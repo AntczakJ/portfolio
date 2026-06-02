@@ -7,39 +7,38 @@ import { useWelcomeStore } from '@/lib/stores/welcome-store';
 import {
   attachAwarenessSeedPipeline,
   createBoardProvider,
-  handleProviderMessage,
+  handleStatelessControlMessage,
 } from '../provider';
 
 import type { WSWelcomeFramePayload } from 'meld-server';
 
 /**
  * Mock `@hocuspocus/provider` so `createBoardProvider` can be exercised
- * without opening a real WebSocket. The mock captures the `onMessage`
- * config callback that the factory wires up, and exposes a real
- * `Awareness` instance so `attachAwarenessSeedPipeline` operates on
- * something concrete.
+ * without opening a real WebSocket. The mock captures the `onStateless`
+ * config callback that the factory wires up (ADR-011), and exposes a
+ * real `Awareness` instance so `attachAwarenessSeedPipeline` operates
+ * on something concrete.
  *
- * The capture is the whole point of the regression test below: it lets
- * us invoke the production `onMessage` closure with the SHAPE the
- * provider actually emits at runtime — the raw browser `MessageEvent`
- * — which the previous `({ event }) => ...` destructure could not
- * survive.
+ * The capture lets us invoke the production `onStateless` closure with
+ * the SHAPE the provider hands it at runtime — `{ payload: string }`
+ * (provider d.ts `onStatelessParameters` lines 162–164) — and assert
+ * the welcome dispatch happens exactly as the wire would drive it.
  */
 const capturedConfig: {
-  onMessage: ((payload: unknown) => void) | undefined;
-} = { onMessage: undefined };
+  onStateless: ((data: { payload: string }) => void) | undefined;
+} = { onStateless: undefined };
 
 vi.mock('@hocuspocus/provider', () => {
   class HocuspocusProvider {
     awareness: Awareness;
     #listeners = new Map<string, Set<(...args: unknown[]) => void>>();
 
-    constructor(config: { onMessage?: (payload: unknown) => void }) {
+    constructor(config: { onStateless?: (data: { payload: string }) => void }) {
       // A fresh doc + awareness per provider — the seed pipeline writes
       // to `awareness.setLocalStateField`.
       this.awareness = new Awareness(new Y.Doc());
-      if (config.onMessage) {
-        capturedConfig.onMessage = config.onMessage;
+      if (config.onStateless) {
+        capturedConfig.onStateless = config.onStateless;
       }
     }
 
@@ -61,8 +60,8 @@ vi.mock('@hocuspocus/provider', () => {
 });
 
 /**
- * Tests for the awareness-seed pipeline + TEXT-frame router from
- * `lib/yjs/provider.ts` (Task 2.5a).
+ * Tests for the awareness-seed pipeline + stateless control-message
+ * router from `lib/yjs/provider.ts` (Task 2.5a / ADR-011).
  *
  * The pipeline's contract:
  *   1. When the welcome store carries a payload at provider
@@ -205,7 +204,7 @@ describe('attachAwarenessSeedPipeline', () => {
   });
 });
 
-describe('handleProviderMessage', () => {
+describe('handleStatelessControlMessage', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -220,153 +219,124 @@ describe('handleProviderMessage', () => {
     vi.unstubAllEnvs();
   });
 
-  it('routes a TEXT welcome frame into the welcome store', () => {
+  it('routes a welcome payload into the welcome store', () => {
     const welcome = buildWelcome(SESSION_A, 'otter');
-    const event = new MessageEvent('message', { data: JSON.stringify(welcome) });
-    handleProviderMessage(event);
+    handleStatelessControlMessage(JSON.stringify(welcome));
     expect(useWelcomeStore.getState().welcome?.session.id).toBe(SESSION_A);
   });
 
   it('drops malformed JSON silently with a dev warn', () => {
-    const event = new MessageEvent('message', { data: 'not-json' });
-    handleProviderMessage(event);
+    handleStatelessControlMessage('not-json');
     expect(useWelcomeStore.getState().welcome).toBeNull();
     expect(warnSpy).toHaveBeenCalled();
   });
 
-  it('ignores BINARY frames (passes them through to the framework)', () => {
-    const event = new MessageEvent('message', {
-      data: new ArrayBuffer(8),
-    });
-    handleProviderMessage(event);
+  it('drops a payload without a `kind` discriminator', () => {
+    handleStatelessControlMessage(JSON.stringify({ session: {} }));
     expect(useWelcomeStore.getState().welcome).toBeNull();
-    expect(warnSpy).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it('drops a welcome payload that fails schema validation', () => {
+    // `kind: 'welcome'` but a structurally invalid body — must not
+    // populate the store and must not throw.
+    handleStatelessControlMessage(
+      JSON.stringify({ kind: 'welcome', session: { id: 'not-a-uuid' } }),
+    );
+    expect(useWelcomeStore.getState().welcome).toBeNull();
+    expect(warnSpy).toHaveBeenCalled();
   });
 
   it('routes unknown kinds to the onUnknown callback when provided', () => {
     const onUnknown = vi.fn();
-    const event = new MessageEvent('message', {
-      data: JSON.stringify({ kind: 'control.overrun', reason: 'rate.exceeded' }),
-    });
-    handleProviderMessage(event, onUnknown);
+    handleStatelessControlMessage(
+      JSON.stringify({ kind: 'control.overrun', reason: 'rate.exceeded' }),
+      onUnknown,
+    );
     expect(onUnknown).toHaveBeenCalledOnce();
-  });
-
-  it('does not throw on a nullish event (defensive guard)', () => {
-    expect(() => { handleProviderMessage(null); }).not.toThrow();
-    expect(() => { handleProviderMessage(undefined); }).not.toThrow();
     expect(useWelcomeStore.getState().welcome).toBeNull();
   });
 });
 
 /**
- * Regression test for the HocuspocusProvider 4.1 `onMessage` raw-
- * `MessageEvent` trap.
+ * Wiring test for the ADR-011 `onStateless` config callback.
  *
- * At RUNTIME the provider emits the RAW browser `MessageEvent` to its
- * `'message'` listeners (see `attachWebSocketListeners` ->
- * `emit('message', event)`), NOT the `{ event, message }` object the
- * published `onMessageParameters` type implies. The previous wiring
- * destructured `({ event }) => ...` off that raw event, yielding
- * `undefined`, and `handleProviderMessage(undefined)` threw
- * `TypeError: Cannot read properties of undefined (reading 'data')`.
+ * Control messages now arrive over Hocuspocus's Stateless channel, not
+ * raw TEXT frames. The provider decodes the stateless y-protocol
+ * envelope and invokes `onStateless({ payload })` with the inner string
+ * (provider d.ts `onStateless` config callback line 352,
+ * `onStatelessParameters = { payload: string }` lines 162–164).
  *
- * Because our `onMessage` listener is registered BEFORE the provider's
- * own y-protocol sync listener and the emitter dispatches via
- * `forEach`, that throw aborted the loop and killed Yjs sync +
- * awareness over the wire — the board's entire collaboration layer
- * went dead while the socket itself stayed connected.
- *
- * The pre-existing `handleProviderMessage` tests fed it a synthetic
- * `MessageEvent` directly, so they never exercised the factory's
- * `onMessage` closure. This suite drives the closure that
- * `createBoardProvider` actually wires, with BOTH the raw-event runtime
- * shape and the typed `{ event }` shape.
+ * This suite drives the closure `createBoardProvider` actually wires —
+ * captured from the mocked provider constructor — with the runtime
+ * `{ payload }` shape, and asserts the welcome dispatch into
+ * `useWelcomeStore`, plus malformed-JSON and unknown-kind handling
+ * (no throw; unknown → `onUnknownControlFrame`). It replaces the
+ * retired raw-`MessageEvent` `onMessage`-wiring regression suite — that
+ * code path no longer exists.
  */
-describe('createBoardProvider onMessage wiring (raw MessageEvent regression)', () => {
+describe('createBoardProvider onStateless wiring', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     useWelcomeStore.getState().clearWelcome();
-    capturedConfig.onMessage = undefined;
+    capturedConfig.onStateless = undefined;
     vi.stubEnv('NODE_ENV', 'development');
   });
 
   afterEach(() => {
     warnSpy.mockRestore();
     useWelcomeStore.getState().clearWelcome();
-    capturedConfig.onMessage = undefined;
+    capturedConfig.onStateless = undefined;
     vi.unstubAllEnvs();
   });
 
-  it('captures an onMessage config callback from createBoardProvider', () => {
+  it('captures an onStateless config callback from createBoardProvider', () => {
     createBoardProvider('12345678-1234-4abc-8def-1234567890ab', {
       doc: new Y.Doc(),
     });
-    expect(typeof capturedConfig.onMessage).toBe('function');
+    expect(typeof capturedConfig.onStateless).toBe('function');
   });
 
-  it('does not throw when invoked with a RAW MessageEvent (the real runtime shape)', () => {
+  it('dispatches a welcome payload into the welcome store', () => {
     createBoardProvider('12345678-1234-4abc-8def-1234567890ab', {
       doc: new Y.Doc(),
     });
-    const onMessage = capturedConfig.onMessage;
-    expect(onMessage).toBeDefined();
+    const onStateless = capturedConfig.onStateless;
+    expect(onStateless).toBeDefined();
 
     const welcome = buildWelcome(SESSION_A, 'otter');
-    // The provider emits the RAW MessageEvent — NOT `{ event, message }`.
-    const rawEvent = new MessageEvent('message', {
-      data: JSON.stringify(welcome),
-    });
-
-    expect(() => onMessage?.(rawEvent)).not.toThrow();
+    // The provider hands us `{ payload: string }` — the raw string the
+    // server passed to `Connection.sendStateless`.
+    expect(() => onStateless?.({ payload: JSON.stringify(welcome) })).not.toThrow();
     expect(useWelcomeStore.getState().welcome?.session.id).toBe(SESSION_A);
   });
 
-  it('still handles the typed { event } shape (forward-compatibility)', () => {
+  it('does not throw and does not dispatch on a malformed payload', () => {
     createBoardProvider('12345678-1234-4abc-8def-1234567890ab', {
       doc: new Y.Doc(),
     });
-    const onMessage = capturedConfig.onMessage;
-    expect(onMessage).toBeDefined();
+    const onStateless = capturedConfig.onStateless;
 
-    const welcome = buildWelcome(SESSION_B, 'fox');
-    const event = new MessageEvent('message', { data: JSON.stringify(welcome) });
-
-    expect(() => onMessage?.({ event })).not.toThrow();
-    expect(useWelcomeStore.getState().welcome?.session.id).toBe(SESSION_B);
-  });
-
-  it('routes unknown control frames from a raw MessageEvent to onUnknownControlFrame', () => {
-    const onUnknownControlFrame = vi.fn();
-    createBoardProvider('12345678-1234-4abc-8def-1234567890ab', {
-      doc: new Y.Doc(),
-      onUnknownControlFrame,
-    });
-    const onMessage = capturedConfig.onMessage;
-
-    const rawEvent = new MessageEvent('message', {
-      data: JSON.stringify({ kind: 'control.overrun', reason: 'rate.exceeded' }),
-    });
-
-    expect(() => onMessage?.(rawEvent)).not.toThrow();
-    expect(onUnknownControlFrame).toHaveBeenCalledOnce();
+    expect(() => onStateless?.({ payload: 'not-json' })).not.toThrow();
     expect(useWelcomeStore.getState().welcome).toBeNull();
   });
 
-  it('ignores a binary (ArrayBuffer) raw MessageEvent without spurious unknown dispatch', () => {
+  it('routes unknown control kinds to onUnknownControlFrame', () => {
     const onUnknownControlFrame = vi.fn();
     createBoardProvider('12345678-1234-4abc-8def-1234567890ab', {
       doc: new Y.Doc(),
       onUnknownControlFrame,
     });
-    const onMessage = capturedConfig.onMessage;
+    const onStateless = capturedConfig.onStateless;
 
-    const rawEvent = new MessageEvent('message', { data: new ArrayBuffer(8) });
-
-    expect(() => onMessage?.(rawEvent)).not.toThrow();
-    expect(onUnknownControlFrame).not.toHaveBeenCalled();
+    expect(() =>
+      onStateless?.({
+        payload: JSON.stringify({ kind: 'control.overrun', reason: 'rate.exceeded' }),
+      }),
+    ).not.toThrow();
+    expect(onUnknownControlFrame).toHaveBeenCalledOnce();
     expect(useWelcomeStore.getState().welcome).toBeNull();
   });
 });

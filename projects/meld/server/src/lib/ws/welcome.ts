@@ -14,34 +14,38 @@ import type { MeldConnectionContext } from './server';
 import { wsMetrics } from './metrics';
 
 /**
- * Welcome-frame emit pipeline (Task 1.X-control — ADR-004 + Task 1.7b — ADR-005).
+ * Welcome-frame emit pipeline (ADR-011 transport · ADR-004 payload ·
+ * Task 1.7b — ADR-005).
  *
- * Sends exactly one `welcome` TEXT frame per connection after the
+ * Sends exactly one `welcome` control message per connection after the
  * Hocuspocus `connected` hook fires (which itself fires after
  * `onConnect` + `onAuthenticate` succeed and the `Connection` object
- * has been registered in `documentConnections`). The wire is the
- * underlying `ws` socket exposed by Hocuspocus as
- * `connection.webSocket` (`WebSocketLike.send(data: string |
- * ArrayBufferLike | Blob | ArrayBufferView)`) — passing a `string`
- * produces a TEXT frame per RFC 6455, distinct from the BINARY
- * frames Hocuspocus's `Connection.send(message: Uint8Array)` ships
- * for the y-websocket sync + awareness opcodes.
+ * has been registered in `documentConnections`). The transport is
+ * Hocuspocus's **Stateless** message channel — `Connection.sendStateless
+ * (payload: string)` — NOT a raw `ws` TEXT frame.
  *
- * Hocuspocus raw-socket access path — verified against the installed
- * `@hocuspocus/server@4.1.0` `.d.ts`:
+ * Why Stateless and not a raw TEXT frame (ADR-011, supersedes ADR-004's
+ * transport): `HocuspocusProvider` binary-decodes every raw `'message'`
+ * event as a y-protocol envelope. A bare TEXT frame is not a valid
+ * envelope, so the provider's internal decoder threw `Unexpected end of
+ * array` once per board load — an uncaught red console error on the live
+ * demo. A stateless message IS a valid y-protocol envelope (opcode
+ * `MessageType.Stateless = 5`), so the provider decodes it and routes the
+ * inner string to its `onStateless` callback instead of choking. The
+ * payload byte-shape on the wire is unchanged — it is the SAME JSON
+ * string, now nested inside the stateless envelope.
  *
- *   - `Connection.webSocket: WebSocketLike` (line 718 of
- *     `node_modules/@hocuspocus/server/dist/index.d.ts`).
- *   - `WebSocketLike.send(data: string | ArrayBufferLike | Blob |
- *     ArrayBufferView): void` (line 324).
+ * Hocuspocus Stateless API — verified against the installed
+ * `@hocuspocus/server@4.1.0` `dist/index.d.ts`:
  *
- * Passing a `string` to the underlying `ws` library send produces a
- * TEXT frame; passing an `ArrayBuffer` produces a BINARY frame. This
- * is the ADR-004 TEXT/BINARY split we depend on. (Hocuspocus's own
- * `sendStateless(payload: string)` does NOT send a TEXT frame — it
- * wraps the string inside a BINARY frame with opcode `5`
- * `MessageType.Stateless`; we deliberately bypass that path to keep
- * the wire form per ADR-004.)
+ *   - `Connection.sendStateless(payload: string): void` — line 779.
+ *     Wraps the string in a y-protocol envelope with opcode
+ *     `MessageType.Stateless = 5` (line 336).
+ *   - The connecting `Connection` handle is available on the `connected`
+ *     hook payload: `connectedPayload.connection: Connection<Context>`
+ *     — line 519. This is the SAME hook + handle the previous TEXT emit
+ *     used; only the send call changes (`connection.webSocket.send(...)`
+ *     → `connection.sendStateless(...)`).
  *
  * Session-identity sourcing (Task 1.7b).
  *
@@ -170,7 +174,8 @@ export function buildWelcomePayload(
 }
 
 /**
- * Send the welcome TEXT frame to a single connection.
+ * Send the welcome control message to a single connection via the
+ * Hocuspocus Stateless channel.
  *
  * Validates the payload through `wsWelcomeFrameSchema.parse` at the
  * emit boundary so a regression in the builder surfaces here rather
@@ -178,7 +183,8 @@ export function buildWelcomePayload(
  * a payload this size) and adds a load-bearing boundary check the
  * wire-format contract depends on.
  *
- * On success: `wsMetrics.controlFramesOut++`.
+ * On success: `wsMetrics.controlFramesOut++` (now counts stateless
+ * sends — the counter is transport-agnostic per ADR-011).
  * On failure (serialize throw, socket already closed):
  * `wsMetrics.controlFramesDropped++` and the error is logged.
  */
@@ -196,9 +202,11 @@ export function emitWelcomeFrame(
   }
 
   try {
-    // `Connection.webSocket` is the `WebSocketLike` raw socket per
-    // Hocuspocus 4.1; `.send(string)` writes a TEXT frame.
-    connection.webSocket.send(JSON.stringify(payload));
+    // `Connection.sendStateless(payload: string)` — `@hocuspocus/server`
+    // 4.1 `dist/index.d.ts` line 779. Wraps the JSON string in a
+    // y-protocol stateless envelope (opcode 5) the provider decodes and
+    // routes to its `onStateless` callback (ADR-011).
+    connection.sendStateless(JSON.stringify(payload));
     wsMetrics.recordControlFrameOut();
   } catch (err) {
     wsMetrics.recordControlFrameDropped();

@@ -133,7 +133,8 @@ export function createRateLimitExtension(
       const ok = consumeToken(payload.socketId);
       if (!ok) {
         wsMetrics.recordRateLimited();
-        // Emit the control.overrun TEXT frame BEFORE the framework
+        // Emit the control.overrun frame (over Stateless per ADR-011)
+        // BEFORE the framework
         // closes the connection on our throw. `emitOverrunAndClose`
         // also closes the raw socket with code 4290 — the throw is
         // belt-and-braces against any race where the framework

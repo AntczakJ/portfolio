@@ -30,21 +30,27 @@ import type { AwarenessIdentity } from './awareness-schemas';
  *      handshake is HTTP-on-the-wire and the browser sends cookies
  *      for the host. No explicit `Cookie` header forwarding is
  *      required.
- *   2. Hocuspocus's `connected` extension fires the welcome TEXT
- *      frame (Task 1.X-control / Task 1.7b). The provider's
- *      `onMessage` config callback receives a `MessageEvent` per
- *      raw WS frame; we discriminate `typeof event.data === 'string'`
- *      vs `instanceof ArrayBuffer` per ADR-004.
- *   3. TEXT frames are parsed against `wsControlFrameSchema` (hydrated
- *      from a minimal Zod schema set — NO test fixtures, NO server
- *      runtime). On `kind === 'welcome'` we call
- *      `useWelcomeStore.setWelcome(payload)` so `<IdentityBadge />`
- *      and the cursor-engine awareness seeder (Phase 3.3) hydrate.
- *   4. BINARY frames are the y-websocket protocol — Hocuspocus's own
- *      handler processes them via `provider.document` / `provider.
- *      awareness` natively. We do NOT intercept binary; the
- *      `onMessage` callback fires alongside the framework's own
- *      handling, not instead of it.
+ *   2. Hocuspocus's `connected` extension sends the welcome control
+ *      message over the framework's **Stateless** channel (ADR-011 /
+ *      Task 1.X-stateless), via `Connection.sendStateless(string)`.
+ *      A stateless message is a valid y-protocol envelope
+ *      (`MessageType.Stateless = 5`), so the provider decodes it
+ *      natively and routes the inner string to our `onStateless`
+ *      config callback as `{ payload: string }` — no raw
+ *      `MessageEvent`, no TEXT/BINARY discrimination, no binary-decode
+ *      error. (Provider d.ts: `onStateless` config callback line 352,
+ *      `onStatelessParameters = { payload: string }` lines 162–164.)
+ *   3. The `onStateless` handler `JSON.parse`s the payload (guarded),
+ *      `safeParse`s it against `welcomeFrameSchema`, and on
+ *      `kind === 'welcome'` calls `useWelcomeStore.setWelcome(welcome)`
+ *      so `<IdentityBadge />` and the cursor-engine awareness seeder
+ *      (Phase 3.3) hydrate. Unknown / reserved kinds route to
+ *      `config.onUnknownControlFrame` (dev-warn, prod no-op). The
+ *      handler never throws.
+ *
+ * The y-websocket sync + awareness protocol (the binary frames) is
+ * handled entirely by the framework — we no longer intercept the raw
+ * `'message'` event at all (ADR-011 removed the `onMessage` path).
  *
  * Singleton-per-boardId model:
  *
@@ -68,17 +74,17 @@ import type { AwarenessIdentity } from './awareness-schemas';
  */
 
 /* ============================================================== *\
-   Minimal client-side Zod schemas for TEXT-frame control discrimination.
+   Minimal client-side Zod schema for the welcome control message.
 
    The runtime cost is ~1 kB minified. We DO NOT import the server's
    Zod schemas (the runtime would ship the entire server schema tree
    to the browser). Instead, we hydrate a minimal parser sufficient
-   for the welcome + overrun + board-deleted branches the v1 client
-   acts on.
+   for the welcome branch the v1 client acts on.
 
-   Task 2.5a will own the full control-frame discriminated-union
-   parser. Phase 2.6's scope is: parse `welcome`, dispatch to
-   `useWelcomeStore.setWelcome(payload)`, log unknown frames at warn.
+   ADR-011 moved control messages off raw TEXT frames onto Hocuspocus's
+   Stateless channel; the payload shape is unchanged, so this schema is
+   carried over verbatim from the retired TEXT path and validates the
+   string delivered to `onStateless`.
 \* ============================================================== */
 
 const oklchColorSchema = z.object({
@@ -126,8 +132,9 @@ export interface BoardProviderConfig {
   /** Pre-built `Y.Doc` instance the engine reads from. */
   doc: Y.Doc;
   /**
-   * Optional callback for unknown TEXT-frame kinds (the discriminator
-   * literals reserved in ADR-004 for v1.1 / v2). Default: dev-only
+   * Optional callback for unknown control-message kinds (the
+   * discriminator literals reserved in ADR-004 for v1.1 / v2, now
+   * carried over the Stateless channel per ADR-011). Default: dev-only
    * `console.warn`, no-op in production.
    */
   onUnknownControlFrame?: (raw: unknown) => void;
@@ -162,31 +169,27 @@ export function createBoardProvider(
     // capability). Hocuspocus skips the `Auth` handshake when token
     // is absent.
     token: null,
-    onMessage: (payload) => {
-      // HocuspocusProvider 4.1 emits the RAW browser `MessageEvent` to
-      // its `'message'` listeners (see `attachWebSocketListeners` ->
-      // `emit('message', event)`), despite the published
-      // `onMessageParameters` type declaring `{ event, message }`. The
-      // typed shape does NOT match the runtime emit for this callback
-      // path. A throw here is catastrophic, not cosmetic: our listener
-      // is registered BEFORE the provider's own y-protocol sync
-      // listener, the emitter dispatches via `forEach`, and a
-      // synchronous throw aborts that loop — so the framework's sync +
-      // awareness handler never runs and the whole CRDT wire goes dead.
-      // Accept BOTH shapes defensively and never throw.
-      const raw = payload as unknown as
-        | MessageEvent
-        | { event?: MessageEvent };
-      const event = raw instanceof MessageEvent ? raw : raw.event;
-      if (!event) return;
-      handleProviderMessage(event, config.onUnknownControlFrame);
+    // ADR-011: control messages arrive over Hocuspocus's Stateless
+    // channel, NOT raw TEXT frames. The provider decodes the stateless
+    // y-protocol envelope natively and hands us the inner string as
+    // `{ payload }` (d.ts `onStateless` line 352, `onStatelessParameters
+    // = { payload: string }` lines 162–164). No `MessageEvent`, no
+    // TEXT/BINARY discrimination, and — crucially — no `onMessage`
+    // interception on the provider's `'message'` emitter, which is the
+    // class of fragility ADR-011 removes (it caused the `9b06f7e`
+    // sync-killer). This handler must never throw.
+    onStateless: ({ payload }) => {
+      handleStatelessControlMessage(payload, config.onUnknownControlFrame);
     },
   });
 
-  // Awareness seed pipeline (Task 2.5a). The welcome frame arriving
-  // over the wire populates the welcome store; we mirror its session
-  // identity onto the local awareness state so REMOTE peers can read
-  // OUR identity (and vice versa) through `useAwareness()`.
+  // Awareness seed pipeline (Task 2.5a). The welcome message arriving
+  // over the wire (now via `onStateless` per ADR-011) populates the
+  // welcome store; we mirror its session identity onto the local
+  // awareness state so REMOTE peers can read OUR identity (and vice
+  // versa) through `useAwareness()`. This pipeline is transport-
+  // agnostic — it consumes the welcome STORE, not the wire — so it is
+  // unchanged by the ADR-011 transport move.
   attachAwarenessSeedPipeline(provider);
 
   return provider;
@@ -195,13 +198,14 @@ export function createBoardProvider(
 /* ============================================================== *\
    Awareness seed pipeline (Task 2.5a)
 
-   When the welcome TEXT frame lands, mirror `welcome.session` into
-   the local Yjs awareness state field `'identity'`. Two cases:
+   When the welcome message lands (over the Stateless channel per
+   ADR-011), mirror `welcome.session` into the local Yjs awareness
+   state field `'identity'`. Two cases:
 
      A. Welcome lands AFTER provider construction (the common path —
-        the provider IS the wire, welcome is the first TEXT frame
-        after the framework's `Auth` handshake). The store subscription
-        below fires the seed.
+        the provider IS the wire, welcome is the first stateless
+        message after the framework's `Auth` handshake). The store
+        subscription below fires the seed.
 
      B. Welcome lands BEFORE provider construction. Can happen if a
         session-rotate (POST /api/session) lit up the welcome store
@@ -289,39 +293,38 @@ export function attachAwarenessSeedPipeline(
 }
 
 /**
- * Discriminate TEXT vs BINARY on a raw WS `MessageEvent`. TEXT is
- * meld's control frame (welcome, overrun, board-deleted) per ADR-004;
- * BINARY is the y-websocket protocol Hocuspocus handles natively (we
- * do NOTHING with binary frames here — the framework's own listener
- * is invoked alongside this callback).
+ * Parse + dispatch a control message delivered over Hocuspocus's
+ * Stateless channel (ADR-011). The `payload` is the raw string the
+ * server passed to `Connection.sendStateless` — the SAME
+ * JSON-stringified control-frame shape ADR-004 defined, now carried
+ * inside the y-protocol stateless envelope instead of a bare TEXT
+ * frame. The payload byte-shape and the Zod schema are unchanged;
+ * only the transport moved.
+ *
+ * On `kind === 'welcome'` we `safeParse` against `welcomeFrameSchema`
+ * and call `useWelcomeStore.setWelcome(payload)`. Unknown / reserved
+ * kinds route to `onUnknown` (dev-warn, prod no-op when unset).
+ *
+ * This MUST never throw — the JSON parse is guarded and every branch
+ * returns cleanly.
  *
  * Exported for the test suite to drive without instantiating a real
  * provider.
  *
  * @internal
  */
-export function handleProviderMessage(
-  event: MessageEvent | null | undefined,
+export function handleStatelessControlMessage(
+  payload: string,
   onUnknown?: (raw: unknown) => void,
 ): void {
-  // Defensive: a nullish event must never throw. The caller in
-  // `createBoardProvider` already guards against this, but a throw
-  // here would abort the provider's emitter `forEach` and kill the
-  // framework's own sync listener — so we belt-and-braces it.
-  if (!event) return;
-
-  // BINARY — the y-websocket protocol. Pass through; the framework
-  // owns it.
-  if (typeof event.data !== 'string') return;
-
   let parsed: unknown;
   try {
-    parsed = JSON.parse(event.data);
+    parsed = JSON.parse(payload);
   } catch {
-    // Malformed TEXT — log at warn in dev, silently drop in prod.
+    // Malformed payload — log at warn in dev, silently drop in prod.
     if (process.env.NODE_ENV === 'development') {
       console.warn(
-        '[meld-provider] dropped malformed TEXT frame (not JSON)',
+        '[meld-provider] dropped malformed stateless payload (not JSON)',
       );
     }
     return;
@@ -330,25 +333,25 @@ export function handleProviderMessage(
   if (typeof parsed !== 'object' || parsed === null || !('kind' in parsed)) {
     if (process.env.NODE_ENV === 'development') {
       console.warn(
-        '[meld-provider] dropped TEXT frame without a `kind` discriminator',
+        '[meld-provider] dropped stateless payload without a `kind` discriminator',
         parsed,
       );
     }
     return;
   }
 
-  const kind = (parsed).kind;
+  const kind = parsed.kind;
 
   if (kind === 'welcome') {
     const result = welcomeFrameSchema.safeParse(parsed);
     if (!result.success) {
-      // A welcome frame that fails to parse is a contract regression
+      // A welcome message that fails to parse is a contract regression
       // we want to surface loudly in dev. In production we log but
       // do not crash the board — the chrome stays whole and the
       // welcome store stays at its `null` floor.
       if (process.env.NODE_ENV === 'development') {
         console.warn(
-          '[meld-provider] welcome frame failed to parse',
+          '[meld-provider] welcome message failed to parse',
           result.error,
         );
       }
@@ -356,17 +359,17 @@ export function handleProviderMessage(
     }
     // The Zod inference and the types-only `WSWelcomeFramePayload`
     // re-exported from `meld-server` are structurally identical, but
-    // TypeScript does not see them as the same nominal type. The
-    // cast is the single seam — Phase 2.5a will share this parser
-    // surface; for Phase 2.6 the boundary is the cast here.
-    const payload = result.data;
-    useWelcomeStore.getState().setWelcome(payload);
+    // TypeScript does not see them as the same nominal type. The cast
+    // is the single seam — the parsed-and-validated welcome flows into
+    // the store, which the awareness-seed pipeline observes.
+    const welcome = result.data;
+    useWelcomeStore.getState().setWelcome(welcome);
     return;
   }
 
   // Unknown / v1.1 / v2 kinds (heartbeat, settings.update, overrun,
-  // board-deleted, kicked) — Task 2.5a wires them. Phase 2.6 logs at
-  // warn in dev only.
+  // board-deleted, kicked). v1 acts only on `welcome`; the rest route
+  // to the caller's handler or a dev-only warn.
   if (onUnknown) {
     onUnknown(parsed);
     return;
@@ -374,7 +377,7 @@ export function handleProviderMessage(
   if (process.env.NODE_ENV === 'development') {
     console.warn(
       `[meld-provider] unhandled control kind="${String(kind)}" ` +
-        '(Phase 2.6 only handles `welcome`; Task 2.5a wires the rest)',
+        '(v1 only acts on `welcome`)',
     );
   }
 }

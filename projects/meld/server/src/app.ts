@@ -31,11 +31,12 @@
  * via the workspace is exactly the convention's Trigger-B avoidance
  * path for a project pair that only needs type sharing (not runtime).
  *
- * WS frame contract (ADR-004 — Task 1.X-control). The types-only
- * re-export block below ships the six v1 discriminated-union branches
- * plus the canonical `WSControlFrame` type. `meld-web` consumes them
- * via `import type { WSControlFrame } from 'meld-server'` and parses
- * incoming TEXT frames against its own minimal Zod schema set per
+ * WS frame contract (ADR-004 payload · ADR-011 transport). The
+ * types-only re-export block below ships the six v1 discriminated-union
+ * branches plus the canonical `WSControlFrame` type. `meld-web` consumes
+ * them via `import type { WSControlFrame } from 'meld-server'` and parses
+ * incoming Stateless-channel payloads (via the provider `onStateless`
+ * callback — ADR-011) against its own minimal Zod schema set per
  * AGENT_NOTES "WS schemas + Drizzle schemas live in `meld-server`,
  * types-only re-exported via `meld-server/src/app.ts`".
  *

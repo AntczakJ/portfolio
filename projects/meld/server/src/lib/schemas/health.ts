@@ -105,8 +105,8 @@ export type DbStorage = z.infer<typeof dbStorageSchema>;
  *                              separately (the FK cascade is the
  *                              ratifying side effect).
  *  - `retentionEmittedCount` — process-lifetime total of
- *                              `control.board-deleted` TEXT frames the
- *                              sweep successfully sent before closing
+ *                              `control.board-deleted` stateless frames
+ *                              the sweep successfully broadcast before closing
  *                              live connections on deleted boards.
  *                              `wsMetrics.controlFramesOut` ALSO counts
  *                              these — `retentionEmittedCount` is the

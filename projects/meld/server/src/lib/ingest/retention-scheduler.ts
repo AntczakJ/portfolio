@@ -6,9 +6,11 @@
  *   1. SELECT every `boards.id` where `last_active_at < NOW() - INTERVAL
  *      '${BOARD_RETENTION_DAYS} days'`.
  *   2. For each id, if the Hocuspocus room registry has a live `Document`
- *      for that id, emit a `control.board-deleted` TEXT frame to every
- *      connection in the room (`reason: 'retention-expired'`) and then
- *      close each connection with code 4404 ("board deleted").
+ *      for that id, broadcast a `control.board-deleted` stateless message
+ *      to every connection in the room in ONE call
+ *      (`Document.broadcastStateless` — `@hocuspocus/server` 4.1
+ *      `dist/index.d.ts` line 104; `reason: 'retention-expired'`) and
+ *      then close each connection with code 4404 ("board deleted").
  *   3. `DELETE FROM boards WHERE id IN (...)` inside the same transaction.
  *      The FK `ON DELETE CASCADE` on `board_ops.board_id` removes the
  *      associated ops in the same transaction — no separate ops cleanup
@@ -142,12 +144,15 @@ export function readBoardRetentionDaysFromEnv(): number {
  *
  *  - `deletedCount` — number of `boards` rows the sweep removed in this
  *                     run. Zero in the happy steady state.
- *  - `emittedCount` — number of `control.board-deleted` TEXT frames the
- *                     sweep successfully sent BEFORE the DELETE. May be
- *                     less than the total connections-on-deleted-boards
- *                     if some sends threw — see `emitFailureCount`.
- *  - `emitFailureCount` — frames that failed to serialise or send
- *                          (socket already closed mid-sweep, send threw).
+ *  - `emittedCount` — number of `control.board-deleted` stateless
+ *                     deliveries the sweep made BEFORE the DELETE. A
+ *                     successful `Document.broadcastStateless` counts once
+ *                     per live connection on the room (per-delivery
+ *                     semantics, matching the prior per-connection loop).
+ *  - `emitFailureCount` — broadcasts that failed to serialise or send
+ *                          (Zod parse / JSON.stringify threw, or the
+ *                          framework broadcast call threw). Counted once
+ *                          per room whose broadcast failed.
  */
 export interface RetentionSweepResult {
   deletedCount: number;
@@ -165,22 +170,32 @@ export interface RetentionRoomRegistry {
 }
 
 /**
- * Subset of a Hocuspocus `Document` the sweep touches. We use only the
- * connection iteration + per-connection close — nothing else.
+ * Subset of a Hocuspocus `Document` the sweep touches. We use a single
+ * `broadcastStateless` call to deliver the board-deleted frame to every
+ * connection at once (ADR-011), `getConnectionsCount` to count the
+ * per-delivery `controlFramesOut` increments, and `getConnections` for
+ * the per-connection close pass that follows the broadcast.
  */
 export interface RetentionDocument {
+  /**
+   * Mirrors `Document.broadcastStateless(payload: string)` —
+   * `@hocuspocus/server` 4.1 `dist/index.d.ts` line 104. Sends the
+   * stateless control frame to every live connection on the document in
+   * one call (replaces the prior per-connection TEXT send loop).
+   */
+  broadcastStateless(payload: string): void;
+  /** Mirrors `Document.getConnectionsCount()` — d.ts line 75. */
+  getConnectionsCount(): number;
+  /** Mirrors `Document.getConnections()` — d.ts line 79. */
   getConnections(): RetentionConnection[];
 }
 
 /**
- * Subset of a Hocuspocus `Connection` the sweep touches.
+ * Subset of a Hocuspocus `Connection` the sweep touches. The board-deleted
+ * frame is delivered via the document-level `broadcastStateless`, so the
+ * connection surface is now close-only.
  */
 export interface RetentionConnection {
-  /**
-   * Underlying `ws` send — passing a string produces a TEXT frame per
-   * RFC 6455. ADR-004 TEXT/BINARY split for control frames.
-   */
-  webSocket: { send(data: string): void };
   /**
    * Hocuspocus's graceful close wrapper. Code 4404 = board deleted per
    * ADR-003 retention sweep / ADR-004 close-code policy.
@@ -196,6 +211,12 @@ function wrapHocuspocusRegistry(
       const doc = hocuspocus.documents.get(boardId);
       if (!doc) return undefined;
       return {
+        broadcastStateless(payload: string): void {
+          doc.broadcastStateless(payload);
+        },
+        getConnectionsCount(): number {
+          return doc.getConnectionsCount();
+        },
         getConnections(): RetentionConnection[] {
           return doc.getConnections() as Connection<MeldConnectionContext>[];
         },
@@ -457,10 +478,11 @@ export class RetentionScheduler {
  *   1. Open transaction.
  *   2. SELECT the inactive board ids.
  *   3. For each id, look up the live Hocuspocus `Document`; if present
- *      iterate connections and (a) emit `control.board-deleted` TEXT
- *      frame, (b) close with code 4404. A per-connection broadcast
+ *      (a) broadcast the `control.board-deleted` stateless frame to every
+ *      connection in ONE `Document.broadcastStateless` call, then (b)
+ *      iterate connections and close each with code 4404. A broadcast
  *      failure increments `emitFailureCount` and the sweep continues —
- *      it does NOT abort.
+ *      it does NOT abort, and the close pass still runs.
  *   4. DELETE the boards by id (cascade removes board_ops).
  *   5. Commit.
  *
@@ -485,16 +507,20 @@ export async function runSweepImpl(
       for (const id of ids) {
         const doc = registry.getDocument(id);
         if (!doc) continue;
-        const connections = doc.getConnections();
-        for (const connection of connections) {
-          const sent = emitBoardDeletedFrame(connection, id);
-          if (sent) {
-            emittedCount += 1;
-          } else {
-            emitFailureCount += 1;
-          }
-          // Close after the (best-effort) send. Code 4404 = board
-          // deleted per ADR-003 / ADR-004 close-code policy.
+        // Broadcast the board-deleted frame to every connection in one
+        // `Document.broadcastStateless` call (ADR-011). The delivery
+        // count is the connection count at broadcast time — captured
+        // BEFORE the close pass shrinks the room.
+        const broadcast = broadcastBoardDeletedFrame(doc, id);
+        if (broadcast.ok) {
+          emittedCount += broadcast.deliveries;
+        } else {
+          emitFailureCount += 1;
+        }
+        // Close pass — Hocuspocus's `broadcastStateless` does not close
+        // sockets, so the 4404 close is still per-connection. Code 4404
+        // = board deleted per ADR-003 / ADR-004 close-code policy.
+        for (const connection of doc.getConnections()) {
           try {
             connection.close({
               code: WS_CLOSE_BOARD_DELETED,
@@ -514,17 +540,34 @@ export async function runSweepImpl(
   });
 }
 
+/** Outcome of one room's board-deleted broadcast. */
+interface BroadcastOutcome {
+  /** True if the broadcast was serialised AND dispatched without throwing. */
+  ok: boolean;
+  /**
+   * Number of connections the broadcast reached — the connection count at
+   * broadcast time. `controlFramesOut` is incremented once per delivery to
+   * preserve the per-frame semantics the prior per-connection loop had
+   * (ADR-011). Zero on a build/send failure.
+   */
+  deliveries: number;
+}
+
 /**
- * Build + validate + send the `control.board-deleted` TEXT frame to a
- * single connection. Returns true on a successful send, false on any
- * failure (Zod parse, JSON.stringify, socket throw). Failures are logged
- * and recorded on `wsMetrics.controlFramesDropped` — they NEVER throw out
- * of the sweep.
+ * Build + validate + broadcast the `control.board-deleted` stateless frame
+ * to every connection on a document in one `Document.broadcastStateless`
+ * call (`@hocuspocus/server` 4.1 `dist/index.d.ts` line 104; ADR-011).
+ *
+ * On success: increments `wsMetrics.controlFramesOut` ONCE PER LIVE
+ * CONNECTION (per-delivery semantics) and returns `{ ok: true, deliveries }`.
+ * On any failure (Zod parse, JSON.stringify, broadcast throw): increments
+ * `wsMetrics.controlFramesDropped` once, logs, and returns
+ * `{ ok: false, deliveries: 0 }`. NEVER throws out of the sweep.
  */
-function emitBoardDeletedFrame(
-  connection: RetentionConnection,
+function broadcastBoardDeletedFrame(
+  doc: RetentionDocument,
   boardId: string,
-): boolean {
+): BroadcastOutcome {
   let payload: string;
   try {
     const parsed = wsBoardDeletedFrameSchema.parse({
@@ -539,19 +582,26 @@ function emitBoardDeletedFrame(
       '[retention-scheduler] board-deleted frame build failed:',
       err,
     );
-    return false;
+    return { ok: false, deliveries: 0 };
   }
+  // Capture the delivery count BEFORE dispatch — the close pass that
+  // follows will drop these same connections.
+  const deliveries = doc.getConnectionsCount();
   try {
-    connection.webSocket.send(payload);
-    wsMetrics.recordControlFrameOut();
-    return true;
+    doc.broadcastStateless(payload);
+    // Count one `controlFramesOut` per connection the broadcast reached,
+    // preserving the prior per-frame counter semantics.
+    for (let i = 0; i < deliveries; i += 1) {
+      wsMetrics.recordControlFrameOut();
+    }
+    return { ok: true, deliveries };
   } catch (err) {
     wsMetrics.recordControlFrameDropped();
     console.error(
-      '[retention-scheduler] board-deleted frame send failed:',
+      '[retention-scheduler] board-deleted broadcast failed:',
       err,
     );
-    return false;
+    return { ok: false, deliveries: 0 };
   }
 }
 

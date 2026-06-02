@@ -10,34 +10,43 @@ import { wsMetrics } from './metrics';
 import { WS_CLOSE_BACKPRESSURE } from './server';
 
 /**
- * Overrun-frame emit pipeline (Task 1.X-control — ADR-004).
+ * Overrun-frame emit pipeline (ADR-011 transport · ADR-004 payload).
  *
- * Sends a `control.overrun` TEXT frame immediately followed by a WS
- * close with code `4290` (ADR-002 backpressure boundary). The frame
+ * Sends a `control.overrun` stateless message immediately followed by a
+ * WS close with code `4290` (ADR-002 backpressure boundary). The frame
  * carries the discriminated `reason` and a `retryAfterMs` hint so the
  * client's `WebsocketProvider` reconnect-backoff respects the server-
  * advised cool-off and avoids a reconnect storm.
  *
- * The TEXT frame is shipped via the same raw-socket path the welcome
- * frame uses — `connection.webSocket.send(string)` writes a TEXT
- * frame per `WebSocketLike` (see `welcome.ts` for the verified
- * Hocuspocus 4.1 API path).
+ * The overrun frame is shipped on Hocuspocus's Stateless channel via the
+ * same path the welcome frame uses — `connection.sendStateless(string)`
+ * (`@hocuspocus/server` 4.1 `dist/index.d.ts` line 779; see `welcome.ts`
+ * for the full ADR-011 rationale and the verified API).
  *
- * Close sequencing:
+ * Send-then-close sequencing (ADR-011 — verified equivalent to the prior
+ * TEXT-then-close path):
  *
- *   1. `connection.webSocket.send(JSON.stringify(payload))` — TEXT
- *      frame with the reason + retryAfterMs.
- *   2. `connection.webSocket.close(4290, reason)` — close the raw
- *      socket with the 4290 close code so the browser
- *      `WebSocket.onclose.event.code` arrives as `4290`. Hocuspocus's
- *      `Connection.close({ code, reason })` ALSO runs to update the
- *      framework's room registry, but it does NOT call
- *      `webSocket.close` — it only writes an in-band
- *      `MessageType.CLOSE` byte (verified against
+ *   1. `connection.sendStateless(JSON.stringify(payload))` — stateless
+ *      frame with the reason + retryAfterMs. `sendStateless` writes a
+ *      y-protocol envelope synchronously onto the same `ws` socket send
+ *      buffer.
+ *   2. `connection.close({ code: 4290, reason })` — Hocuspocus's close
+ *      wrapper updates the room registry. It does NOT close the raw
+ *      socket; it only writes an in-band `MessageType.CLOSE` byte
+ *      (verified against
  *      `node_modules/@hocuspocus/server/dist/hocuspocus-server.esm.js`
- *      `Connection.close` line ~405). We invoke both so the framework
- *      releases the connection AND the wire actually closes with the
- *      4290 close-code echoed in the welcome-frame contract.
+ *      `Connection.close` line ~405).
+ *   3. `connection.webSocket.close(4290, reason)` — close the raw
+ *      socket with the 4290 close code so the browser
+ *      `WebSocket.onclose.event.code` arrives as `4290`.
+ *
+ *   Because `sendStateless` and both close writes target the SAME `ws`
+ *   send buffer in synchronous FIFO order, the stateless frame is
+ *   enqueued ahead of the close frame and flushes first — the client
+ *   receives `onStateless` with the overrun payload, then `onclose` with
+ *   code `4290`. This is the same ordering guarantee the prior
+ *   TEXT-then-close path relied on; only the opcode of the first write
+ *   changed.
  *
  * Why this is wired as a callable helper instead of via the
  * `beforeHandleMessage` throw-pattern:
@@ -74,7 +83,7 @@ interface EmitOverrunOptions {
 }
 
 /**
- * Send the overrun TEXT frame and close the WS with code 4290.
+ * Send the overrun stateless frame and close the WS with code 4290.
  *
  * On serialize / send failure: increment `controlFramesDropped` and
  * still call `connection.close` so the offending peer is gone even if
@@ -105,7 +114,11 @@ export function emitOverrunAndClose(
 
   if (serialized !== null) {
     try {
-      connection.webSocket.send(serialized);
+      // `Connection.sendStateless(payload: string)` — `@hocuspocus/server`
+      // 4.1 `dist/index.d.ts` line 779. Enqueued ahead of the close
+      // writes below on the same `ws` send buffer (FIFO), so the client
+      // sees `onStateless` before `onclose(4290)` (ADR-011).
+      connection.sendStateless(serialized);
       wsMetrics.recordControlFrameOut();
     } catch (err) {
       wsMetrics.recordControlFrameDropped();

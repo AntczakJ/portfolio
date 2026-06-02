@@ -12,17 +12,19 @@ import { z } from 'zod';
  * has been retired" affordance instead of silently failing the
  * reconnect retry curve.
  *
- * v1 emit path (Task 1.5):
+ * v1 emit path (Task 1.5 · ADR-011 transport):
  *
  *   1. Sweep selects boards where `last_active_at < NOW() - INTERVAL
  *      '30 days'`.
- *   2. For each, iterate `Hocuspocus.documents.get(boardId)?.connections`
- *      and `connection.webSocket.send(JSON.stringify(payload))` the
- *      board-deleted frame.
+ *   2. For each, `Hocuspocus.documents.get(boardId)?.broadcastStateless(
+ *      JSON.stringify(payload))` delivers the board-deleted frame to
+ *      every connection on the room in one call (ADR-011 — supersedes
+ *      ADR-004's per-connection TEXT send loop).
  *   3. Close each connection with code `4404` ("board deleted").
  *   4. Delete the board row (CASCADE removes board_ops).
  *
- * Task 1.X-control reserves the schema; Task 1.5 wires the emit.
+ * Task 1.X-control reserves the schema; Task 1.5 wires the emit;
+ * Task 1.X-stateless (ADR-011) moves it onto the Stateless channel.
  *
  * Reason discrimination — single v1 value:
  *

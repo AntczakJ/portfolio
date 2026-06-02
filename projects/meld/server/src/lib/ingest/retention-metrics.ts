@@ -15,8 +15,8 @@
  *                              the sweep has deleted (sum across all
  *                              sweep runs since process start).
  *  - `retentionEmittedCount` — process-lifetime total of
- *                              `control.board-deleted` TEXT frames the
- *                              sweep has successfully sent before
+ *                              `control.board-deleted` stateless frames
+ *                              the sweep has successfully broadcast before
  *                              closing the connection.
  *  - `retentionLastRunMs`    — wall-clock ms epoch of the last sweep
  *                              run (boot or daily). `null` before the

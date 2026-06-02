@@ -5,12 +5,12 @@
  *  - `computeNext3amUtc` returns the correct moment for the 5 canonical
  *    inputs (midnight, just-before-3am, just-after-3am, midday,
  *    end-of-month edge) — the brief lists these five exactly.
- *  - `runSweepImpl` SELECTs the over-threshold board ids, emits one
- *    `control.board-deleted` TEXT frame per live connection, closes
- *    each connection with code 4404, then DELETEs the boards. All in
- *    one transaction.
- *  - Per-connection broadcast failure does NOT abort the sweep — the
- *    delete still runs.
+ *  - `runSweepImpl` SELECTs the over-threshold board ids, broadcasts one
+ *    `control.board-deleted` stateless frame per live room (counting one
+ *    `controlFramesOut` per delivery), closes each connection with code
+ *    4404, then DELETEs the boards. All in one transaction.
+ *  - A broadcast failure does NOT abort the sweep — the close pass and
+ *    the delete still run.
  *  - Empty inactive-board set short-circuits — no transactions, no emits.
  *  - `start()` is idempotent and arms the next 03:00 UTC timer.
  *  - `stop()` cancels the pending timer and is idempotent.
@@ -79,29 +79,17 @@ class FakeTimeoutScheduler implements TimeoutScheduler {
 }
 
 interface FakeConnectionState {
-  sent: string[];
   closeCalls: { code?: number; reason?: string }[];
-  throwOnSend: boolean;
 }
 
-function makeFakeConnection(throwOnSend = false): {
+function makeFakeConnection(): {
   connection: RetentionConnection;
   state: FakeConnectionState;
 } {
   const state: FakeConnectionState = {
-    sent: [],
     closeCalls: [],
-    throwOnSend,
   };
   const connection: RetentionConnection = {
-    webSocket: {
-      send(data: string): void {
-        if (state.throwOnSend) {
-          throw new Error('socket closed');
-        }
-        state.sent.push(data);
-      },
-    },
     close(event?: { code?: number; reason?: string }): void {
       state.closeCalls.push(event ?? {});
     },
@@ -109,18 +97,46 @@ function makeFakeConnection(throwOnSend = false): {
   return { connection, state };
 }
 
+interface FakeDocumentState {
+  /** Each successful `broadcastStateless(payload)` call's payload. */
+  broadcasts: string[];
+}
+
+/**
+ * Build a fake `RetentionDocument` over a fixed connection set. The
+ * board-deleted frame is now delivered via the document-level
+ * `broadcastStateless` (ADR-011), so the per-room broadcast tracking lives
+ * here rather than on each connection. `throwOnBroadcast` simulates a
+ * framework broadcast throw.
+ */
+function makeFakeDocument(
+  connections: RetentionConnection[],
+  throwOnBroadcast = false,
+): { doc: RetentionDocument; state: FakeDocumentState } {
+  const state: FakeDocumentState = { broadcasts: [] };
+  const doc: RetentionDocument = {
+    broadcastStateless(payload: string): void {
+      if (throwOnBroadcast) {
+        throw new Error('broadcast failed');
+      }
+      state.broadcasts.push(payload);
+    },
+    getConnectionsCount(): number {
+      return connections.length;
+    },
+    getConnections(): RetentionConnection[] {
+      return connections;
+    },
+  };
+  return { doc, state };
+}
+
 function makeFakeRegistry(
-  rooms: Map<string, RetentionConnection[]>,
+  rooms: Map<string, RetentionDocument>,
 ): RetentionRoomRegistry {
   return {
     getDocument(boardId: string): RetentionDocument | undefined {
-      const connections = rooms.get(boardId);
-      if (!connections) return undefined;
-      return {
-        getConnections(): RetentionConnection[] {
-          return connections;
-        },
-      };
+      return rooms.get(boardId);
     },
   };
 }
@@ -260,11 +276,12 @@ void describe('Retention constants pin ADR-003', () => {
 
 void describe('runSweepImpl — happy path with one live connection', () => {
   void it(
-    'emits one control.board-deleted TEXT frame, closes with code 4404, deletes the board',
+    'broadcasts one control.board-deleted stateless frame, closes with code 4404, deletes the board',
     async () => {
       const boardId = '11111111-1111-4111-8111-111111111111';
       const { connection, state } = makeFakeConnection();
-      const registry = makeFakeRegistry(new Map([[boardId, [connection]]]));
+      const { doc, state: docState } = makeFakeDocument([connection]);
+      const registry = makeFakeRegistry(new Map([[boardId, doc]]));
       const { db, calls } = makeFakeDb([[boardId]]);
 
       const result = await runSweepImpl(db, registry, 30);
@@ -275,10 +292,12 @@ void describe('runSweepImpl — happy path with one live connection', () => {
       assert.deepEqual(calls.findCalls, [30]);
       assert.deepEqual(calls.deleteCalls, [[boardId]]);
 
-      // One TEXT frame sent, validated against the schema.
-      assert.equal(state.sent.length, 1);
-      assert.ok(state.sent[0] !== undefined);
-      const parsed = wsBoardDeletedFrameSchema.parse(JSON.parse(state.sent[0]));
+      // One broadcast, validated against the schema.
+      assert.equal(docState.broadcasts.length, 1);
+      assert.ok(docState.broadcasts[0] !== undefined);
+      const parsed = wsBoardDeletedFrameSchema.parse(
+        JSON.parse(docState.broadcasts[0]),
+      );
       assert.equal(parsed.kind, 'control.board-deleted');
       assert.equal(parsed.boardId, boardId);
       assert.equal(parsed.reason, 'retention-expired');
@@ -290,7 +309,7 @@ void describe('runSweepImpl — happy path with one live connection', () => {
       assert.equal(closeCall.code, 4404);
       assert.equal(closeCall.reason, 'retention-expired');
 
-      // Result reflects the counts.
+      // Result reflects the counts — one delivery to the single connection.
       assert.equal(result.deletedCount, 1);
       assert.equal(result.emittedCount, 1);
       assert.equal(result.emitFailureCount, 0);
@@ -298,28 +317,30 @@ void describe('runSweepImpl — happy path with one live connection', () => {
   );
 });
 
-void describe('runSweepImpl — broadcast continues past a per-connection send failure', () => {
+void describe('runSweepImpl — sweep continues past a broadcast failure', () => {
   void it(
-    'one connection throws on send, the other succeeds, both close, the delete still runs',
+    'broadcast throws, both connections still close, the delete still runs',
     async () => {
       const boardId = '22222222-2222-4222-8222-222222222222';
-      const throwing = makeFakeConnection(true);
-      const ok = makeFakeConnection(false);
-      const registry = makeFakeRegistry(
-        new Map([[boardId, [throwing.connection, ok.connection]]]),
+      const connA = makeFakeConnection();
+      const connB = makeFakeConnection();
+      // throwOnBroadcast simulates a framework `broadcastStateless` throw.
+      const { doc } = makeFakeDocument(
+        [connA.connection, connB.connection],
+        true,
       );
+      const registry = makeFakeRegistry(new Map([[boardId, doc]]));
       const { db, calls } = makeFakeDb([[boardId]]);
 
       const result = await runSweepImpl(db, registry, 30);
 
-      // Throw on send => emittedCount excludes that connection, but
-      // emitFailureCount captures it. The successful one is counted.
-      assert.equal(result.emittedCount, 1);
+      // Broadcast threw => zero deliveries counted, one room failure.
+      assert.equal(result.emittedCount, 0);
       assert.equal(result.emitFailureCount, 1);
       // Both connections close cleanly — broadcast failure does NOT
-      // abort the close path.
-      assert.equal(throwing.state.closeCalls.length, 1);
-      assert.equal(ok.state.closeCalls.length, 1);
+      // abort the close pass.
+      assert.equal(connA.state.closeCalls.length, 1);
+      assert.equal(connB.state.closeCalls.length, 1);
       // DELETE still runs.
       assert.deepEqual(calls.deleteCalls, [[boardId]]);
       assert.equal(result.deletedCount, 1);
@@ -370,17 +391,19 @@ void describe('runSweepImpl — multiple boards, mixed live rooms', () => {
       const ac2 = makeFakeConnection();
       const bc1 = makeFakeConnection();
       // c has no room — silent.
+      const { doc: docA } = makeFakeDocument([ac1.connection, ac2.connection]);
+      const { doc: docB } = makeFakeDocument([bc1.connection]);
       const registry = makeFakeRegistry(
         new Map([
-          [a, [ac1.connection, ac2.connection]],
-          [b, [bc1.connection]],
+          [a, docA],
+          [b, docB],
         ]),
       );
       const { db, calls } = makeFakeDb([[a, b, c]]);
 
       const result = await runSweepImpl(db, registry, 7);
 
-      // 3 total live connections across 2 rooms => 3 emits, 3 closes.
+      // 3 total live connections across 2 rooms => 3 deliveries, 3 closes.
       assert.equal(result.emittedCount, 3);
       assert.equal(ac1.state.closeCalls.length, 1);
       assert.equal(ac2.state.closeCalls.length, 1);
@@ -446,7 +469,8 @@ void describe('RetentionScheduler — bootstrap-once-on-start', () => {
     const boardId = '77777777-7777-4777-8777-777777777777';
     const { db } = makeFakeDb([[boardId]]);
     const { connection } = makeFakeConnection();
-    const registry = makeFakeRegistry(new Map([[boardId, [connection]]]));
+    const { doc } = makeFakeDocument([connection]);
+    const registry = makeFakeRegistry(new Map([[boardId, doc]]));
     const scheduler = new FakeTimeoutScheduler();
     const retention = new RetentionScheduler({
       db,
@@ -468,7 +492,8 @@ void describe('RetentionScheduler — metrics integration', () => {
     const boardId = '88888888-8888-4888-8888-888888888888';
     const { db } = makeFakeDb([[boardId]]);
     const { connection } = makeFakeConnection();
-    const registry = makeFakeRegistry(new Map([[boardId, [connection]]]));
+    const { doc } = makeFakeDocument([connection]);
+    const registry = makeFakeRegistry(new Map([[boardId, doc]]));
     const scheduler = new FakeTimeoutScheduler();
     const fakeNow = Date.UTC(2026, 4, 15, 12, 0, 0, 0);
     const retention = new RetentionScheduler({
@@ -491,10 +516,12 @@ void describe('RetentionScheduler — metrics integration', () => {
     const b = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     const aConn = makeFakeConnection();
     const bConn = makeFakeConnection();
+    const { doc: aDoc } = makeFakeDocument([aConn.connection]);
+    const { doc: bDoc } = makeFakeDocument([bConn.connection]);
     const registry = makeFakeRegistry(
       new Map([
-        [a, [aConn.connection]],
-        [b, [bConn.connection]],
+        [a, aDoc],
+        [b, bDoc],
       ]),
     );
     const { db } = makeFakeDb([[a, b]]);

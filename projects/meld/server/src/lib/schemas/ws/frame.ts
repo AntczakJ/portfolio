@@ -10,11 +10,13 @@ import { wsWelcomeFrameSchema } from './welcome';
 /**
  * Discriminated-union schema for every meld WS control frame (ADR-004).
  *
- * Wire form per AGENT_NOTES.md "WS control frames are TEXT frames, NOT
- * Yjs binary opcodes": each frame is a TEXT-frame JSON string with a
- * top-level `kind` discriminator. The browser receive path branches
- * `typeof event.data === 'string'` to the control parser and
- * `event.data instanceof ArrayBuffer` to the existing Yjs sync handler.
+ * Wire form (ADR-011, superseding ADR-004's raw TEXT-frame transport):
+ * each frame is a JSON string with a top-level `kind` discriminator,
+ * carried over Hocuspocus's Stateless channel. The browser receive path
+ * is the provider's `onStateless({ payload })` callback, which JSON-parses
+ * and dispatches by `kind` — no TEXT/BINARY discrimination, no
+ * binary-decode of a TEXT frame (which is what threw `Unexpected end of
+ * array` before ADR-011).
  *
  * Six v1 `kind` literals — `welcome` is emitted by the server on every
  * connection; `control.overrun` is emitted before the framework-level
@@ -49,9 +51,9 @@ export const wsControlFrameKindSchema = z.enum([
 export type WSControlFrameKind = z.infer<typeof wsControlFrameKindSchema>;
 
 /**
- * The canonical browser-facing discriminated union — every TEXT frame
- * the server may send across the WS to a meld client maps to one
- * branch of this union.
+ * The canonical browser-facing discriminated union — every control frame
+ * the server may send (over Stateless per ADR-011) to a meld client maps
+ * to one branch of this union.
  *
  * Per ADR-004 cross-package contract:
  *
