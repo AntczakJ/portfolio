@@ -21,6 +21,14 @@ export default tseslint.config(
       // any tsconfig, and not part of CI or the test glob.
       '**/docs/capture-*.mjs',
       '**/e2e/*.mjs',
+      // Per-package operational scripts (smoke clients, one-off probes) live
+      // in projects/*/server/scripts and are deliberately outside each
+      // package's tsconfig include, so the type-aware project service cannot
+      // resolve them. Each package's own eslint config already ignores
+      // scripts/**; mirror that at the root so the lint-staged generic glob
+      // does not fail on them with a "not found by the project service" parse
+      // error.
+      '**/scripts/**',
     ],
   },
   js.configs.recommended,
