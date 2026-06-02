@@ -10,6 +10,7 @@ import { setCookie } from 'hono/cookie';
 import { getDb, pingDb } from './db';
 import { boards } from './db/schema/boards';
 import { COMMIT_SHA } from './lib/commit';
+import { installProcessResilience } from './lib/process-resilience';
 import { CompactionSweep } from './lib/ingest/compaction-sweep';
 import { retentionMetrics } from './lib/ingest/retention-metrics';
 import { RetentionScheduler } from './lib/ingest/retention-scheduler';
@@ -79,61 +80,6 @@ import { createBoardsRoutes } from './routes/boards';
  * `createMeldWsServer()` time.
  */
 
-/**
- * Process-level resilience backstop (CRITICAL prod-crash fix).
- *
- * This is a PUBLIC demo on a single Fly Machine. A single recoverable
- * error must never take the process down. The live incident that
- * motivated this: a concurrent-edit `op_seq` collision rejected an
- * unawaited `onChange` promise (Hocuspocus fires `onChange`
- * fire-and-forget), Node's default `unhandledRejection` policy printed
- * the version banner and exited, and the demo went fully down
- * (health 0/1, "instance refused connection on 0.0.0.0:3001").
- *
- * Policy — deliberate, NOT a blanket swallow:
- *
- *   - `unhandledRejection`: log structured detail and KEEP RUNNING. A
- *     rejected promise that escaped to here is, by construction, one we
- *     did not await — it cannot have left a half-applied synchronous
- *     transaction in an inconsistent in-process state. The recoverable
- *     classes (a dropped/retried DB write, a delayed snapshot flush) are
- *     all re-derivable: y-websocket re-syncs the op on the next client
- *     update, the next debounce window re-flushes the snapshot. Crashing
- *     loses every live board's in-memory room; surviving does not.
- *
- *   - `uncaughtException`: log structured detail and KEEP RUNNING for the
- *     same recoverable classes. We do NOT call `process.exit()` here.
- *     The one state we cannot reason about generically is a corrupted
- *     module/global — but in this single-process server the realistic
- *     uncaught throws are async I/O errors (Postgres hiccup, a socket
- *     write after close) that are inherently recoverable. The defensive
- *     `try/catch` at each boundary (`changeImpl`, the `.catch` on every
- *     `void storeDocumentHooks(...)`, `connectImpl`) is the FIRST line of
- *     defense; these handlers are the last-resort net so the net result
- *     is "log and stay up" rather than "exit on first surprise".
- *
- *   Truly fatal states (OOM, a SIGKILL, a corrupt native module) are NOT
- *   in scope for these handlers and will still bring the process down —
- *   Fly restarts the Machine in that case. The handlers only cover the
- *   recoverable-async surface that the incident was about.
- *
- * Installed at module top level (not gated on `isEntryPoint`) so a test
- * importing `app` also gets the safety net; the handlers are pure logging
- * and have no side effects on the test's assertions.
- */
-process.on('unhandledRejection', (reason: unknown) => {
-  console.error(
-    '[meld-server] unhandledRejection (kept alive — recoverable):',
-    reason,
-  );
-});
-process.on('uncaughtException', (err: unknown) => {
-  console.error(
-    '[meld-server] uncaughtException (kept alive — recoverable):',
-    err,
-  );
-});
-
 const PORT = Number(process.env.PORT ?? 3002);
 // Next standalone runs on this port inside the same container; the
 // catch-all reverse proxy below forwards every unmatched HTTP request
@@ -149,6 +95,39 @@ const WEB_PORT = Number(process.env.WEB_PORT ?? 3000);
 // its snapshot accessor inside the Hono app. Failing closed on an
 // empty production allowlist happens here.
 const meldWs = createMeldWsServer();
+
+// Process-level resilience backstop (CRITICAL prod-crash fix, narrowed).
+//
+// ASYMMETRIC policy — see `src/lib/process-resilience.ts` for the full
+// rationale:
+//
+//   - `unhandledRejection`  -> log + STAY ALIVE. This is the actual
+//     fire-and-forget `onChange` incident: a not-awaited rejection cannot
+//     have torn a synchronous transaction, and every recoverable class
+//     (dropped/retried DB write, delayed snapshot flush) re-derives from
+//     the persisted ops-log on the next client sync.
+//
+//   - `uncaughtException`   -> log + BOUNDED best-effort flush + exit(1).
+//     Node documents that resuming after an arbitrary uncaught throw
+//     leaves the process in an UNDEFINED state; the correct recovery is a
+//     clean platform restart (Fly restarts on a non-zero exit), not a
+//     blanket keep-alive that would mask genuinely fatal faults. The
+//     in-memory rooms are reconstructed from the ops-log on reconnect.
+//
+// `flush` is a best-effort `meldWs.close()` (release the port, flush
+// pending stores) raced against the bounded grace window so a hung close
+// cannot wedge the dying process. Boot-time fail-closed throws (above)
+// run at module load and never reach `uncaughtException`; the
+// SIGINT/SIGTERM graceful shutdown (`process.exit(0)`) is a separate
+// handler installed in the entry-point block below.
+//
+// Installed at module top level (not gated on `isEntryPoint`) so a test
+// importing `app` also gets the net; the handlers have no side effects on
+// a test's assertions unless an actual uncaught fault fires.
+installProcessResilience({
+  proc: process,
+  flush: () => meldWs.close(),
+});
 
 // Task 1.5 background schedulers — constructed at module load so the
 // `/health` handler can read their metrics, started/stopped from the
