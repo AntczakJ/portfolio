@@ -121,7 +121,19 @@ function wrapHocuspocusRegistry(
       // Fire-and-forget: the framework's saveMutex serialises against
       // concurrent flushes on the same document. We deliberately do not
       // `await` here — the sweep moves on to the next room.
-      void hocuspocus.storeDocumentHooks(room.document, payload, true);
+      //
+      // CRASH SAFETY: attach a `.catch` so a rejected flush promise
+      // becomes a logged error instead of an `unhandledRejection` that
+      // kills the process. A failed compaction flush is recoverable —
+      // the next 6 h sweep (or the in-adapter early-flush) retries it.
+      void hocuspocus
+        .storeDocumentHooks(room.document, payload, true)
+        .catch((err: unknown) => {
+          console.error(
+            `[compaction-sweep] flushRoom storeDocumentHooks failed for board ${room.name} (compaction delayed, recoverable):`,
+            err,
+          );
+        });
     },
   };
 }

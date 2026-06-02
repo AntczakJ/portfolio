@@ -101,19 +101,57 @@ import { storageMetrics } from './storage-metrics';
  * still in `board_ops`) or the post-COMMIT state (new
  * `last_compacted_op_seq`, deleted ops). Either is internally consistent.
  *
- * Per-board op_seq concurrency strategy: the next op_seq is assigned
- * inside the SAME INSERT statement via
- *   INSERT ... SELECT COALESCE(MAX(op_seq), 0) + 1 FROM board_ops
- *   WHERE board_id = $1
- * which is race-free for v1's single-instance Node deployment because
- * (a) Postgres serializes statements against the same `board_ops`
- * partition of the unique `(board_id, op_seq)` index and (b) the unique
- * index causes a second concurrent insert at the same seq to ROLLBACK
- * cleanly. If a future deployment moves to multi-instance Hocuspocus,
- * this counter becomes a shared-state hazard (AGENT_NOTES.md "Per-board
- * board_ops.seq is in-memory monotonic" already pins this) and a
- * distributed sequence (Redis INCR keyed by boardId or a per-board
- * advisory lock) becomes load-bearing — out of scope for v1.
+ * Per-board op_seq concurrency strategy (CRITICAL prod-crash fix —
+ * supersedes the earlier "race is near-zero / rolls back cleanly" claim,
+ * which was WRONG and crashed the live demo):
+ *
+ *   The next op_seq is computed as `MAX(op_seq) + 1` for the board. Two
+ *   concurrent `onChange` calls for the SAME board (the NORMAL case once
+ *   real-time collaboration works — two tabs drawing at once) both read
+ *   the same `MAX(op_seq)` under READ COMMITTED, both compute the same
+ *   next seq, and one INSERT violates the unique `(board_id, op_seq)`
+ *   index with SQLSTATE 23505. The framework calls `onChange`
+ *   fire-and-forget (`this.hooks("onChange", ...)` is NOT awaited — see
+ *   upstream ESM `handleDocumentUpdate`), so a rejected `onChange`
+ *   promise becomes an `unhandledRejection`, which under Node's default
+ *   policy TERMINATES the process. A single op collision killed the
+ *   whole server. The framework's per-document `saveMutex` guards the
+ *   in-memory `Y.Doc`, NOT the `onChange` DB write, so it does NOT
+ *   serialize these inserts.
+ *
+ *   The fix is two layers, both inside `changeImpl`:
+ *
+ *     1. **Serialize same-board inserts with a transaction-scoped
+ *        advisory lock.** Each append runs inside `db.transaction`,
+ *        taking `pg_advisory_xact_lock(hashtextextended('board_ops:' ||
+ *        board_id, 0))` BEFORE the SELECT-MAX + INSERT. The lock is keyed
+ *        on the board id, so two concurrent appends to the SAME board
+ *        serialize (the second waits for the first to COMMIT and then
+ *        reads the post-commit MAX), while appends to DIFFERENT boards do
+ *        not contend. The lock auto-releases at COMMIT/ROLLBACK — no leak
+ *        on error. On a single Postgres instance this removes the 23505
+ *        collision entirely.
+ *
+ *     2. **Bounded retry on 23505 (defense in depth).** Even with the
+ *        lock, a transient unique-violation (e.g. a future multi-instance
+ *        deploy where two locks resolve on different PG backends, or a
+ *        lock acquisition timeout) is retried up to OP_SEQ_MAX_RETRIES
+ *        times, recomputing `MAX(op_seq) + 1` each attempt. EVERY op
+ *        stays durable — we never `ON CONFLICT DO NOTHING` (that silently
+ *        drops the op and corrupts the monotonic `(board_id, op_seq)`
+ *        contract the load-path replay depends on). The retry count is
+ *        surfaced on `/health.db.storage.opSeqRetries`.
+ *
+ *   If even the retries are exhausted, `changeImpl` SWALLOWS the error
+ *   (logs + increments `opWriteErrors`) rather than rejecting — a lost or
+ *   delayed op is recoverable via the client's y-websocket re-sync on the
+ *   next update; a dead server is not. See the crash-safety note on
+ *   `changeImpl` below and the process-level handlers in `server.ts`.
+ *
+ *   Multi-instance note: a v2 horizontal-scale deploy would still prefer
+ *   a per-board single-writer (CF Durable Objects, per ADR-001/002) or a
+ *   distributed sequence; the advisory lock + retry pair here is the v1
+ *   single-instance guarantee that also degrades safely under contention.
  *
  * Per-board ops counter (the 100-ops early-flush trigger): an in-memory
  * `Map<boardId, number>` is seeded on `onLoadDocument` from
@@ -145,6 +183,45 @@ export interface StorageExtensionOptions {
 
 /** Default early-flush threshold per ADR-003. */
 const DEFAULT_OPS_FLUSH_THRESHOLD = 100;
+
+/**
+ * PostgreSQL unique-violation SQLSTATE. Raised when a concurrent
+ * `board_ops` INSERT lands the same `(board_id, op_seq)` as another
+ * in-flight append. postgres-js surfaces it on `err.code`.
+ */
+const PG_UNIQUE_VIOLATION = '23505';
+
+/**
+ * Max retries for the `board_ops` append after a 23505 collision. The
+ * advisory lock (see `changeImpl`) should make collisions impossible on a
+ * single Postgres instance, so this is defense in depth — a handful of
+ * attempts is plenty for a transient race. Each retry recomputes
+ * `MAX(op_seq) + 1`.
+ */
+const OP_SEQ_MAX_RETRIES = 5;
+
+/**
+ * Read a SQLSTATE `code` off an error-like value, if present.
+ * postgres-js throws `PostgresError` with `code` set. Drizzle WRAPS that
+ * error and re-exposes the original on `.cause` (verified empirically:
+ * the wrapper's own `code` is `undefined`; `err.cause.code` is the real
+ * `23505`). We therefore walk the cause chain so the retry path actually
+ * fires on Drizzle-wrapped violations, not just bare postgres-js errors.
+ */
+function pgCodeOf(err: unknown, depth = 0): string | undefined {
+  if (typeof err !== 'object' || err === null || depth > 5) return undefined;
+  const code = (err as { code?: unknown }).code;
+  if (typeof code === 'string' && code.length > 0) return code;
+  return pgCodeOf((err as { cause?: unknown }).cause, depth + 1);
+}
+
+/**
+ * True when the thrown value (or any error in its `cause` chain) is a
+ * Postgres unique-violation (SQLSTATE 23505).
+ */
+function isPgUniqueViolation(err: unknown): boolean {
+  return pgCodeOf(err) === PG_UNIQUE_VIOLATION;
+}
 
 /**
  * Mapping from `documentName` (the board uuid string) to the number of
@@ -287,32 +364,91 @@ function createStorageExtension(
     return encodeStateAsUpdate(doc);
   }
 
+  /**
+   * Append one `board_ops` row with the next per-board `op_seq`,
+   * serialized against concurrent same-board appends.
+   *
+   * Concurrency-safe assignment of `op_seq` on a single Postgres
+   * instance: each append runs in its own transaction and takes a
+   * board-keyed `pg_advisory_xact_lock` BEFORE the SELECT-MAX + INSERT.
+   * Two concurrent appends to the same board therefore serialize — the
+   * second blocks until the first COMMITs and then reads the post-commit
+   * `MAX(op_seq)`. The lock auto-releases at COMMIT/ROLLBACK. Appends to
+   * different boards take different lock keys and do not contend.
+   *
+   * Bounded retry on 23505 is defense in depth (the lock should make
+   * collisions impossible here): if a unique-violation still lands, we
+   * recompute `MAX(op_seq) + 1` and retry up to OP_SEQ_MAX_RETRIES times,
+   * counting each retry on `opSeqRetries`. We never drop the op
+   * (`ON CONFLICT DO NOTHING` would lose it and break the monotonic
+   * `(board_id, op_seq)` replay contract).
+   *
+   * `hashtextextended(text, seed)` returns a `bigint` advisory-lock key
+   * deterministically from the board id, which is exactly what the
+   * single-argument `pg_advisory_xact_lock(bigint)` overload wants. The
+   * `'board_ops:'` namespace prefix keeps this lock space disjoint from
+   * any other advisory lock a future feature might take on the same id.
+   */
+  async function appendOp(
+    documentName: string,
+    update: Uint8Array,
+  ): Promise<void> {
+    const db = getDb();
+    let attempt = 0;
+    for (;;) {
+      try {
+        await db.transaction(async (tx) => {
+          await tx.execute(sql`
+            SELECT pg_advisory_xact_lock(
+              hashtextextended('board_ops:' || ${documentName}::text, 0)
+            )
+          `);
+          await tx.execute(sql`
+            INSERT INTO ${boardOps} (board_id, op_seq, update)
+            SELECT ${documentName}::uuid,
+                   COALESCE(MAX(op_seq), 0) + 1,
+                   ${update}
+            FROM ${boardOps}
+            WHERE board_id = ${documentName}::uuid
+          `);
+        });
+        return;
+      } catch (err) {
+        if (isPgUniqueViolation(err) && attempt < OP_SEQ_MAX_RETRIES) {
+          attempt += 1;
+          storageMetrics.recordOpSeqRetry();
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
   async function changeImpl(payload: onChangePayload): Promise<void> {
     const { documentName, update } = payload;
     if (!isPersistableBoardId(documentName)) return;
 
-    const db = getDb();
-
-    // Atomic per-board next-seq insert. The MAX(op_seq) subquery sees
-    // the post-commit state of any concurrent insert on the same
-    // board_id partition under READ COMMITTED, and the unique
-    // `(board_id, op_seq)` index catches the unlikely race. v1
-    // single-instance Node makes that race statistically near-zero
-    // anyway — see the per-board op_seq concurrency note in the
-    // file-level docblock above.
-    //
-    // The INSERT is a raw `sql` because Drizzle's typed builder does
-    // not expose the SELECT-into-INSERT form natively for
-    // self-referential MAX. Using `sql` here is intentional and
-    // documented.
-    await db.execute(sql`
-      INSERT INTO ${boardOps} (board_id, op_seq, update)
-      SELECT ${documentName}::uuid,
-             COALESCE(MAX(op_seq), 0) + 1,
-             ${update}
-      FROM ${boardOps}
-      WHERE board_id = ${documentName}::uuid
-    `);
+    // CRASH SAFETY (CRITICAL prod-crash fix). Hocuspocus calls `onChange`
+    // fire-and-forget — `this.hooks("onChange", ...)` is NOT awaited — so
+    // a rejection here becomes an `unhandledRejection` and, under Node's
+    // default policy, kills the process. A single recoverable DB error
+    // must NEVER take down a public demo. We therefore catch EVERYTHING
+    // recoverable, log it, and increment `opWriteErrors`. A lost or
+    // delayed op re-arrives via the client's y-websocket re-sync on the
+    // next update; a dead server does not recover at all. The process-
+    // level `unhandledRejection` handler in `server.ts` is the final
+    // backstop, but the policy lives here, at the boundary, where the
+    // error is recoverable and the context for the log line exists.
+    try {
+      await appendOp(documentName, update);
+    } catch (err) {
+      storageMetrics.recordOpWriteError();
+      console.error(
+        `[meld-storage] onChange op append failed for board ${documentName} (op dropped, recoverable via client re-sync):`,
+        err,
+      );
+      return;
+    }
     storageMetrics.recordOpAppended();
 
     const current = pendingOpsCount.get(documentName) ?? 0;
@@ -339,16 +475,24 @@ function createStorageExtension(
         lastTransactionOrigin: payload.transactionOrigin,
       };
       // storeDocumentHooks is async but onChange is fire-and-forget
-      // per the framework's own usage pattern (ESM line 1185 —
-      // `this.hooks("onChange", changePayload)` is not awaited).
-      // Detach via `void` so the onChange hook returns immediately;
-      // any error inside the early-flush path is caught by Hocuspocus's
-      // own try/catch in `storeDocumentHooks`.
-      void payload.instance.storeDocumentHooks(
-        payload.document,
-        storePayload,
-        true,
-      );
+      // per the framework's own usage pattern (`this.hooks("onChange",
+      // ...)` is not awaited). We detach it so the onChange hook returns
+      // immediately — but we DO NOT rely on the framework swallowing the
+      // rejection. CRASH SAFETY: attach a `.catch` so a rejected
+      // early-flush promise becomes a logged + counted error instead of
+      // an `unhandledRejection` that kills the process. `onStoreDocument`
+      // is itself recoverable (the next debounce window or the 6 h
+      // compaction sweep flushes again), so a swallowed early-flush only
+      // delays a snapshot, never loses an op.
+      void payload.instance
+        .storeDocumentHooks(payload.document, storePayload, true)
+        .catch((err: unknown) => {
+          storageMetrics.recordOpWriteError();
+          console.error(
+            `[meld-storage] early-flush storeDocumentHooks failed for board ${documentName} (snapshot delayed, recoverable):`,
+            err,
+          );
+        });
     }
   }
 

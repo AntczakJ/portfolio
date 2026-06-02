@@ -79,6 +79,61 @@ import { createBoardsRoutes } from './routes/boards';
  * `createMeldWsServer()` time.
  */
 
+/**
+ * Process-level resilience backstop (CRITICAL prod-crash fix).
+ *
+ * This is a PUBLIC demo on a single Fly Machine. A single recoverable
+ * error must never take the process down. The live incident that
+ * motivated this: a concurrent-edit `op_seq` collision rejected an
+ * unawaited `onChange` promise (Hocuspocus fires `onChange`
+ * fire-and-forget), Node's default `unhandledRejection` policy printed
+ * the version banner and exited, and the demo went fully down
+ * (health 0/1, "instance refused connection on 0.0.0.0:3001").
+ *
+ * Policy — deliberate, NOT a blanket swallow:
+ *
+ *   - `unhandledRejection`: log structured detail and KEEP RUNNING. A
+ *     rejected promise that escaped to here is, by construction, one we
+ *     did not await — it cannot have left a half-applied synchronous
+ *     transaction in an inconsistent in-process state. The recoverable
+ *     classes (a dropped/retried DB write, a delayed snapshot flush) are
+ *     all re-derivable: y-websocket re-syncs the op on the next client
+ *     update, the next debounce window re-flushes the snapshot. Crashing
+ *     loses every live board's in-memory room; surviving does not.
+ *
+ *   - `uncaughtException`: log structured detail and KEEP RUNNING for the
+ *     same recoverable classes. We do NOT call `process.exit()` here.
+ *     The one state we cannot reason about generically is a corrupted
+ *     module/global — but in this single-process server the realistic
+ *     uncaught throws are async I/O errors (Postgres hiccup, a socket
+ *     write after close) that are inherently recoverable. The defensive
+ *     `try/catch` at each boundary (`changeImpl`, the `.catch` on every
+ *     `void storeDocumentHooks(...)`, `connectImpl`) is the FIRST line of
+ *     defense; these handlers are the last-resort net so the net result
+ *     is "log and stay up" rather than "exit on first surprise".
+ *
+ *   Truly fatal states (OOM, a SIGKILL, a corrupt native module) are NOT
+ *   in scope for these handlers and will still bring the process down —
+ *   Fly restarts the Machine in that case. The handlers only cover the
+ *   recoverable-async surface that the incident was about.
+ *
+ * Installed at module top level (not gated on `isEntryPoint`) so a test
+ * importing `app` also gets the safety net; the handlers are pure logging
+ * and have no side effects on the test's assertions.
+ */
+process.on('unhandledRejection', (reason: unknown) => {
+  console.error(
+    '[meld-server] unhandledRejection (kept alive — recoverable):',
+    reason,
+  );
+});
+process.on('uncaughtException', (err: unknown) => {
+  console.error(
+    '[meld-server] uncaughtException (kept alive — recoverable):',
+    err,
+  );
+});
+
 const PORT = Number(process.env.PORT ?? 3002);
 // Next standalone runs on this port inside the same container; the
 // catch-all reverse proxy below forwards every unmatched HTTP request

@@ -72,6 +72,24 @@ export const dbStorageSchema = z.object({
    */
   compactionSweepRuns: z.number().int().nonnegative(),
   roomsCompactedThisSweep: z.number().int().nonnegative(),
+  /**
+   * Crash-safety + op_seq-race observability (CRITICAL prod-crash fix):
+   *
+   *  - `opSeqRetries`  — process-lifetime total of `board_ops` INSERT
+   *                      retries after a unique-violation (SQLSTATE 23505)
+   *                      on `(board_id, op_seq)`. Under the per-board
+   *                      advisory-lock serialization in `changeImpl` this
+   *                      sits at or near zero; a sustained non-zero rate
+   *                      means same-board inserts are racing past the lock.
+   *  - `opWriteErrors` — process-lifetime total of `onChange` op appends
+   *                      that THREW and were swallowed by the crash-safety
+   *                      wrapper rather than crashing the process. A lost
+   *                      op is recoverable via client y-websocket re-sync;
+   *                      a dead server is not. Any non-zero value is a real
+   *                      durability miss worth alerting on.
+   */
+  opSeqRetries: z.number().int().nonnegative(),
+  opWriteErrors: z.number().int().nonnegative(),
 });
 
 export type DbStorage = z.infer<typeof dbStorageSchema>;

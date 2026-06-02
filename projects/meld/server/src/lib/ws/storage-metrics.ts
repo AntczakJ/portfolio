@@ -68,6 +68,25 @@ export interface StorageMetricsSnapshot {
   replayFromOpsCount: number;
   compactionSweepRuns: number;
   roomsCompactedThisSweep: number;
+  /**
+   * Process-lifetime total of `op_seq` collisions (SQLSTATE 23505 on the
+   * `board_ops_board_id_op_seq_unique` index) that the `onChange` append
+   * retried. Each increment is one retried INSERT attempt, NOT one op —
+   * an op that collided twice before succeeding counts 2 here. Under the
+   * advisory-lock serialization (see `changeImpl`) this should sit at or
+   * near zero; a sustained non-zero rate means same-board inserts are
+   * racing past the lock (a regression) and deserves investigation.
+   */
+  opSeqRetries: number;
+  /**
+   * Process-lifetime total of `onChange` op appends that THREW and were
+   * swallowed by the crash-safety wrapper rather than propagated as an
+   * unhandled rejection. A lost op is recoverable via the client's
+   * y-websocket re-sync; a crashed process is not — see the resilience
+   * note on `changeImpl`. Any non-zero value here is a real durability
+   * miss worth alerting on, distinct from a transient retry.
+   */
+  opWriteErrors: number;
 }
 
 interface MetricsState {
@@ -78,6 +97,8 @@ interface MetricsState {
   replayFromOpsCount: number;
   compactionSweepRuns: number;
   roomsCompactedThisSweep: number;
+  opSeqRetries: number;
+  opWriteErrors: number;
 }
 
 const state: MetricsState = {
@@ -88,6 +109,8 @@ const state: MetricsState = {
   replayFromOpsCount: 0,
   compactionSweepRuns: 0,
   roomsCompactedThisSweep: 0,
+  opSeqRetries: 0,
+  opWriteErrors: 0,
 };
 
 export const storageMetrics = {
@@ -143,6 +166,24 @@ export const storageMetrics = {
   },
 
   /**
+   * Increment once per retried `board_ops` INSERT after a unique-violation
+   * (SQLSTATE 23505) on the `(board_id, op_seq)` index. Counts attempts,
+   * not ops — see {@link StorageMetricsSnapshot.opSeqRetries}.
+   */
+  recordOpSeqRetry(): void {
+    state.opSeqRetries += 1;
+  },
+
+  /**
+   * Increment once per `onChange` append that threw and was swallowed by
+   * the crash-safety wrapper. See
+   * {@link StorageMetricsSnapshot.opWriteErrors}.
+   */
+  recordOpWriteError(): void {
+    state.opWriteErrors += 1;
+  },
+
+  /**
    * Return a copy of the current counter values. The returned object is
    * a fresh allocation each call — callers may mutate it freely without
    * affecting the source-of-truth state.
@@ -156,6 +197,8 @@ export const storageMetrics = {
       replayFromOpsCount: state.replayFromOpsCount,
       compactionSweepRuns: state.compactionSweepRuns,
       roomsCompactedThisSweep: state.roomsCompactedThisSweep,
+      opSeqRetries: state.opSeqRetries,
+      opWriteErrors: state.opWriteErrors,
     };
   },
 
@@ -174,5 +217,7 @@ export const storageMetrics = {
     state.replayFromOpsCount = 0;
     state.compactionSweepRuns = 0;
     state.roomsCompactedThisSweep = 0;
+    state.opSeqRetries = 0;
+    state.opWriteErrors = 0;
   },
 };
