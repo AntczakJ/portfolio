@@ -2,7 +2,7 @@
 
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import { z } from 'zod';
-import * as Y from 'yjs';
+import type * as Y from 'yjs';
 
 import { env } from '@/lib/env';
 import { useWelcomeStore } from '@/lib/stores/welcome-store';
@@ -88,7 +88,7 @@ const oklchColorSchema = z.object({
 });
 
 const sessionIdentitySchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   emojiChar: z.string().min(1),
   emojiName: z.string().min(1),
   color: oklchColorSchema,
@@ -97,7 +97,7 @@ const sessionIdentitySchema = z.object({
 });
 
 const boardMetadataSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   createdAt: z.number().int(),
   connectionCount: z.number().int().nonnegative(),
 });
@@ -162,7 +162,23 @@ export function createBoardProvider(
     // capability). Hocuspocus skips the `Auth` handshake when token
     // is absent.
     token: null,
-    onMessage: ({ event }) => {
+    onMessage: (payload) => {
+      // HocuspocusProvider 4.1 emits the RAW browser `MessageEvent` to
+      // its `'message'` listeners (see `attachWebSocketListeners` ->
+      // `emit('message', event)`), despite the published
+      // `onMessageParameters` type declaring `{ event, message }`. The
+      // typed shape does NOT match the runtime emit for this callback
+      // path. A throw here is catastrophic, not cosmetic: our listener
+      // is registered BEFORE the provider's own y-protocol sync
+      // listener, the emitter dispatches via `forEach`, and a
+      // synchronous throw aborts that loop — so the framework's sync +
+      // awareness handler never runs and the whole CRDT wire goes dead.
+      // Accept BOTH shapes defensively and never throw.
+      const raw = payload as unknown as
+        | MessageEvent
+        | { event?: MessageEvent };
+      const event = raw instanceof MessageEvent ? raw : raw.event;
+      if (!event) return;
       handleProviderMessage(event, config.onUnknownControlFrame);
     },
   });
@@ -285,9 +301,15 @@ export function attachAwarenessSeedPipeline(
  * @internal
  */
 export function handleProviderMessage(
-  event: MessageEvent,
+  event: MessageEvent | null | undefined,
   onUnknown?: (raw: unknown) => void,
 ): void {
+  // Defensive: a nullish event must never throw. The caller in
+  // `createBoardProvider` already guards against this, but a throw
+  // here would abort the provider's emitter `forEach` and kill the
+  // framework's own sync listener — so we belt-and-braces it.
+  if (!event) return;
+
   // BINARY — the y-websocket protocol. Pass through; the framework
   // owns it.
   if (typeof event.data !== 'string') return;
@@ -315,7 +337,7 @@ export function handleProviderMessage(
     return;
   }
 
-  const kind = (parsed as { kind: unknown }).kind;
+  const kind = (parsed).kind;
 
   if (kind === 'welcome') {
     const result = welcomeFrameSchema.safeParse(parsed);
@@ -337,7 +359,7 @@ export function handleProviderMessage(
     // TypeScript does not see them as the same nominal type. The
     // cast is the single seam — Phase 2.5a will share this parser
     // surface; for Phase 2.6 the boundary is the cast here.
-    const payload = result.data as WSWelcomeFramePayload;
+    const payload = result.data;
     useWelcomeStore.getState().setWelcome(payload);
     return;
   }
