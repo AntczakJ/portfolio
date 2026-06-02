@@ -16,6 +16,11 @@ export default tseslint.config(
       '**/test-results/**',
       '**/*.min.js',
       '**/*.min.css',
+      // Standalone screenshot-capture and live-verification scripts. They
+      // are operational tooling (run by hand against a local stack), not in
+      // any tsconfig, and not part of CI or the test glob.
+      '**/docs/capture-*.mjs',
+      '**/e2e/*.mjs',
     ],
   },
   js.configs.recommended,
