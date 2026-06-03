@@ -9,14 +9,12 @@ All notable changes to **razors-edge** are documented here. The format follows [
 - Project README: hero wow-moment description, the honest mock-booking and not-yet-deployed notes, accurate run instructions (`pnpm install` then `cd projects/razors-edge && pnpm dev` on :3070, plus the production-build surface for E2E / Lighthouse / screenshots), the full stack, the four ADRs, the testing and Lighthouse story, and the v1-deferred list.
 - `docs/screenshots/` — eleven curated PNGs captured from the production build at 1440 x 900 (deviceScaleFactor 2) and 390 x 844: the hero at rest and mid-cut (light and dark), the services price list, the pinned gallery, the team, the booking date-time availability grid and the confirmation, and the mobile hero.
 - `e2e/capture-readme-screenshots.mjs` — Playwright capture script that drives the booking wizard and scrubs the pinned hero against the served production app.
-
-### Known docs gap
-
-- No live demo URL — the site is a local showcase and is not yet deployed. The README "Demo" section is a placeholder to be replaced with the real URL (and `NEXT_PUBLIC_SITE_URL` set) when a deploy lands.
+- Fly.io deploy infrastructure (`Dockerfile`, `fly.toml`, `.dockerignore`, `DEPLOY.md`, ADR-005): a single Fly Machine running the Next.js 15 standalone server, region `fra`, no backend and no secrets. `NEXT_PUBLIC_SITE_URL` is baked to `https://razors-edge-demo.fly.dev` at build time.
+- **Deployed to Fly.io: [razors-edge-demo.fly.dev](https://razors-edge-demo.fly.dev).** Verified live: the blade-sweep hero wow moment, the booking flow, `sitemap.xml` / `robots.txt` / the Open Graph image, CSP-clean GSAP, and zero 4xx/5xx. The Machine runs at 512 MB — a first deploy at 256 MB was OOM-killed on the first on-demand `next/image` optimization of the hero portrait (which 502'd the LCP image); the bump fixed it.
 
 ## [0.0.1] — 2026-06-03
 
-First publishable cut. A cinematic dark-luxe barbershop marketing site with a fully mocked, production-grade multi-step booking flow, feature-complete for v1. Four ADRs ratified; designer-critic and reviewer passes landed with all defects cleared (reviewer GREEN); unit + E2E + Lighthouse CI in place. Web-only, no backend. Not yet deployed.
+First publishable cut. A cinematic dark-luxe barbershop marketing site with a fully mocked, production-grade multi-step booking flow, feature-complete for v1. Four ADRs ratified; designer-critic and reviewer passes landed with all defects cleared (reviewer GREEN); unit + E2E + Lighthouse CI in place. Web-only, no backend. (Deployed to Fly.io shortly after — see [Unreleased].)
 
 ### Added
 
@@ -66,7 +64,7 @@ First publishable cut. A cinematic dark-luxe barbershop marketing site with a fu
 - **A live interactive map embed** — v1 uses a styled inline-SVG map plus a maps click-through; a lazy live embed is a v2 candidate.
 - **Multi-barber combos** — a combo is one service with a longer duration and cannot split across two barbers in v1.
 - **CMS-managed content and internationalisation** — seeded mock data, English only.
-- **Deploy** — the site is a local showcase and is not yet deployed; there is no live demo URL.
+- **Deploy** — not part of the v1 build itself, but the site was deployed to Fly.io immediately after (see [Unreleased]): [razors-edge-demo.fly.dev](https://razors-edge-demo.fly.dev).
 
 ---
 

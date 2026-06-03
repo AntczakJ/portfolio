@@ -10,7 +10,7 @@ Built to be judged on two fronts in the same five seconds: a recruiter or peer j
 
 ## Demo
 
-**Not yet deployed.** Razor's Edge is a local showcase; there is no live URL at this time. The canonical origin is wired through `NEXT_PUBLIC_SITE_URL` (it backs the sitemap, the canonical tags, the Open Graph image, and the `HairSalon` JSON-LD), with a documented placeholder (`https://razors-edge-demo.vercel.app`) until a real deploy lands. To see it, run it locally per [Run locally](#run-locally) — the screenshots below are captured from the production build on `http://localhost:3070`.
+**Live demo: [razors-edge-demo.fly.dev](https://razors-edge-demo.fly.dev)** — deployed on Fly.io (single Machine, Next.js 15 standalone, region `fra`, no backend / no secrets). The canonical origin is wired through `NEXT_PUBLIC_SITE_URL` (it backs the sitemap, the canonical tags, the Open Graph image, and the `HairSalon` JSON-LD). You can also run it locally per [Run locally](#run-locally); the screenshots below are captured from the production build.
 
 ## Screenshots
 

@@ -356,3 +356,98 @@ The scroll-driven blade-sweep hero is the wow moment and the spine of the design
 - **`AGENT_NOTES.md`** — open items this ADR routes: the variable display face licensing (Task 2.2) and the mock-photography provenance (Task 2.4).
 
 ---
+
+## ADR-005: Production deploy posture — Fly.io single-machine Next standalone, web-only, no secrets
+
+**Status:** accepted
+**Date:** 2026-06-03
+
+### Context
+
+v1 is feature-complete, reviewed, tested, and documented; the only
+remaining work is the deploy itself. razors-edge is **web-only**
+(ADR-001) — a single Next.js 15 App Router app with `output:
+'standalone'`, server actions, a dynamic `opengraph-image`, `sitemap.ts`
+/ `robots.ts`, and JSON-LD/metadata, over a fully mocked in-memory
+booking flow (ADR-003). It has no backend service, no database, no
+migrations, and no runtime secrets. This ADR ratifies the deploy posture
+so the deploy artifacts (`Dockerfile`, `fly.toml`, `.dockerignore`,
+`DEPLOY.md`) sit on a recorded footing consistent with the ADR-001..004
+trail, and so it is clear the simplicity is a deliberate consequence of
+the web-only thesis, not an omission.
+
+### Options considered
+
+- **A. Fly.io, single Machine, single Node process (the Next standalone
+  server), region `fra`. Picked.** Mirrors the portfolio's existing Fly
+  posture (tape, meld) for host consistency, but strips meld's
+  three-stage / entrypoint-fan-out / migration complexity that a
+  web-only app does not need. One process = one health check on `/`, the
+  simplest logs, the smallest image.
+- **B. Static export to a CDN/edge host (e.g. Cloudflare Pages,
+  Vercel static).** Tempting for a "static-ish" marketing site, but
+  **rejected**: the app genuinely needs the Node runtime — server
+  actions (`app/book/actions.ts`), the dynamic `opengraph-image`
+  (satori render), and `sitemap.ts` / `robots.ts` as runtime route
+  handlers are not expressible as a pure static export without losing
+  behaviour. `output: 'standalone'` is the honest runtime.
+- **C. Vercel (the Next-native host).** Valid and zero-config, but the
+  portfolio's deploy story is Fly across the board (tape/meld), and
+  keeping razors-edge on Fly demonstrates the same Docker/standalone
+  competence rather than offloading it to a managed Next host.
+  **Rejected for portfolio consistency**, not capability.
+
+### Decision
+
+**Deploy to Fly.io as a single Machine in `fra` running one process —
+the Next.js standalone Node server on internal port 3000, behind Fly's
+443 TLS terminator.** Multi-stage Dockerfile (deps install → Next
+standalone build → slim `node:22-bookworm-slim` runtime, non-root
+`node` user), with **`NEXT_PUBLIC_SITE_URL=https://razors-edge-demo.fly.dev`
+baked at BUILD time** (Next inlines `NEXT_PUBLIC_*` at build; the
+canonical/OG/sitemap/robots/JSON-LD URLs depend on it — the meld lesson
+that a wrong baked `NEXT_PUBLIC_*` silently ships). **No entrypoint
+script, no migrations, no secrets** — `CMD` execs `server.js` directly.
+The one-hop `outputFileTracingRoot` (web/next.config.ts) nests the
+bundle as `web/.next/standalone/web/server.js`, so the runtime layout is
+`/app/web/web/server.js` with `.next/static` + `public` as siblings
+(verified by a local `docker build` + `docker run` smoke). HTTP health
+check on `/` (a 200 is the liveness signal — there is no separate
+`/health` route). `auto_stop_machines = 'stop'` + `min_machines_running
+= 1` keep one Machine warm so the showcase loads without a cold start
+before the blade-sweep wow moment. VM shared-cpu-1x / 256 MB (web-only
+is light).
+
+### Consequences
+
+- **Positive.** Cheapest deploy in the portfolio (~$2-5/mo — no backend,
+  no database). Single process = trivial ops (one health check, one log
+  stream, no migration gate). Host-consistent with tape/meld (Fly +
+  Docker standalone). The baked `NEXT_PUBLIC_SITE_URL` makes every
+  absolute URL correct from the first request. No secret surface to
+  defend (consistent with the "no PII, persists nothing" cross-cutting
+  note).
+- **Negative.** A single Machine has no redundancy — a crash drops the
+  demo until Fly restarts it (acceptable for a portfolio demo; the
+  warm-floor + auto-start covers the common case). The warm floor costs
+  ~$2-3/mo at idle versus a true scale-to-zero; deliberate, to protect
+  the five-second first impression. 256 MB is comfortable but not
+  generous for the OG satori render under a burst — the documented
+  bump-to-512 path covers it without an ADR.
+
+### References
+
+- **ADR-001** — web-only thesis (no backend, no secrets) this posture
+  flows from.
+- **meld `DECISIONS.md` ADR-006 + `Dockerfile` / `fly.toml` / `DEPLOY.md`**
+  — the Fly single-Machine pattern + the `[http_service]` single-block
+  shape + the one-hop standalone-path nesting lesson this deploy mirrors
+  (minus the server/migration complexity meld needs and razors-edge does
+  not).
+- **`web/next.config.ts`** — `output: 'standalone'` +
+  `outputFileTracingRoot` (the source of the `web/.next/standalone/web/
+server.js` nesting) + the CSP/security-header set served at runtime.
+- **CLAUDE.md § 4** — performance / security baseline (the warm floor
+  serves the Lighthouse-grade first paint; no secret surface).
+
+---

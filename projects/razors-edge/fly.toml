@@ -1,0 +1,88 @@
+# fly.toml app configuration file for razors-edge-demo
+#
+# See https://fly.io/docs/reference/configuration/ for the schema. The
+# `[http_service]` block (NOT the legacy `[[services]]` array) is the
+# current Fly recommendation for single-service apps — meld's Phase 6
+# pinned this forward after tape's dual-services-port-443 collision.
+#
+# razors-edge's deploy posture (ADR-005):
+#   - WEB-ONLY: a single Fly Machine running ONE process, the Next.js 15
+#     standalone Node server. No backend, no Postgres, no migrations, no
+#     secrets (the booking flow is mocked in-memory — ADR-001 / ADR-003).
+#   - Single external port (443) → Fly edge TLS terminator → container
+#     internal port 3000 (the conventional Next standalone PORT).
+#   - Region `fra` (EU — owner is in Poznań), matching meld + tape.
+#   - `auto_stop_machines = 'stop'` + `min_machines_running = 1`: the
+#     app is stateless and could safely scale to zero, but this is a
+#     PORTFOLIO SHOWCASE — a recruiter clicking the demo URL must not
+#     hit a 5-10 s cold-start before "the 5-second wow moment" (the
+#     blade-sweep hero). min 1 keeps one Machine warm; `auto_stop`
+#     still lets Fly reap any extra Machines a burst spun up. The cost
+#     of one always-on shared-cpu-1x/256MB Machine is ~$2-3/mo (see
+#     DEPLOY.md "Cost") — cheap insurance against cold-start jank on a
+#     showcase whose whole point is the first five seconds.
+
+app = 'razors-edge-demo'
+primary_region = 'fra'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[deploy]
+  strategy = 'rolling'
+
+[env]
+  NODE_ENV = 'production'
+  # Next standalone listens on 3000 inside the container; Fly's edge
+  # forwards 443 → 3000 per `internal_port` below.
+  PORT = '3000'
+  # NEXT_PUBLIC_SITE_URL is baked at BUILD time in the Dockerfile (Next
+  # inlines NEXT_PUBLIC_* into the client bundle at build). Mirroring it
+  # here is defence-in-depth + an audit signal during `flyctl status`:
+  # server-side reads (metadataBase, sitemap, robots, OG, JSON-LD) honour
+  # this runtime value, and it documents the canonical origin. Harmless
+  # to keep in sync with the Dockerfile ARG.
+  NEXT_PUBLIC_SITE_URL = 'https://razors-edge-demo.fly.dev'
+
+[http_service]
+  # All external HTTPS traffic terminates at the Next standalone server
+  # on 3000. There is exactly one process and one surface — the whole
+  # site (the marketing `/` route tree, `/book`, `/sitemap.xml`,
+  # `/robots.txt`, the OG image, the static assets) is served from it.
+  internal_port = 3000
+  force_https = true
+  # Keep one Machine warm so the showcase loads instantly. `auto_stop`
+  # reaps extras; `min_machines_running = 1` guarantees no cold start on
+  # the canonical demo URL.
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+  [http_service.concurrency]
+    type = 'requests'
+    hard_limit = 250
+    soft_limit = 200
+
+  # HTTP health check on `/` — a 200 means the Next server is up and
+  # serving the marketing page (the app has no separate /health route;
+  # it is web-only, so the root document IS the liveness signal).
+  [[http_service.checks]]
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '20s'
+    method = 'get'
+    path = '/'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  # 512 MB. The first deploy ran at 256 MB and the Next standalone server
+  # was OOM-killed on the FIRST on-demand `next/image` optimization of the
+  # cinematic hero portrait (sharp decoding a large AVIF + the standalone
+  # server exceeded 256 MB), which 502'd the LCP image and broke the hero
+  # reveal. Bumped to 512 MB (verified: image optimization + the OG
+  # `ImageResponse` satori render serve cleanly, zero 502s, the portrait
+  # loads). The earlier "256 is comfortable" note was wrong for the
+  # image-optimization path — corrected here and in AGENT_NOTES.md.
+  memory_mb = 512
