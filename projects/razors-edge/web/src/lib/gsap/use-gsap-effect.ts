@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, type RefObject } from 'react';
 
+import { requestGlobalRefresh } from './refresh-coordinator';
 import { loadGsap, type GsapHandles } from './register';
 
 /**
@@ -76,6 +77,14 @@ export function useGsapEffect(
         context = handles.gsap.context(() => {
           setupRef.current(handles);
         }, scope.current);
+        // Coordinated, order-independent refresh: instead of this section
+        // refreshing in isolation (which races upstream pins that may not
+        // exist yet — the gallery-early-pin bug), request a single debounced
+        // global `ScrollTrigger.refresh()` that fires once after the LAST
+        // section has registered its triggers, recomputing every trigger in
+        // document order with all pins (the idle-deferred hero included)
+        // accounted for. See `refresh-coordinator.ts`.
+        requestGlobalRefresh();
       });
     };
 

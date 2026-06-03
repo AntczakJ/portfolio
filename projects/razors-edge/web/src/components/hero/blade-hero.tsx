@@ -42,7 +42,7 @@ export function BladeHero(): ReactNode {
 
   useGsapEffect(
     scope,
-    ({ gsap, ScrollTrigger }) => {
+    ({ gsap }) => {
       const root = scope.current;
       if (!root) return;
 
@@ -197,7 +197,11 @@ export function BladeHero(): ReactNode {
         },
       );
 
-      ScrollTrigger.refresh();
+      // No isolated `ScrollTrigger.refresh()` here: `useGsapEffect` requests a
+      // single coordinated global refresh once the last section has loaded.
+      // Because the hero is `idle`-deferred it often loads AFTER downstream
+      // sections; the coordinated refresh recomputes every downstream pin
+      // (the gallery) against this hero pin once it finally exists.
     },
     [],
     { idle: true },

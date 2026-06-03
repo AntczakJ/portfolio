@@ -41,7 +41,7 @@ export function BladeSweepDivider({
 
   useGsapEffect(
     scope,
-    ({ gsap, ScrollTrigger }) => {
+    ({ gsap }) => {
       const mm = gsap.matchMedia();
 
       mm.add(
@@ -88,7 +88,8 @@ export function BladeSweepDivider({
         },
       );
 
-      ScrollTrigger.refresh();
+      // Coordinated global refresh is requested by `useGsapEffect`; no isolated
+      // refresh here (it would race the idle-deferred hero pin).
     },
     [weight],
   );

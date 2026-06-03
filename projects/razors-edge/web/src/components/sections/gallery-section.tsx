@@ -37,7 +37,7 @@ export function GallerySection(): ReactNode {
 
   useGsapEffect(
     scope,
-    ({ gsap, ScrollTrigger }) => {
+    ({ gsap }) => {
       const root = scope.current;
       const track = trackRef.current;
       if (!root || !track) return;
@@ -99,7 +99,10 @@ export function GallerySection(): ReactNode {
         },
       );
 
-      ScrollTrigger.refresh();
+      // No isolated `ScrollTrigger.refresh()` here: `useGsapEffect` requests a
+      // single coordinated global refresh after the last section (incl. the
+      // idle-deferred hero pin) has registered, so this pinned trigger is
+      // always measured against a document that includes every upstream pin.
     },
     [],
   );
