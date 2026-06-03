@@ -16,6 +16,12 @@ export default tseslint.config(
       '**/test-results/**',
       '**/*.min.js',
       '**/*.min.css',
+      // Next.js generates `next-env.d.ts` on every build and gitignores it. It
+      // is not authored source (it only emits triple-slash references the
+      // strict config forbids), is never staged for the pre-commit hook, and
+      // each Next package's own eslint config already ignores it — mirror that
+      // at the root so the lint-staged generic glob does not trip on it.
+      '**/next-env.d.ts',
       // Standalone screenshot-capture and live-verification scripts. They
       // are operational tooling (run by hand against a local stack), not in
       // any tsconfig, and not part of CI or the test glob.
@@ -29,6 +35,11 @@ export default tseslint.config(
       // does not fail on them with a "not found by the project service" parse
       // error.
       '**/scripts/**',
+      // Vitest config files live at each web package root, outside that
+      // package's tsconfig include, so the type-aware project service rejects
+      // them with the same "not found by the project service" parse error.
+      // They are build-tool config, not authored app source.
+      '**/vitest.config.{ts,mts}',
     ],
   },
   js.configs.recommended,
@@ -57,7 +68,7 @@ export default tseslint.config(
     ...jsxA11y.flatConfigs.recommended,
   },
   {
-    files: ['*.{js,cjs,mjs}', '*.config.{js,cjs,mjs,ts}'],
+    files: ['**/*.{js,cjs,mjs}', '*.config.{js,cjs,mjs,ts}'],
     languageOptions: {
       parserOptions: {
         projectService: false,
