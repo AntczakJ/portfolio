@@ -147,6 +147,22 @@
   --color-blade-mid: oklch(0.66 0.012 250);
   --color-blade-shadow: oklch(0.34 0.01 250);
 
+  /* ── "On-photo" text tokens ───────────────────────────────────────
+   * Text that sits DIRECTLY over the dark-luxe graded photography (which
+   * is dark in BOTH themes) — e.g. the gallery's desktop overlay heading.
+   * These are theme-INDEPENDENT light values (identical in :root and
+   * .light below) because the surface they read against is always the
+   * dark photo, never the page ground. They are drawn from the dark fg /
+   * brass ramp so the on-photo register matches the brand, and they pair
+   * with `--on-photo-scrim` (a soft top-down dark gradient) that keeps
+   * the text legible over whatever frame is behind it — the same
+   * fixed-dark-scrim idea the gallery captions already use
+   * (`from-black/55`). */
+  --color-on-photo: oklch(0.96 0.01 80);
+  --color-on-photo-muted: oklch(0.82 0.014 78);
+  --color-on-photo-brass: oklch(0.84 0.105 80);
+  --on-photo-scrim: oklch(0.1 0.006 70 / 0.62);
+
   /* ── shadcn/ui token bridge ───────────────────────────────────────
    * Alias the generic shadcn vocabulary onto the sovereign tokens
    * (never fresh values). `primary` is the deliberate brand brass;
@@ -207,6 +223,12 @@
   --color-blade-spec: oklch(0.97 0.02 80);
   --color-blade-mid: oklch(0.66 0.012 250);
   --color-blade-shadow: oklch(0.34 0.01 250);
+
+  /* On-photo text (theme-independent — identical in .light; see @theme). */
+  --color-on-photo: oklch(0.96 0.01 80);
+  --color-on-photo-muted: oklch(0.82 0.014 78);
+  --color-on-photo-brass: oklch(0.84 0.105 80);
+  --on-photo-scrim: oklch(0.1 0.006 70 / 0.62);
 
   /* ── Motif hooks read by Phase 3 chrome / hero ──────────────────── */
   /* Film-grain overlay opacity (the noise layer that fuses type-over-
@@ -270,6 +292,14 @@
   --color-blade-spec: oklch(0.72 0.02 250);
   --color-blade-mid: oklch(0.56 0.012 250);
   --color-blade-shadow: oklch(0.4 0.012 250);
+
+  /* On-photo text does NOT flip with the theme — the graded photography is
+   * dark in both themes, so on-photo text stays light. Restated here
+   * (identical to :root) to make the non-inversion explicit. */
+  --color-on-photo: oklch(0.96 0.01 80);
+  --color-on-photo-muted: oklch(0.82 0.014 78);
+  --color-on-photo-brass: oklch(0.84 0.105 80);
+  --on-photo-scrim: oklch(0.1 0.006 70 / 0.62);
 
   /* Grain is lighter on bright paper so it reads as print tooth. */
   --grain-opacity: 0.035;

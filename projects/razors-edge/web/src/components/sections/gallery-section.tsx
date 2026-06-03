@@ -114,10 +114,25 @@ export function GallerySection(): ReactNode {
       aria-labelledby="gallery-heading"
       className="relative scroll-mt-24 overflow-hidden py-24 sm:py-28 lg:py-0"
     >
-      {/* Heading rail — sits above the strip on touch/mobile, overlays as a
-          fixed corner label inside the pinned viewport on desktop. */}
-      <div className="mx-auto mb-12 max-w-[80rem] px-5 sm:px-8 lg:absolute lg:top-10 lg:left-0 lg:right-0 lg:z-10 lg:mb-0">
-        <p className="text-brass-text flex items-center gap-3 text-[length:var(--text-caption)] tracking-[0.32em] uppercase">
+      {/* Heading rail — sits above the strip on touch/mobile (on the page
+          ground, so it stays theme-aware: `text-fg` / `text-brass-text`),
+          and overlays the pinned photo strip on desktop. The graded
+          photography is dark-luxe in BOTH themes, so the desktop overlay
+          switches to the theme-independent on-photo tokens (always light)
+          plus a soft top scrim — otherwise the light theme's dark `text-fg`
+          is illegible over the dark frames behind it. This mirrors the
+          fixed-dark-scrim + light-text treatment the gallery captions
+          already use (`from-black/55`). */}
+      <div className="relative mx-auto mb-12 max-w-[80rem] px-5 sm:px-8 lg:absolute lg:top-10 lg:right-0 lg:left-0 lg:z-10 lg:mb-0 lg:pt-10">
+        {/* Desktop-only top scrim: a soft top-down dark gradient behind the
+            heading region so the on-photo text is legible over whatever
+            frame sits behind it. `lg:` only — the mobile heading is on the
+            page ground and needs no scrim. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 -top-10 hidden h-[18rem] bg-gradient-to-b from-[var(--on-photo-scrim)] to-transparent lg:block"
+        />
+        <p className="text-brass-text lg:text-on-photo-brass relative flex items-center gap-3 text-[length:var(--text-caption)] tracking-[0.32em] uppercase">
           <span
             aria-hidden="true"
             className="h-px w-8 bg-[var(--color-edge-glow)]"
@@ -126,7 +141,7 @@ export function GallerySection(): ReactNode {
         </p>
         <h2
           id="gallery-heading"
-          className="font-display text-fg mt-4 max-w-xl text-balance text-[length:var(--text-h1)] leading-[1.05] [font-variation-settings:'opsz'_120,'wght'_440,'SOFT'_0]"
+          className="font-display text-fg lg:text-on-photo relative mt-4 max-w-xl text-balance text-[length:var(--text-h1)] leading-[1.05] [font-variation-settings:'opsz'_120,'wght'_440,'SOFT'_0]"
         >
           A room, a chair, and the result.
         </h2>

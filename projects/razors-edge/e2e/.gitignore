@@ -3,6 +3,7 @@ playwright-report/
 test-results/
 playwright/.cache/
 .repro/
+.gallery-legibility/
 .env
 .env.test
 .env.local
