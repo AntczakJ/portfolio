@@ -4,10 +4,11 @@ Production-grade showcase monorepo. Each subfolder in `projects/*` is an indepen
 
 ## Projects
 
-| Name                       | Pitch                                                                                                | Stack                                                                                | Demo |
-| -------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---- |
-| [`tape`](./projects/tape/) | Production-grade real-time orderflow visualizer for crypto perpetual futures.                        | Next 15 + React 19 + Tailwind v4 + Elysia (Bun) + Rust + Postgres + Drizzle          | [tape-demo.fly.dev](https://tape-demo.fly.dev) |
-| [`meld`](./projects/meld/) | Local-first collaborative whiteboard with sub-100 ms presence and CRDT auto-merge on reconnect.       | Next 15 + React 19 + Tailwind v4 + Hono (Node 22) + Hocuspocus + Yjs + Postgres + Drizzle | [meld-demo.fly.dev](https://meld-demo.fly.dev) |
+| Name                                     | Pitch                                                                                                                           | Stack                                                                                                            | Demo                                           |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| [`tape`](./projects/tape/)               | Production-grade real-time orderflow visualizer for crypto perpetual futures.                                                   | Next 15 + React 19 + Tailwind v4 + Elysia (Bun) + Rust + Postgres + Drizzle                                      | [tape-demo.fly.dev](https://tape-demo.fly.dev) |
+| [`meld`](./projects/meld/)               | Local-first collaborative whiteboard with sub-100 ms presence and CRDT auto-merge on reconnect.                                 | Next 15 + React 19 + Tailwind v4 + Hono (Node 22) + Hocuspocus + Yjs + Postgres + Drizzle                        | [meld-demo.fly.dev](https://meld-demo.fly.dev) |
+| [`razors-edge`](./projects/razors-edge/) | Cinematic dark-luxe barbershop marketing site with a scroll-driven blade-sweep hero and a fully mocked multi-step booking flow. | Next 15 + React 19 + Tailwind v4 + GSAP (scroll) + Motion (wizard) + TanStack Query + Zod (web-only, no backend) | Not yet deployed                               |
 
 ## Philosophy
 

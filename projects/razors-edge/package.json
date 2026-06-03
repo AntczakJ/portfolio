@@ -1,0 +1,15 @@
+{
+  "name": "razors-edge",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Razor's Edge — cinematic dark-luxe barbershop marketing site with a fully mocked multi-step booking flow. Web-only Next.js 15 showcase (slot 3). Animation: GSAP + ScrollTrigger primary, Motion scoped to component-state transitions. See DECISIONS.md ADR-001..ADR-004.",
+  "scripts": {
+    "dev": "pnpm -F razors-edge-web dev",
+    "build": "pnpm -F razors-edge-web build",
+    "start": "pnpm -F razors-edge-web start",
+    "lint": "pnpm -F razors-edge-web lint",
+    "typecheck": "pnpm -F razors-edge-web typecheck",
+    "test": "pnpm -F razors-edge-web test"
+  }
+}

@@ -1,0 +1,119 @@
+name: razors-edge-e2e
+
+# Phase 6, Task 6.2 — Playwright E2E harness for razors-edge.
+#
+# Critical-path coverage for the dark-luxe barbershop showcase: landing SSR /
+# production-CSP smoke, the booking happy path (the centerpiece), deep-link
+# preselect, details-form validation, the availability grid, keyboard
+# operation, the reduced-motion hero, the theme toggle, and the stale-slot
+# reconciliation path.
+#
+# The surface under test is the BUILT + SERVED app on :3070 (next start, NOT
+# next dev — the strict CSP forbids unsafe-eval and next dev cannot run under
+# it; several assertions, e.g. zero UNEXPECTED CSP violations + GSAP-hydrated
+# landing, are only meaningful against the production surface).
+#
+# Trigger model (mirrors meld-e2e):
+#   - workflow_dispatch with an optional target_url — run against any deployed
+#     URL (a pre-promotion gate). Defaults to the in-job local stack.
+#   - push to main touching projects/razors-edge/** — gate the project on a
+#     passing E2E sweep against the in-job built + served app.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target URL to test against (defaults to the in-job local build)'
+        required: false
+        type: string
+        default: ''
+  push:
+    branches: [main]
+    paths:
+      - 'projects/razors-edge/**'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/razors-edge-e2e.yml'
+
+concurrency:
+  group: razors-edge-e2e-${{ github.event.inputs.target_url || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+jobs:
+  e2e:
+    name: e2e (built + served :3070)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # When a target_url is supplied (dispatch), test that; otherwise the
+      # in-job local build on :3070.
+      RAZORS_EDGE_E2E_TARGET_URL: ${{ github.event.inputs.target_url }}
+      BASE_URL: ${{ github.event.inputs.target_url || 'http://localhost:3070' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright (chromium only)
+        run: pnpm -F razors-edge-e2e exec playwright install --with-deps chromium
+
+      - name: Build razors-edge-web
+        if: github.event.inputs.target_url == ''
+        run: pnpm -F razors-edge-web build
+
+      - name: Start razors-edge-web (next start on :3070)
+        if: github.event.inputs.target_url == ''
+        run: |
+          nohup pnpm -F razors-edge-web start > /tmp/razors-edge-web.log 2>&1 &
+          echo "RAZORS_WEB_PID=$!" >> $GITHUB_ENV
+
+      - name: Wait for the app on :3070
+        if: github.event.inputs.target_url == ''
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3070 > /dev/null; then
+              echo "razors-edge-web up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "razors-edge-web never came up. Last log:"
+          tail -n 200 /tmp/razors-edge-web.log || true
+          exit 1
+
+      - name: Run Playwright tests
+        run: pnpm -F razors-edge-e2e test --project=chromium
+
+      - name: Stop background process
+        if: always() && github.event.inputs.target_url == ''
+        run: |
+          if [ -n "${RAZORS_WEB_PID:-}" ]; then kill "$RAZORS_WEB_PID" || true; fi
+
+      - name: Upload web log on failure
+        if: failure() && github.event.inputs.target_url == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: razors-edge-web-log-${{ github.run_id }}
+          path: /tmp/razors-edge-web.log
+          retention-days: 14
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: razors-edge-e2e-report-${{ github.run_id }}
+          path: projects/razors-edge/e2e/playwright-report
+          retention-days: 30

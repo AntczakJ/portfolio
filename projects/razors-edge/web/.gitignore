@@ -1,0 +1,18 @@
+# Build / deps
+.next/
+node_modules/
+*.tsbuildinfo
+next-env.d.ts
+
+# Local env
+.env
+.env.local
+.env*.local
+
+# Phase 3 review scratch — headless capture screenshots, not for commit.
+.review/
+
+# Raw photography downloads — only the graded/ derivatives + CREDITS.md
+# ship. Keep the originals locally for re-grading; do not version them.
+public/images/*.jpg
+src/mocks/seed-data.generated.json

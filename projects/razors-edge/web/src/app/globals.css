@@ -1,0 +1,424 @@
+@import 'tailwindcss';
+
+/* Tailwind v4 class-strategy dark variant. next-themes is configured
+ * with `attribute="class"` + `defaultTheme="dark"`, so it writes
+ * `class="dark"` (or `class="light"`) on <html>. This custom variant
+ * makes the shadcn `dark:` utilities resolve against that class. Dark
+ * is also the :root default below, so `dark:` utilities and the
+ * :root tokens agree on first paint. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* =========================================================================
+ * Razor's Edge — sovereign design tokens (Phase 2.1, real palette).
+ *
+ * SOVEREIGN per docs/conventions.md § 14 — NO reuse from tape (slate +
+ * electric cyan) or meld (warm-paper + violet). The identity is a warm,
+ * cinematic "brass-on-near-black": deep charcoal grounds, refined warm
+ * neutrals, and a single warm metallic accent (BRASS / amber) used with
+ * restraint as the recurring "lit edge" motif (the honed-blade highlight).
+ *
+ * Tailwind v4 is CSS-first: theme tokens are CSS custom properties in
+ * @theme so Tailwind generates the matching utilities at build time.
+ * There is NO tailwind.config.js — @theme plus the :root (dark, canonical)
+ * and .light overrides ARE the configuration.
+ *
+ * ── Naming note: brass vs shadcn `accent` ─────────────────────────────
+ * The brand metallic is named `--color-brass*` (NOT `accent`) on purpose,
+ * so it does NOT collide with shadcn's `accent`, which shadcn primitives
+ * use as their QUIET hover/active surface (ghost/outline button hover,
+ * menu-item hover). This resolves the Phase 1 flag: shadcn `bg-accent`
+ * maps to a calm raised surface, never the loud brand brass. Deliberate
+ * brand-accent use is `bg-brass` / `text-brass-text` / `bg-primary`.
+ *
+ * ── Two brass treatments (deliberate) ─────────────────────────────────
+ *   --color-brass        saturated brass for LARGE UI + the motif (lit
+ *                        edge, dividers, glows, fills). ≥ 3:1 vs bg.
+ *   --color-brass-text   lighter / lower-chroma brass that is SAFE as
+ *                        small text / icons on the ground. ≥ 4.5:1.
+ * Text uses brass-text; fills put --color-on-brass ink on a brass surface.
+ *
+ * ── Contrast (verified — see AGENT_NOTES.md Phase 2 entry) ────────────
+ * DARK   fg/bg 16.6 · fgMuted/bg 9.1 · fgSubtle/bg 5.4 · brassText/bg
+ *        11.9 · brassText/surface 10.9 · onBrass/brass 9.6 · brass/bg
+ *        10.4 (UI) · borderStrong/bg 3.7 (UI) · danger/bg 6.9.
+ * LIGHT  fg/bg 14.3 · fgMuted/bg 7.1 · fgSubtle/bg 4.6 · brassText/bg
+ *        5.6 · brassText/surface 5.2 · onBrass/brass 4.6 · brass/bg
+ *        4.4 (UI) · borderStrong/bg 3.3 (UI) · danger/bg 5.5.
+ * (Plain `--color-border` is a quiet decorative separator and is NOT
+ *  required to hit 3:1; component boundaries that convey state use
+ *  --color-border-strong, which clears 3:1 in both themes.)
+ * ===================================================================== */
+
+@theme {
+  /* ── Type ───────────────────────────────────────────────────────────
+   * Phase 2.2 loads the real variable faces via next/font; layout.tsx
+   * puts `--font-fraunces` / `--font-inter` on <html>, and these hooks
+   * reference them. Fallbacks keep the page legible before swap-in. */
+  --font-display: var(--font-fraunces), ui-serif, Georgia, 'Times New Roman', serif;
+  --font-sans:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', Menlo, Monaco, 'Cascadia Mono', Consolas, 'Courier New', monospace;
+
+  /* Variable-font axis hooks. The wordmark + headings animate weight
+   * (and Fraunces' optical-size / soft axes) via these; the hero reads
+   * them for the kinetic-weight idle shimmer (ADR-004). */
+  --display-wght-light: 340;
+  --display-wght: 460;
+  --display-wght-bold: 600;
+  --display-opsz: 144;
+  --display-soft: 0;
+  --sans-wght: 400;
+  --sans-wght-medium: 520;
+  --sans-wght-bold: 640;
+
+  /* ── Type scale (luxe restraint: tight display tracking, generous
+   *    leading on body). clamp() so it is fluid 320px → 1920px. ─────── */
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.4;
+  --text-caption--letter-spacing: 0.08em;
+  --text-body-sm: 0.875rem;
+  --text-body-sm--line-height: 1.55;
+  --text-body: 1rem;
+  --text-body--line-height: 1.65;
+  --text-body-lg: 1.125rem;
+  --text-body-lg--line-height: 1.6;
+  --text-h3: clamp(1.25rem, 1.05rem + 1vw, 1.6rem);
+  --text-h3--line-height: 1.2;
+  --text-h3--letter-spacing: -0.01em;
+  --text-h2: clamp(1.6rem, 1.25rem + 1.75vw, 2.4rem);
+  --text-h2--line-height: 1.12;
+  --text-h2--letter-spacing: -0.015em;
+  --text-h1: clamp(2.25rem, 1.6rem + 3.25vw, 3.75rem);
+  --text-h1--line-height: 1.05;
+  --text-h1--letter-spacing: -0.02em;
+  --text-display: clamp(3rem, 1.2rem + 9vw, 9rem);
+  --text-display--line-height: 0.92;
+  --text-display--letter-spacing: -0.025em;
+
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+  --radius-xl: 22px;
+
+  /* ── Sovereign palette (DARK / canonical). Values live here so the
+   *    @theme utilities are generated; :root re-states them as the
+   *    runtime source of truth and .light overrides. ───────────────── */
+
+  /* Grounds → raised surface ramp. */
+  --color-bg: oklch(0.155 0.01 70);
+  --color-surface: oklch(0.205 0.012 68);
+  --color-surface-raised: oklch(0.255 0.013 66);
+
+  /* Borders — `border` is a quiet decorative separator; `border-strong`
+   * is the interactive/component boundary token (≥ 3:1). */
+  --color-border: oklch(0.32 0.012 66);
+  --color-border-strong: oklch(0.53 0.014 66);
+
+  /* Foreground ramp. */
+  --color-fg: oklch(0.945 0.01 80);
+  --color-fg-muted: oklch(0.76 0.014 78);
+  --color-fg-subtle: oklch(0.62 0.014 76);
+
+  /* The "lit edge" brass — the single brand accent. */
+  --color-brass: oklch(0.8 0.115 78);
+  --color-brass-text: oklch(0.84 0.105 80);
+  --color-brass-strong: oklch(0.88 0.1 82);
+  --color-brass-muted: oklch(0.62 0.1 74);
+  --color-on-brass: oklch(0.2 0.03 70);
+
+  /* shadcn `accent` = QUIET primitive hover surface (NOT brass). */
+  --color-accent: oklch(0.255 0.013 66);
+
+  /* Semantic status. */
+  --color-success: oklch(0.78 0.11 150);
+  --color-danger: oklch(0.7 0.15 28);
+  --color-on-danger: oklch(0.18 0.02 28);
+
+  --color-ring: oklch(0.84 0.105 80);
+
+  /* ── Motif tokens (blade / edge / grain) ──────────────────────────── */
+  /* The amber edge-of-light that tracks the blade and lines the wordmark
+   * baseline. Brighter + warmer than brass so the glow reads as lit. */
+  --color-edge-glow: oklch(0.86 0.14 80);
+  /* Specular / brushed-metal stops for the razor SVG gradient. */
+  --color-blade-spec: oklch(0.97 0.02 80);
+  --color-blade-mid: oklch(0.66 0.012 250);
+  --color-blade-shadow: oklch(0.34 0.01 250);
+
+  /* ── shadcn/ui token bridge ───────────────────────────────────────
+   * Alias the generic shadcn vocabulary onto the sovereign tokens
+   * (never fresh values). `primary` is the deliberate brand brass;
+   * `accent` is the quiet hover surface above. */
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-fg);
+  --color-primary: var(--color-brass);
+  --color-primary-foreground: var(--color-on-brass);
+  --color-secondary: var(--color-surface-raised);
+  --color-secondary-foreground: var(--color-fg);
+  --color-muted: var(--color-surface);
+  --color-muted-foreground: var(--color-fg-muted);
+  --color-accent-foreground: var(--color-fg);
+  --color-destructive: var(--color-danger);
+  --color-destructive-foreground: var(--color-on-danger);
+  --color-input: var(--color-border-strong);
+  --color-card: var(--color-surface);
+  --color-card-foreground: var(--color-fg);
+  --color-popover: var(--color-surface-raised);
+  --color-popover-foreground: var(--color-fg);
+}
+
+/* =========================================================================
+ * Canonical DARK palette in :root → first paint is dark before
+ * next-themes resolves (no light flash on a dark-default brand). The
+ * @theme values above already encode dark; restating here is the explicit
+ * runtime anchor that .light overrides.
+ * ===================================================================== */
+:root {
+  color-scheme: dark;
+
+  --color-bg: oklch(0.155 0.01 70);
+  --color-surface: oklch(0.205 0.012 68);
+  --color-surface-raised: oklch(0.255 0.013 66);
+  --color-border: oklch(0.32 0.012 66);
+  --color-border-strong: oklch(0.53 0.014 66);
+
+  --color-fg: oklch(0.945 0.01 80);
+  --color-fg-muted: oklch(0.76 0.014 78);
+  --color-fg-subtle: oklch(0.62 0.014 76);
+
+  --color-brass: oklch(0.8 0.115 78);
+  --color-brass-text: oklch(0.84 0.105 80);
+  --color-brass-strong: oklch(0.88 0.1 82);
+  --color-brass-muted: oklch(0.62 0.1 74);
+  --color-on-brass: oklch(0.2 0.03 70);
+
+  --color-accent: oklch(0.255 0.013 66);
+
+  --color-success: oklch(0.78 0.11 150);
+  --color-danger: oklch(0.7 0.15 28);
+  --color-on-danger: oklch(0.18 0.02 28);
+
+  /* Focus ring = the text-safe brass (D-07), AA vs every ground (dark 11.9). */
+  --color-ring: oklch(0.84 0.105 80);
+
+  --color-edge-glow: oklch(0.86 0.14 80);
+  --color-blade-spec: oklch(0.97 0.02 80);
+  --color-blade-mid: oklch(0.66 0.012 250);
+  --color-blade-shadow: oklch(0.34 0.01 250);
+
+  /* ── Motif hooks read by Phase 3 chrome / hero ──────────────────── */
+  /* Film-grain overlay opacity (the noise layer that fuses type-over-
+   * photo into one cinematic frame). Tuned low on dark. */
+  --grain-opacity: 0.05;
+  /* Hero / divider gradient stops. */
+  --hero-field-top: oklch(0.135 0.008 70);
+  --hero-field-bottom: oklch(0.185 0.012 66);
+  --hero-vignette: oklch(0.1 0.006 70 / 0.65);
+  /* Brass edge-glow blur radius hook for the lit-edge highlight. */
+  --edge-glow-blur: 10px;
+
+  /* ── Studio-map palette (D-06) — monochrome brass-on-near-black ────── */
+  /* Dark register: near-black field, warm-grey streets brightening to a
+   * brass-tinged avenue, a faintly-lit studio block, dim labels. */
+  --map-field-near: oklch(0.205 0.012 68);
+  --map-field-far: oklch(0.135 0.008 70);
+  --map-street: oklch(0.36 0.012 66);
+  --map-avenue: oklch(0.5 0.04 74);
+  --map-block: oklch(0.3 0.018 70);
+  --map-park: oklch(0.24 0.02 140 / 0.5);
+  --map-label: oklch(0.7 0.05 76);
+}
+
+/* =========================================================================
+ * Intentional LIGHT theme — a "daytime barbershop / editorial print"
+ * register: warm bone/ivory paper, charcoal ink, the brass darkened to
+ * hold contrast on light. NOT a mechanical inversion — a separate,
+ * considered design reviewed in its own right.
+ * ===================================================================== */
+.light {
+  color-scheme: light;
+
+  --color-bg: oklch(0.965 0.01 85);
+  --color-surface: oklch(0.935 0.013 84);
+  --color-surface-raised: oklch(0.99 0.005 85);
+  --color-border: oklch(0.86 0.014 82);
+  --color-border-strong: oklch(0.62 0.02 72);
+
+  --color-fg: oklch(0.255 0.02 60);
+  --color-fg-muted: oklch(0.44 0.02 62);
+  --color-fg-subtle: oklch(0.55 0.018 64);
+
+  --color-brass: oklch(0.56 0.135 62);
+  --color-brass-text: oklch(0.5 0.13 60);
+  --color-brass-strong: oklch(0.44 0.12 58);
+  --color-brass-muted: oklch(0.66 0.1 68);
+  --color-on-brass: oklch(0.985 0.006 85);
+
+  /* Quiet shadcn primitive-hover surface on light = a soft warm tint. */
+  --color-accent: oklch(0.91 0.016 80);
+
+  --color-success: oklch(0.5 0.12 150);
+  --color-danger: oklch(0.52 0.2 28);
+  --color-on-danger: oklch(0.985 0.006 85);
+
+  /* Focus ring = the text-safe brass (D-07), AA vs every ground (light 5.6). */
+  --color-ring: oklch(0.5 0.13 60);
+
+  --color-edge-glow: oklch(0.62 0.15 62);
+  --color-blade-spec: oklch(0.72 0.02 250);
+  --color-blade-mid: oklch(0.56 0.012 250);
+  --color-blade-shadow: oklch(0.4 0.012 250);
+
+  /* Grain is lighter on bright paper so it reads as print tooth. */
+  --grain-opacity: 0.035;
+  --hero-field-top: oklch(0.98 0.008 85);
+  --hero-field-bottom: oklch(0.92 0.012 82);
+  --hero-vignette: oklch(0.7 0.01 70 / 0.18);
+  --edge-glow-blur: 8px;
+
+  /* ── Studio-map palette (D-06) — a DISTINCT light "ink-on-paper" variant,
+   *    not the dark strokes on bone. Warm paper field, charcoal streets
+   *    darkening to an ink avenue, a darkened-brass studio block + labels,
+   *    so the map reads as a considered light asset in its own right. */
+  --map-field-near: oklch(0.95 0.012 84);
+  --map-field-far: oklch(0.9 0.014 82);
+  --map-street: oklch(0.78 0.016 80);
+  --map-avenue: oklch(0.58 0.03 70);
+  --map-block: oklch(0.88 0.03 78);
+  --map-park: oklch(0.82 0.05 140 / 0.55);
+  --map-label: oklch(0.46 0.05 64);
+}
+
+/* =========================================================================
+ * Base layer.
+ * ===================================================================== */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* The display face wants optical sizing + a confident default weight
+   * for headings/wordmark; binding the axes here keeps headings
+   * consistent and lets components animate `font-variation-settings`. */
+  .font-display {
+    font-variation-settings:
+      'opsz' var(--display-opsz),
+      'wght' var(--display-wght),
+      'SOFT' var(--display-soft);
+  }
+
+  /* Brand focus ring — visible, never removed (WCAG 2.2 AA), one global
+   * token (D-07). The previous single brass outline was too quiet on raised
+   * surfaces. This is now a DOUBLE ring: a 2px bg-coloured separator (so the
+   * ring detaches from any surface it lands on) wrapped by a full-contrast
+   * brass-text halo. The brass-text token clears AA against every ground in
+   * BOTH themes (dark 11.9, light 5.6), and the bg separator guarantees the
+   * ring is legible even on a brass fill. Applied to every interactive
+   * element (nav, CTAs, toggle, slots, date chips, form fields) via
+   * `:focus-visible` — components add `focus-visible:outline-none` only when
+   * they layer their own equivalent, never to suppress focus. */
+  :focus-visible {
+    /* `!important` so the ring is GUARANTEED on every focusable element,
+     * including those that historically set Tailwind's `outline-none` next to
+     * a quiet `ring-2` (which on raised surfaces was too faint). The outline
+     * is the full-contrast brass-text token at a 3px offset; the box-shadow
+     * adds a bg-coloured separator so the ring detaches from any surface it
+     * lands on (including a brass fill). This is the single global focus token
+     * (D-07) — components keep their `ring`/`outline-none` for the inner
+     * affordance, but the visible AA ring is this. */
+    outline: 2px solid var(--color-brass-text) !important;
+    outline-offset: 2px !important;
+  }
+
+  /* Reduced-motion floor; GSAP/Motion sites add their own matchMedia
+   * branches on top of this. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* =========================================================================
+ * Chrome / motif utilities (Phase 3).
+ * ===================================================================== */
+@layer components {
+  /* Sheet (mobile nav drawer) enter/exit — driven by Radix data-state,
+   * pure CSS per ADR-002. The reduced-motion floor above collapses these
+   * to ~0ms automatically. */
+  @keyframes sheet-in-right {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes sheet-out-right {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes overlay-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes overlay-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  .sheet-in {
+    animation: sheet-in-right 320ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .sheet-out {
+    animation: sheet-out-right 240ms cubic-bezier(0.4, 0, 1, 1);
+  }
+  .sheet-overlay-in {
+    animation: overlay-fade-in 280ms ease-out;
+  }
+  .sheet-overlay-out {
+    animation: overlay-fade-out 200ms ease-in;
+  }
+
+  /* Idle shimmer travelling the hero's brass baseline highlight (PLAN.md:
+   * a barely-perceptible shimmer every ~6s). Disabled under reduced motion
+   * by the floor; the static highlight remains. */
+  @keyframes edge-shimmer {
+    0%,
+    100% {
+      background-position: -120% 0;
+    }
+    55%,
+    100% {
+      background-position: 220% 0;
+    }
+  }
+}

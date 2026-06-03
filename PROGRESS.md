@@ -4,7 +4,7 @@
 
 ## State
 
-- **Projects:** 2 (`tape` — implement phase Phase 3.2 landed; `meld` — planned 2026-05-31)
+- **Projects:** 3 (`tape` — implement phase Phase 3.2 landed; `meld` — v1 shipped, demo live at https://meld-demo.fly.dev; `razors-edge` — built 2026-06-03, web-only dark-luxe barbershop showcase, reviewer GREEN, 53 unit + 18 E2E pass, not yet deployed)
 - **Scaffold:** done (2026-05-28)
 - **CI:** green on empty repo (placeholder workflows)
 - **First commit:** pending owner ACK
@@ -20,6 +20,8 @@
 - [x] Planner subagent produced `projects/tape/PLAN.md`, `DECISIONS.md` (ADR-001), `PROGRESS.md`, `AGENT_NOTES.md`.
 - [x] Second project — name + one-line pitch from owner: **`meld`** — local-first collaborative whiteboard with sub-100 ms presence and conflict-free shape merges via Yjs CRDT over Hono multi-runtime backend, anonymous-link-share onboarding. Pure-showcase slot (tape holds the commercial-seed slot).
 - [x] Planner subagent produced `projects/meld/PLAN.md`, `DECISIONS.md` (ADR-001), `PROGRESS.md`, `AGENT_NOTES.md` (2026-05-31).
+- [x] Third project — name + one-line pitch from owner: **`razors-edge`** — cinematic dark-luxe marketing site for an upscale barbershop with a fully mocked, delightful multi-step booking flow. Web-only creative / marketing showcase (owner's deliberate call; NestJS api-heavy slot preserved). Wow: scroll-driven blade-slice hero (GSAP ScrollTrigger).
+- [x] Planner subagent produced `projects/razors-edge/PLAN.md`, `DECISIONS.md` (ADR-001), `PROGRESS.md`, `AGENT_NOTES.md` (2026-06-03).
 
 ## In progress
 
@@ -36,17 +38,18 @@
 
 Per `docs/conventions.md` § 12 — minimum 2–3 `api-heavy` projects with backend variance.
 
-| Slot | Project | Category  | Backend       |
-| ---- | ------- | --------- | ------------- |
-| 1    | tape    | api-heavy | Elysia (Bun)  |
-| 2    | meld    | api-heavy | Hono (Node)   |
-| 3    | —       | —         | —             |
-| 4    | —       | —         | —             |
-| 5    | —       | —         | —             |
+| Slot | Project     | Category            | Backend      |
+| ---- | ----------- | ------------------- | ------------ |
+| 1    | tape        | api-heavy           | Elysia (Bun) |
+| 2    | meld        | api-heavy           | Hono (Node)  |
+| 3    | razors-edge | web-only (creative) | — (mocked)   |
+| 4    | —           | —                   | —            |
+| 5    | —           | —                   | —            |
+
+Composition status: 3 projects, 2 api-heavy (Elysia + Hono = two distinct backends). The § 12 constraint (2–3 api-heavy, ≥ 2 backends, evaluated at the 5-project mark) is satisfied at this point. The **NestJS api-heavy slot remains open** (reserved for the planned slot-4 AI agentic tool) — razors-edge being web-only was the owner's deliberate call, not drift. **Planner watch:** if the next brief is also web-only, flag it and recommend an api-heavy / NestJS brief to keep the 2–3 api-heavy target reachable by project 5.
 
 Planned (pre-allocated, not yet ratified):
 
-- Slot 3 — AI agentic tool — api-heavy — NestJS.
-- Slot 4 — web-only creative (R3F + GSAP).
+- Slot 4 — AI agentic tool — api-heavy — NestJS.
 - Slot 5 — edge-native voice/multimodal (Motion).
 - Slot 6 (optional) — WebGPU + TSL.

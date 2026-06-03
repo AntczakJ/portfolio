@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="32" height="32" rx="7" fill="#181109"/>
+  <!-- Straight razor, matching the hero blade + logomark silhouette. -->
+  <rect x="3.6" y="21.6" width="11" height="3.9" rx="1.95" transform="rotate(-26 3.6 21.6)" fill="#e0b068" opacity="0.42"/>
+  <circle cx="14.4" cy="17.8" r="1.9" fill="#f0c882"/>
+  <path d="M16 16.5 L27.6 7 C28.4 6.4 29.3 7.2 28.8 8 L22.6 18.2 C22.2 18.9 21.4 19.1 20.7 18.7 L16 16.5 Z" fill="#e0b068" opacity="0.3"/>
+  <path d="M16.2 16.2 L27.8 7" stroke="#cdb79a" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  <path d="M15.9 17 L21.8 18.6" stroke="#f0c882" stroke-width="2" stroke-linecap="round"/>
+</svg>

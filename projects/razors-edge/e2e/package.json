@@ -1,0 +1,28 @@
+{
+  "name": "razors-edge-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Playwright E2E harness for razors-edge (Phase 6, Task 6.2) — critical-path coverage for the dark-luxe barbershop showcase: landing SSR/CSP smoke, the booking happy path (the centerpiece), deep-link preselect, form validation, the availability grid, keyboard operation, reduced-motion hero, and the theme toggle. Runs against a built + served Next app on :3070 (NOT next dev, per the project's strict-CSP/GSAP discipline). Point at any deployed URL via the BASE_URL env var.",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report",
+    "trace": "playwright show-trace",
+    "list": "playwright test --list",
+    "install:browsers": "playwright install --with-deps chromium",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.9.0",
+    "dotenv": "^16.4.5",
+    "typescript": "^5.6.3",
+    "zod": "^3.23.8"
+  }
+}
