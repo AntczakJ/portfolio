@@ -61,6 +61,7 @@ function makeStreamStore() {
         recentTicks: [],
         openCells: new Map(),
         closedCells: [],
+        cvd: 0,
         lastSnapshot: null,
         ingestFrame: () => {},
         ingestSnapshot: () => {},

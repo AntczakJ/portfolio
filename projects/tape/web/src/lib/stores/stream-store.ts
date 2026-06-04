@@ -32,6 +32,22 @@
  * baseline if the reducers need to seed something programmatically
  * between snapshot frames. In practice the next snapshot is the only
  * trigger that re-seeds the store.
+ *
+ * **Client-side CVD derivation (ADR-008).** Cumulative Volume Delta is
+ * NOT on the WS wire in v1 — the Rust/server CVD is the conformance
+ * reference + replay source + reserved v2 wire promotion. The browser
+ * derives its own running CVD by folding `askVolume − bidVolume` per
+ * `cell.close` (the same f64 data it already parses), seeded from the
+ * snapshot's closed bars. This is the single client-side CVD
+ * derivation site; the Phase 3.2c CVD line sub-pane consumes
+ * `state.cvd` from here rather than re-folding. The fold is additive
+ * and order-independent at the cell granularity (each `cell.close` is
+ * the absolute total for one closed cell, so the running sum is the
+ * net delta across all closed cells seen this session) — there is no
+ * float-order constraint here because we are NOT trying to match the
+ * Rust per-bar fold bit-for-bit on the client; the Rust copy is the
+ * canonical one for conformance (ADR-008). The client CVD is a live
+ * visual aid, seeded fresh on every snapshot.
  */
 import { create } from 'zustand';
 import { shallow } from 'zustand/shallow';
@@ -56,7 +72,7 @@ export const STREAM_RECENT_TICKS_CAP = 200;
 const FRAMES_WINDOW_MS = 5_000;
 
 function openCellKey(bucketTs: number, priceBucket: number): string {
-  return `${bucketTs}:${priceBucket}`;
+  return `${String(bucketTs)}:${String(priceBucket)}`;
 }
 
 export interface StreamState {
@@ -70,6 +86,12 @@ export interface StreamState {
   openCells: Map<string, WSCellDeltaPayload>;
   /** Closed-cell ring. Oldest at index 0. */
   closedCells: WSCellClosePayload[];
+  /**
+   * Client-derived Cumulative Volume Delta (ADR-008). Running sum of
+   * `askVolume − bidVolume` over every `cell.close` folded this
+   * session, seeded from the snapshot's closed cells. NOT on the wire.
+   */
+  cvd: number;
   /** Retained for the reconnect-from-snapshot path. */
   lastSnapshot: WSSnapshotPayload | null;
 
@@ -92,8 +114,10 @@ function pushArrival(now: number): number {
   const cutoff = now - FRAMES_WINDOW_MS;
   // Prune from the head — small frame counts at sub-1k fps make this
   // O(N) prune cheap; we never exceed a few hundred entries.
-  while (arrivalTimestamps.length > 0 && arrivalTimestamps[0]! < cutoff) {
+  let head = arrivalTimestamps[0];
+  while (head !== undefined && head < cutoff) {
     arrivalTimestamps.shift();
+    head = arrivalTimestamps[0];
   }
   return arrivalTimestamps.length / (FRAMES_WINDOW_MS / 1000);
 }
@@ -123,12 +147,22 @@ function pushBoundedClosed(
   return out;
 }
 
+/**
+ * Net volume delta for one closed cell: ask-aggressed (buys lifting
+ * offers) minus bid-aggressed (sells hitting bids). Positive = net
+ * buying. This is the per-cell contribution to the running CVD.
+ */
+function cellCloseDelta(cell: WSCellClosePayload): number {
+  return cell.askVolume - cell.bidVolume;
+}
+
 function seedFromSnapshot(
   snapshot: WSSnapshotPayload,
 ): {
   recentTicks: WSTickPayload[];
   openCells: Map<string, WSCellDeltaPayload>;
   closedCells: WSCellClosePayload[];
+  cvd: number;
 } {
   const recentTicks = snapshot.recentTicks.slice(-STREAM_RECENT_TICKS_CAP);
   const closedCells = snapshot.cells.slice(-STREAM_CLOSED_CELLS_CAP);
@@ -136,7 +170,15 @@ function seedFromSnapshot(
   for (const delta of snapshot.cellsOpen) {
     openCells.set(openCellKey(delta.bucketTs, delta.priceBucket), delta);
   }
-  return { recentTicks, openCells, closedCells };
+  // Seed CVD from the snapshot's full closed-cell history (not the
+  // ring-trimmed subset) so the running value reflects every closed
+  // cell the server included, even when the ring caps the rendered
+  // count. ADR-008: the client CVD is a fresh fold per snapshot.
+  let cvd = 0;
+  for (const cell of snapshot.cells) {
+    cvd += cellCloseDelta(cell);
+  }
+  return { recentTicks, openCells, closedCells, cvd };
 }
 
 export const useStreamStore = create<StreamState>()((set) => ({
@@ -147,6 +189,7 @@ export const useStreamStore = create<StreamState>()((set) => ({
   recentTicks: [],
   openCells: new Map(),
   closedCells: [],
+  cvd: 0,
   lastSnapshot: null,
 
   ingestFrame: (frame) => {
@@ -201,6 +244,10 @@ export const useStreamStore = create<StreamState>()((set) => ({
           return {
             openCells: nextOpen,
             closedCells: pushBoundedClosed(state.closedCells, frame.payload),
+            // Fold this closed cell into the running CVD (ADR-008).
+            // Additive over the cell stream; the ring trim above only
+            // bounds the RENDERED history, never the CVD accumulator.
+            cvd: state.cvd + cellCloseDelta(frame.payload),
             framesPerSec,
           };
         });
@@ -234,16 +281,15 @@ export const useStreamStore = create<StreamState>()((set) => ({
 
   ingestSnapshot: (snapshot) => {
     const seeded = seedFromSnapshot(snapshot);
+    const newestTick = seeded.recentTicks.at(-1);
     set({
       lastSnapshot: snapshot,
       tickCount: 0,
-      lastTickTsMs:
-        seeded.recentTicks.length > 0
-          ? seeded.recentTicks[seeded.recentTicks.length - 1]!.tsMs
-          : null,
+      lastTickTsMs: newestTick === undefined ? null : newestTick.tsMs,
       recentTicks: seeded.recentTicks,
       openCells: seeded.openCells,
       closedCells: seeded.closedCells,
+      cvd: seeded.cvd,
     });
   },
 
@@ -261,6 +307,7 @@ export const useStreamStore = create<StreamState>()((set) => ({
       recentTicks: [],
       openCells: new Map(),
       closedCells: [],
+      cvd: 0,
       lastSnapshot: null,
     });
   },
@@ -298,6 +345,15 @@ export function useRecentTicks(n?: number): WSTickPayload[] {
 
 export function useClosedCells(): WSCellClosePayload[] {
   return useStreamStore(useShallow((state) => state.closedCells));
+}
+
+/**
+ * Client-derived CVD (ADR-008). The seam Task 3.2c (CVD line sub-pane)
+ * consumes — it reads this running value rather than re-folding the
+ * cell stream itself.
+ */
+export function useCvd(): number {
+  return useStreamStore((state) => state.cvd);
 }
 
 export function useOpenCells(): Map<string, WSCellDeltaPayload> {

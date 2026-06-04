@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 
 import { FootprintChart } from '@/components/chart/footprint-chart';
 import { MobileTape } from '@/components/chart/mobile-tape';
+import { TapeTicker } from '@/components/chart/tape-ticker';
 import { WSProviderMount } from '@/components/ws/ws-provider-mount';
 
 /**
@@ -35,18 +36,35 @@ import { WSProviderMount } from '@/components/ws/ws-provider-mount';
  * (768 px) breakpoint we hide the Canvas2D footprint chart and render
  * `<MobileTape />` instead — a vertical scrollable list of recent
  * trades. Both branches are present in the SSR HTML and toggled via
- * Tailwind `hidden md:block` / `md:hidden` so there is no hydration
+ * Tailwind `hidden md:flex` / `md:hidden` so there is no hydration
  * mismatch. At ≥ 768 px the chart owns the surface; below 768 px the
  * tape feed reads as a deliberately mobile-optimised view rather
  * than a cramped chart.
+ *
+ * **Desktop tape pane (Task 3.3).** At ≥ 768 px a dedicated
+ * `<TapeTicker />` pane sits to the LEFT of the footprint chart — a
+ * virtualized, click-to-pin, keyboard-reachable live trade feed
+ * consuming the 3.4 stream store's tick ring. It is distinct from the
+ * in-canvas right-edge strip (axis-adjacent decoration drawn by the
+ * rAF loop). The pane is `lg:flex` so the chart keeps its full width
+ * on tablets (768–1023 px) where horizontal real estate is tight; the
+ * tape returns at desktop widths (≥ 1024 px) and at < 768 px the
+ * mobile single-column tape takes over.
  */
 export default function HomePage(): ReactNode {
   return (
     <div className="relative flex h-full w-full flex-1 overflow-hidden">
       <WSProviderMount />
-      <div className="hidden h-full w-full md:block">
-        <FootprintChart />
+      {/* Desktop: tape pane (lg+) + chart. */}
+      <div className="hidden h-full w-full md:flex">
+        <aside className="hidden h-full w-[15rem] shrink-0 lg:block">
+          <TapeTicker />
+        </aside>
+        <div className="h-full min-w-0 flex-1">
+          <FootprintChart />
+        </div>
       </div>
+      {/* Mobile: single-column tape-only fallback (< 768 px). */}
       <div className="block h-full w-full md:hidden">
         <MobileTape />
       </div>

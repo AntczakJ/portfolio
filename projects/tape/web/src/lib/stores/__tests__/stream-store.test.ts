@@ -228,6 +228,74 @@ describe('useStreamStore', () => {
     expect(afterTickCount).toBe(beforeTickCount);
   });
 
+  it('derives CVD by folding askVolume - bidVolume per cell.close (ADR-008)', () => {
+    const store = useStreamStore.getState();
+    expect(useStreamStore.getState().cvd).toBe(0);
+    // Net +5 (buys dominate).
+    store.ingestFrame(
+      closeFrame(
+        makeClose({ bucketTs: 1, priceBucket: 71_000, bidVolume: 5, askVolume: 10 }),
+      ),
+    );
+    expect(useStreamStore.getState().cvd).toBe(5);
+    // Net -8 (sells dominate). Running CVD: 5 + (-8) = -3.
+    store.ingestFrame(
+      closeFrame(
+        makeClose({ bucketTs: 2, priceBucket: 71_000, bidVolume: 12, askVolume: 4 }),
+      ),
+    );
+    expect(useStreamStore.getState().cvd).toBe(-3);
+  });
+
+  it('CVD accumulator is not trimmed when the closed-cell ring overflows', () => {
+    const store = useStreamStore.getState();
+    // Push CAP + 20 closing cells, each contributing +1 to CVD. The
+    // ring keeps only CAP cells but the CVD must reflect every fold.
+    const n = STREAM_CLOSED_CELLS_CAP + 20;
+    for (let i = 0; i < n; i++) {
+      store.ingestFrame(
+        closeFrame(
+          makeClose({
+            bucketTs: 1000 + i,
+            priceBucket: 71_000,
+            bidVolume: 0,
+            askVolume: 1,
+          }),
+        ),
+      );
+    }
+    const state = useStreamStore.getState();
+    expect(state.closedCells).toHaveLength(STREAM_CLOSED_CELLS_CAP);
+    expect(state.cvd).toBe(n);
+  });
+
+  it('ingestSnapshot seeds CVD from the full snapshot closed-cell history', () => {
+    const store = useStreamStore.getState();
+    // Pre-fold a closed cell so the snapshot reset can be observed.
+    store.ingestFrame(
+      closeFrame(makeClose({ bidVolume: 0, askVolume: 99 })),
+    );
+    expect(useStreamStore.getState().cvd).toBe(99);
+    store.ingestSnapshot(
+      makeSnapshot({
+        cells: [
+          makeClose({ bucketTs: 500, bidVolume: 3, askVolume: 10 }), // +7
+          makeClose({ bucketTs: 560, bidVolume: 8, askVolume: 2 }), // -6
+        ],
+      }),
+    );
+    // Snapshot is a fresh fold: 7 + (-6) = 1, NOT 99 + 1.
+    expect(useStreamStore.getState().cvd).toBe(1);
+  });
+
+  it('resetSession zeroes CVD', () => {
+    const store = useStreamStore.getState();
+    store.ingestFrame(closeFrame(makeClose({ bidVolume: 0, askVolume: 5 })));
+    expect(useStreamStore.getState().cvd).toBe(5);
+    store.resetSession();
+    expect(useStreamStore.getState().cvd).toBe(0);
+  });
+
   it('setConnectionState updates connectionState', () => {
     useStreamStore.getState().setConnectionState('reconnecting');
     expect(useStreamStore.getState().connectionState).toBe('reconnecting');
@@ -245,6 +313,7 @@ describe('useStreamStore', () => {
     expect(state.recentTicks).toEqual([]);
     expect(state.openCells.size).toBe(0);
     expect(state.closedCells).toEqual([]);
+    expect(state.cvd).toBe(0);
     expect(state.lastSnapshot).toBeNull();
   });
 });
