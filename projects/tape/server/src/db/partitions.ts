@@ -86,12 +86,17 @@ export async function ensureTickPartitionFor(
   const name = partitionName(year, month1to12);
   const { fromMs, toMs } = partitionBoundsMs(year, month1to12);
   // `IF NOT EXISTS` is the idempotency surface. Identifier quoting via
-  // sql.identifier; bigint literals interpolated as numbers (safe — no
-  // user input, deterministic from the (year, month) arguments).
+  // sql.identifier. The range bounds MUST be inlined as SQL literals via
+  // sql.raw, NOT interpolated as `${fromMs}` — a plain value in a drizzle `sql`
+  // template becomes a BIND PARAMETER ($1), and Postgres rejects bind
+  // parameters in a partition `FOR VALUES` clause (42P18: "could not determine
+  // data type of parameter $1"), which would break tick-partition creation on
+  // every boot. Inlining is safe here: fromMs/toMs are integers derived from
+  // the (year, month) arguments via Date.UTC — deterministic, no user input.
   await db.execute(
     sql`CREATE TABLE IF NOT EXISTS ${sql.identifier(name)}
         PARTITION OF ${sql.identifier('ticks')}
-        FOR VALUES FROM (${fromMs}) TO (${toMs})`,
+        FOR VALUES FROM (${sql.raw(String(fromMs))}) TO (${sql.raw(String(toMs))})`,
   );
 }
 
