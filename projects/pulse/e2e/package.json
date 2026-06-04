@@ -1,0 +1,29 @@
+{
+  "name": "pulse-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Playwright E2E harness for pulse — Phase 8.2. Critical-path coverage on the user-facing surfaces of the live uptime monitor: the landing smoke (production-CSP gate), the live status board (one SSE connection, real state), the demo-incident arc (the headline — synchronized down/summary/banner/toast, then recovery), the ADR-007 auth boundary + demo gating, the incidents view, the redacted public status page, and keyboard / reduced-motion smoke. Runs against the BUILT + SERVED stack on :3081 (web) + :3080 (NestJS web + worker); a deployed URL can be targeted via BASE_URL.",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report",
+    "trace": "playwright show-trace",
+    "list": "playwright test --list",
+    "install:browsers": "playwright install --with-deps chromium",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.9.0",
+    "dotenv": "^16.4.5",
+    "typescript": "^5.6.3",
+    "zod": "^3.23.8"
+  }
+}

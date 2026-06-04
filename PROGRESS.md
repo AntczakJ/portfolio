@@ -4,7 +4,7 @@
 
 ## State
 
-- **Projects:** 3 (`tape` — implement phase Phase 3.2 landed; `meld` — v1 shipped, demo live at https://meld-demo.fly.dev; `razors-edge` — built 2026-06-03, web-only dark-luxe barbershop showcase, reviewer GREEN, 53 unit + 18 E2E pass, not yet deployed)
+- **Projects:** 4 (`tape` — implement phase Phase 3.2 landed; `meld` — v1 shipped, demo live at https://meld-demo.fly.dev; `razors-edge` — built 2026-06-03, web-only dark-luxe barbershop showcase, reviewer GREEN, 53 unit + 18 E2E pass, not yet deployed; `pulse` — planned 2026-06-03, api-heavy NestJS uptime monitor, slot 4, handed to architect for Phase 0 ADRs)
 - **Scaffold:** done (2026-05-28)
 - **CI:** green on empty repo (placeholder workflows)
 - **First commit:** pending owner ACK
@@ -22,6 +22,8 @@
 - [x] Planner subagent produced `projects/meld/PLAN.md`, `DECISIONS.md` (ADR-001), `PROGRESS.md`, `AGENT_NOTES.md` (2026-05-31).
 - [x] Third project — name + one-line pitch from owner: **`razors-edge`** — cinematic dark-luxe marketing site for an upscale barbershop with a fully mocked, delightful multi-step booking flow. Web-only creative / marketing showcase (owner's deliberate call; NestJS api-heavy slot preserved). Wow: scroll-driven blade-slice hero (GSAP ScrollTrigger).
 - [x] Planner subagent produced `projects/razors-edge/PLAN.md`, `DECISIONS.md` (ADR-001), `PROGRESS.md`, `AGENT_NOTES.md` (2026-06-03).
+- [x] Fourth project — name + one-line pitch from owner: **`pulse`** — a real, working uptime / status monitor (scheduled probes actually hit endpoints; a live dashboard pushed over SSE; an incident state machine; real webhook alerting; an SEO-friendly public status page). Api-heavy, the deliberate **3rd api-heavy slot claiming the reserved NestJS backend** (tape Elysia/Bun + meld Hono/Node + pulse NestJS = three distinct backends). Wow: the live status board reacting in real time to real probes, with an incident opening live (dot flips red, incident row grows, alert fires) and auto-closing on recovery, reproducible on demand.
+- [x] Planner subagent produced `projects/pulse/PLAN.md`, `DECISIONS.md` (ADR-001), `PROGRESS.md`, `AGENT_NOTES.md` (2026-06-03). Composition tracker updated — slot 4, api-heavy, NestJS; § 12 satisfied with margin (3 api-heavy, 3 backends).
 
 ## In progress
 
@@ -43,13 +45,12 @@ Per `docs/conventions.md` § 12 — minimum 2–3 `api-heavy` projects with back
 | 1    | tape        | api-heavy           | Elysia (Bun) |
 | 2    | meld        | api-heavy           | Hono (Node)  |
 | 3    | razors-edge | web-only (creative) | — (mocked)   |
-| 4    | —           | —                   | —            |
+| 4    | pulse       | api-heavy           | NestJS       |
 | 5    | —           | —                   | —            |
 
-Composition status: 3 projects, 2 api-heavy (Elysia + Hono = two distinct backends). The § 12 constraint (2–3 api-heavy, ≥ 2 backends, evaluated at the 5-project mark) is satisfied at this point. The **NestJS api-heavy slot remains open** (reserved for the planned slot-4 AI agentic tool) — razors-edge being web-only was the owner's deliberate call, not drift. **Planner watch:** if the next brief is also web-only, flag it and recommend an api-heavy / NestJS brief to keep the 2–3 api-heavy target reachable by project 5.
+Composition status: 4 projects, 3 api-heavy across **three distinct backends** (tape Elysia/Bun + meld Hono/Node + pulse NestJS/Node). The § 12 constraint (2–3 api-heavy, ≥ 2 backends — ideally three: Hono + Fastify + one of NestJS / Elysia) is now **satisfied with margin** — three api-heavy projects, three distinct cutting-edge backends. Pulse claims the previously-reserved **open NestJS slot** and completes the portfolio's backend-variance story (thin-and-fast Elysia/Bun · multi-runtime-edge Hono · opinionated-enterprise NestJS). **Planner note:** the api-heavy / backend-variance target is met; slot 5 is unconstrained on this axis and free to be web-only or to revisit Fastify if a brief genuinely needs it.
 
 Planned (pre-allocated, not yet ratified):
 
-- Slot 4 — AI agentic tool — api-heavy — NestJS.
 - Slot 5 — edge-native voice/multimodal (Motion).
 - Slot 6 (optional) — WebGPU + TSL.

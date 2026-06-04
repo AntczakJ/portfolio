@@ -1,0 +1,163 @@
+# syntax=docker/dockerfile:1.7
+#
+# pulse-web — production image for Fly.io (ADR-006).
+#
+# The Next.js 15 standalone frontend, shipped as a SEPARATE Fly app from
+# pulse-api (the meld Next-proxies-API precedent). It reverse-proxies the API
+# paths (`/api/*`, `/public/*`, `/demo/*`, `/monitors*`, `/incidents*`,
+# `/alert-channels*`, `/health`) to pulse-api over Fly's private network via
+# Next `rewrites()` (see web/next.config.ts → API_PROXY_TARGET), so the browser
+# talks to ONE origin. That single-origin posture is what makes:
+#   - the dashboard `EventSource` SSE stream same-origin (cookie-auth works
+#     first-party — ADR-003/ADR-007), and
+#   - the strict CSP `connect-src 'self'` sufficient (next.config.ts).
+#
+# pulse-web has a workspace dep on `pulse-server` but it is TYPES-ONLY (the SSE
+# event contract via `import type { SseEvent } from 'pulse-server/events'`,
+# AGENT_NOTES "SSE CONTRACT events.ts is the cross-package gate"). The Zod
+# runtime is erased on the web side (verbatimModuleSyntax). The build therefore
+# needs the `pulse-server` MANIFEST resolvable in the workspace, but not its
+# compiled output — so we copy server/package.json + the server source it
+# references for type resolution, NOT a server build.
+#
+# Build context: `projects/pulse/` (NOT the repo root) — same as Dockerfile.
+# A tiny isolated pnpm-workspace.yaml lists both members so the
+# `pulse-web -> pulse-server` workspace link resolves.
+#
+# Standalone path nesting (load-bearing, the meld/razors-edge lesson):
+# web/next.config.ts pins `outputFileTracingRoot` ONE hop up to the project root
+# (`projects/pulse/`), so Next emits `web/.next/standalone/web/server.js`. The
+# runtime COPY lands server.js at `/app/web/web/server.js` with `.next/static` +
+# `public` as siblings. Getting this path wrong = "Cannot find module server.js"
+# at boot.
+
+# ---- Stage 1: deps -------------------------------------------------------
+FROM node:22-bookworm-slim AS deps
+WORKDIR /build
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=/pnpm:$PATH
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    corepack enable && \
+    corepack prepare pnpm@11.4.0 --activate
+
+# Manifests first for layer caching. pulse has NO umbrella package.json — only
+# tsconfig.base.json + the two member manifests. The server manifest must be
+# present so pnpm wires the `pulse-web -> pulse-server` `workspace:*` link
+# (types-only, but the dependency must resolve).
+COPY tsconfig.base.json ./
+COPY web/package.json ./web/
+COPY server/package.json ./server/
+
+# Isolated workspace descriptor (the repo-root one is not in this context).
+# Mirror the root allowBuilds allowlist so pnpm 11's "ignored build scripts"
+# gate does not abort on esbuild / sharp (next/image AVIF) / unrs-resolver.
+# `@nestjs/core` + `msgpackr-extract` arrive transitively via the types-only
+# `pulse-server` workspace dep; list them in allowBuilds (`@nestjs/core: false`
+# mirrors the root — its postinstall is only a funding banner) so pnpm 11's
+# ignored-build-scripts gate does not abort the install.
+RUN printf 'packages:\n  - "web"\n  - "server"\nallowBuilds:\n  esbuild: true\n  sharp: true\n  unrs-resolver: true\n  msgpackr-extract: true\n  "@nestjs/core": false\n' > pnpm-workspace.yaml
+
+RUN pnpm install --frozen-lockfile=false
+
+
+# ---- Stage 2: build ------------------------------------------------------
+FROM node:22-bookworm-slim AS build
+WORKDIR /build
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=/pnpm:$PATH
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    corepack enable && \
+    corepack prepare pnpm@11.4.0 --activate
+
+# Reuse the resolved install + the generated workspace descriptor from deps.
+COPY --from=deps /build/node_modules ./node_modules
+COPY --from=deps /build/web/node_modules ./web/node_modules
+COPY --from=deps /build/pnpm-workspace.yaml ./
+COPY tsconfig.base.json ./
+COPY web/package.json ./web/
+COPY server/package.json ./server/
+
+# Real sources. The server SOURCE is needed for the types-only import
+# (`pulse-server/events` resolves to server/src/lib/schemas/events.ts via the
+# package `exports`), so the TypeScript type-check during `next build` can see
+# the SSE contract.
+COPY server ./server
+COPY web ./web
+
+# Next inlines NEXT_PUBLIC_* at BUILD time. In the single-origin prod topology
+# the browser hits the pulse-web origin for EVERYTHING (the API paths are
+# proxied), so NEXT_PUBLIC_API_URL and NEXT_PUBLIC_SSE_URL are the pulse-web
+# host itself — the EventSource + fetches stay same-origin and CSP
+# `connect-src 'self'` holds. NEXT_PUBLIC_SITE_URL drives metadataBase / OG /
+# sitemap / canonical. Leaving these as the localhost defaults would bake a dev
+# origin into the bundle and the live board + auth cookie would break (the meld
+# "a wrong baked NEXT_PUBLIC_* silently ships" lesson).
+ARG NEXT_PUBLIC_API_URL=https://pulse-demo.fly.dev
+ARG NEXT_PUBLIC_SSE_URL=https://pulse-demo.fly.dev
+ARG NEXT_PUBLIC_SITE_URL=https://pulse-demo.fly.dev
+ARG NEXT_PUBLIC_DEMO_STATUS_SLUG=demo
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NEXT_PUBLIC_SSE_URL=${NEXT_PUBLIC_SSE_URL}
+ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
+ENV NEXT_PUBLIC_DEMO_STATUS_SLUG=${NEXT_PUBLIC_DEMO_STATUS_SLUG}
+
+# The reverse-proxy target for the Next `rewrites()`. IMPORTANT: Next evaluates
+# `rewrites()` at BUILD time and BAKES the destination string into the routing
+# manifest — so this is a BUILD-TIME value, not a runtime read. The default
+# (pulse-api's internal Fly address, http://pulse-api.internal:3080 — private
+# 6PN network, no public hop) is correct for the ADR-006 topology, so no
+# override is normally needed. If the api app is renamed, rebuild with
+# `--build-arg API_PROXY_TARGET=http://<new-name>.internal:3080`.
+ARG API_PROXY_TARGET=http://pulse-api.internal:3080
+ENV API_PROXY_TARGET=${API_PROXY_TARGET}
+
+# Build. `output: 'standalone'` emits web/.next/standalone/web/server.js (one-hop
+# trace root). `rewrites()` are baked into the build's routing manifest.
+RUN pnpm -F pulse-web build
+
+
+# ---- Stage 3: runtime ----------------------------------------------------
+# A SINGLE Node process: the Next standalone server. No migrations, no second
+# service — CMD execs server.js directly.
+FROM node:22-bookworm-slim AS runtime
+
+# curl for the HEALTHCHECK smoke (Fly uses its own fly.web.toml check).
+# ca-certificates for outbound TLS (the rewrites proxy to pulse-api; on Fly's
+# private .internal network that is plain HTTP, but TLS hygiene is cheap).
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /app/web && chown -R node:node /app
+WORKDIR /app
+
+# Next standalone bundle. The one-hop outputFileTracingRoot nests it as
+# web/.next/standalone/web/server.js; .next/static + public are emitted
+# SEPARATELY and copied alongside server.js:
+#   /app/web/server.js          (the standalone launcher wrapper)
+#   /app/web/web/server.js      (the actual Next server entry)
+#   /app/web/web/.next/static   (hashed build assets)
+#   /app/web/web/public         (favicon, OG fallbacks, etc.)
+COPY --from=build --chown=node:node /build/web/.next/standalone /app/web
+COPY --from=build --chown=node:node /build/web/.next/static /app/web/web/.next/static
+COPY --from=build --chown=node:node /build/web/public /app/web/web/public
+
+USER node
+
+# Production env defaults — fly.web.toml mirrors these. The Next standalone
+# conventional PORT is 3000; Fly maps 443 -> 3000.
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+ENV NEXT_PUBLIC_SITE_URL=https://pulse-demo.fly.dev
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -sf http://127.0.0.1:3000/ || exit 1
+
+CMD ["node", "/app/web/web/server.js"]

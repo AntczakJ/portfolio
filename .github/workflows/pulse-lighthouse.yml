@@ -1,0 +1,182 @@
+name: pulse-lighthouse
+
+# Phase 8, Task 8.3 — Lighthouse CI for pulse.
+#
+# Audits the two PUBLIC SEO surfaces on the BUILT + SERVED app on :3081 (NOT
+# next dev — the strict CSP forbids unsafe-eval, the AGENT_NOTES lesson carried
+# from meld/razors-edge): the landing (/) and the public status page
+# (/status/demo). Asserts the CLAUDE.md s4 / PLAN.md success criteria: >= 95 in
+# all four categories on both URLs, median of 5 runs, plus the public-page Core
+# Web Vitals (LCP < 2.5s, CLS < 0.1). Config + assertions live in
+# projects/pulse/lighthouserc.json.
+#
+# The authenticated dashboard is EXEMPT — it is an app-behind-auth surface with a
+# client-only live-data dependency for first paint and no crawler value, not an
+# SEO surface, so it is deliberately not a Lighthouse target (PLAN.md scopes the
+# Lighthouse criterion to the public status page; the landing is the second
+# public surface).
+#
+# Unlike razors-edge, the status page SSRs from the NestJS API (GET /public/:slug)
+# and needs the seeded demo data, so this job brings up the FULL stack (Postgres
+# + Redis + the NestJS web + worker + the seeds) before serving Next and running
+# LHCI against :3081.
+#
+# Trigger model (mirrors meld / razors-edge):
+#   - push to main touching projects/pulse/** — gate the project on every change.
+#   - workflow_dispatch — manual run on demand.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - 'projects/pulse/**'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/pulse-lighthouse.yml'
+
+concurrency:
+  group: pulse-lighthouse-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lighthouse:
+    name: Lighthouse (>= 95 all categories, / and /status/demo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgres://pulse:pulse@localhost:5437/pulse
+      REDIS_URL: redis://localhost:6381
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pulse
+          POSTGRES_PASSWORD: pulse
+          POSTGRES_DB: pulse
+        ports:
+          - 5437:5432
+        options: >-
+          --health-cmd "pg_isready -U pulse -d pulse"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6381:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run DB migrations
+        run: pnpm -F pulse-server db:migrate
+
+      - name: Seed the demo workspace (so /status/demo SSRs real content)
+        run: |
+          pnpm -F pulse-server exec tsx scripts/seed-demo-monitor.ts
+          pnpm -F pulse-server exec tsx scripts/seed-demo-history.ts
+          pnpm -F pulse-server exec tsx scripts/seed-public-page.ts
+
+      - name: Start the NestJS API (web) on :3080
+        env:
+          PORT: '3080'
+          NODE_ENV: production
+          BETTER_AUTH_SECRET: lh-ci-secret-not-for-prod-0123456789
+          BETTER_AUTH_URL: http://localhost:3080
+          DEMO_TRIGGER_ENABLED: 'true'
+          CORS_ORIGINS: http://localhost:3081
+        run: |
+          nohup pnpm -F pulse-server start:web > /tmp/pulse-api.log 2>&1 &
+          echo "PULSE_API_PID=$!" >> $GITHUB_ENV
+
+      - name: Start the NestJS worker
+        env:
+          NODE_ENV: production
+          BETTER_AUTH_SECRET: lh-ci-secret-not-for-prod-0123456789
+          BETTER_AUTH_URL: http://localhost:3080
+          DEMO_TRIGGER_ENABLED: 'true'
+        run: |
+          nohup pnpm -F pulse-server start:worker > /tmp/pulse-worker.log 2>&1 &
+          echo "PULSE_WORKER_PID=$!" >> $GITHUB_ENV
+
+      - name: Wait for the API on :3080
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3080/health > /dev/null; then
+              echo "pulse-api up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "pulse-api never came up. Last log:"; tail -n 200 /tmp/pulse-api.log || true
+          exit 1
+
+      - name: Build pulse-web
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3080
+          NEXT_PUBLIC_SSE_URL: http://localhost:3080
+          NEXT_PUBLIC_SITE_URL: http://localhost:3081
+          NEXT_PUBLIC_DEMO_STATUS_SLUG: demo
+        run: pnpm -F pulse-web build
+
+      - name: Start pulse-web (next start on :3081)
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3080
+          NEXT_PUBLIC_SSE_URL: http://localhost:3080
+          NEXT_PUBLIC_SITE_URL: http://localhost:3081
+          NEXT_PUBLIC_DEMO_STATUS_SLUG: demo
+        run: |
+          nohup pnpm -F pulse-web start > /tmp/pulse-web.log 2>&1 &
+          echo "PULSE_WEB_PID=$!" >> $GITHUB_ENV
+
+      - name: Wait for pulse-web on :3081
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3081 > /dev/null; then
+              echo "pulse-web up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "pulse-web never came up. Last log:"; tail -n 200 /tmp/pulse-web.log || true
+          exit 1
+
+      - name: Run Lighthouse CI
+        run: |
+          npx --yes @lhci/cli@0.15.x autorun \
+            --config=projects/pulse/lighthouserc.json
+        env:
+          LHCI_BUILD_CONTEXT__CURRENT_HASH: ${{ github.sha }}
+
+      - name: Stop background processes
+        if: always()
+        run: |
+          for pid in "${PULSE_WEB_PID:-}" "${PULSE_API_PID:-}" "${PULSE_WORKER_PID:-}"; do
+            if [ -n "$pid" ]; then kill "$pid" || true; fi
+          done
+
+      - name: Upload Lighthouse report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulse-lighthouse-${{ github.run_id }}
+          path: .lighthouseci
+          retention-days: 30

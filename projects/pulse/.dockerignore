@@ -1,0 +1,57 @@
+# pulse — Docker build context trimmer (shared by Dockerfile + Dockerfile.web).
+#
+# Build context is `projects/pulse/`. Both images run their own isolated
+# `pnpm install` inside the build, so committed node_modules / build outputs /
+# local env / test + review surfaces are dead weight (and a security risk for
+# .env). Keep ONLY what the stages COPY: server/{src,scripts,drizzle,*.json,
+# *.config.*}, web/{src,public,*.json,*.config.*}, the umbrella manifests, the
+# entrypoint, and the Dockerfiles themselves.
+
+# --- dependencies (each stage installs its own) ---
+**/node_modules
+
+# --- build outputs ---
+**/.next
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+
+# --- env + secrets (NEVER ship .env into an image) ---
+**/.env
+**/.env.*
+!**/.env.example
+
+# --- local data / docker ---
+docker-compose.yml
+**/*.sqlite
+**/*.sqlite3
+
+# --- tests, review artifacts, coverage (not needed at runtime/build) ---
+e2e
+**/coverage
+**/.review
+**/__screenshots__
+**/playwright-report
+**/test-results
+
+# --- docs + meta (the runtime never reads these) ---
+PLAN.md
+DECISIONS.md
+PROGRESS.md
+AGENT_NOTES.md
+CHANGELOG.md
+README.md
+DEPLOY.md
+*.md
+.github
+
+# --- editor / OS noise ---
+.vscode
+.idea
+**/.DS_Store
+**/Thumbs.db
+
+# --- git ---
+.git
+.gitignore
+.gitattributes

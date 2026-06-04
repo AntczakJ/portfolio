@@ -1,0 +1,63 @@
+# pulse — local development services
+#
+# Scope: Postgres (Drizzle persistence, ADR-005) + Redis (BullMQ queues
+# ADR-002 + the worker -> SSE Pub/Sub bridge on `pulse:events` ADR-003).
+#
+# Port hygiene (AGENT_NOTES "Port hygiene"). Non-colliding picks:
+#   5432 = system default (avoid)
+#   5434 = Mila          5435 = tape          5436 = meld
+#   5437 = pulse Postgres (this file)
+#   6379 = system-default Redis (avoid)    6380 = a common second Redis (avoid)
+#   6381 = pulse Redis (this file)
+#
+# Bring up:    docker compose -f projects/pulse/docker-compose.yml up -d
+# Tear down:   docker compose -f projects/pulse/docker-compose.yml down
+# Wipe data:   docker compose -f projects/pulse/docker-compose.yml down -v
+#
+# The connection strings the server reads from .env must match the
+# credentials / ports below:
+#   DATABASE_URL=postgres://pulse:pulse@localhost:5437/pulse
+#   REDIS_URL=redis://localhost:6381
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: pulse-postgres
+    restart: unless-stopped
+    ports:
+      - '5437:5432'
+    environment:
+      POSTGRES_USER: pulse
+      POSTGRES_PASSWORD: pulse
+      POSTGRES_DB: pulse
+    volumes:
+      - pulse-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U pulse -d pulse']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: pulse-redis
+    restart: unless-stopped
+    # BullMQ requires `maxmemory-policy noeviction` so jobs are never evicted
+    # under memory pressure (a silently dropped repeatable job would stop a
+    # monitor probing). AOF on for durability across local restarts.
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    ports:
+      - '6381:6379'
+    volumes:
+      - pulse-redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pulse-postgres-data:
+    name: pulse-postgres-data
+  pulse-redis-data:
+    name: pulse-redis-data

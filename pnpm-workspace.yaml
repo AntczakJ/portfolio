@@ -4,6 +4,7 @@ packages:
   - 'projects/*/web'
   - 'projects/*/e2e'
 allowBuilds:
+  '@nestjs/core': false
   esbuild: true
   msgpackr-extract: true
   sharp: true

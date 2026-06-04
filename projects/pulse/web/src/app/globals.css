@@ -1,0 +1,309 @@
+@import 'tailwindcss';
+
+/* Tailwind v4 class-strategy dark variant. next-themes is configured
+ * with `attribute="class"` (Providers), so it writes `class="dark"` /
+ * `class="light"` on <html>. This custom variant makes the shadcn
+ * `dark:` utilities resolve against that class, in agreement with the
+ * `.dark` token overrides below. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* =========================================================================
+ * Pulse — sovereign design tokens (Task 3.2 scaffold; refined in the
+ * design-system phase, but the STATUS semantics are load-bearing and
+ * pinned now).
+ *
+ * SOVEREIGN per docs/conventions.md § 14 — NO reuse from tape (deep slate
+ * + electric cyan), meld (warm-paper + violet), or razors-edge (warm
+ * brass-on-near-black). Pulse's identity is the clean-modern-SaaS register
+ * (Linear / Vercel / Planetscale-tier dashboard): an airy, cool-neutral
+ * foundation, a single confident indigo brand accent used with restraint,
+ * and a FIRST-CLASS status-semantic palette (up / degraded / down /
+ * unknown) — because the whole product hinges on a status board that must
+ * read its state instantly and accessibly in both themes.
+ *
+ * Light is the canonical SaaS-dashboard register and dark is a real,
+ * intentional companion (not a mechanical inversion). next-themes resolves
+ * `system` first, falling back to light — see Providers.
+ *
+ * Tailwind v4 is CSS-first: theme tokens are CSS custom properties in
+ * @theme so Tailwind generates the matching utilities (bg-surface,
+ * text-status-up-text, ...) at build time. There is NO tailwind.config.js —
+ * @theme plus the :root (light, canonical) and .dark overrides ARE the
+ * configuration.
+ *
+ * ── Brand vs shadcn `accent` ──────────────────────────────────────────
+ * The brand indigo is named `--color-brand*` (NOT `accent`), so it does
+ * NOT collide with shadcn's `accent`, which shadcn primitives use as their
+ * QUIET hover/active surface (ghost/outline button hover, menu-item hover).
+ * `--color-accent` maps to a calm raised surface, never the loud brand
+ * indigo. Deliberate brand use is `bg-brand` / `text-brand` / `bg-primary`.
+ *
+ * ── Status tokens are the centrepiece (load-bearing) ──────────────────
+ * Each status has TWO roles, deliberately split so accessibility holds:
+ *   --color-status-<s>        the DOT / fill — a graphical object, tuned
+ *                             to clear the WCAG non-text 3:1 floor vs the
+ *                             page ground AND the card surfaces.
+ *   --color-status-<s>-text   the LABEL ink — every status dot carries a
+ *                             text label ("Up" / "Degraded" / "Down" /
+ *                             "Unknown"), tuned to clear AA 4.5:1 vs the
+ *                             ground AND the card surface in BOTH themes.
+ * Status is NEVER conveyed by color alone (AGENT_NOTES) — the dot + the
+ * AA-legible label always travel together. The semantic mapping is fixed:
+ *   up = green · degraded = amber · down = red · unknown/idle = neutral.
+ *
+ * ── Contrast (verified via an OKLCH→sRGB→WCAG script, recorded in
+ *    AGENT_NOTES.md Task 3.2 entry) — all values AA in BOTH themes ──────
+ * LIGHT  fg/bg 15.2 · fgMuted/bg 6.7 · fgSubtle/surface 4.6 · brand/bg 5.6
+ *        DOTS(≥3): up 3.7 · deg 3.3 · down 4.8 · unknown 3.7 (vs surface)
+ *        TEXT(≥4.5): up 5.2 · deg 5.2 · down 5.7 · unknown 5.6 (vs surface)
+ * DARK   fg/bg 17.4 · fgMuted/bg 8.4 · fgSubtle/surface 5.1 · brand/bg 7.6
+ *        DOTS(≥3): up 7.5 · deg 8.6 · down 5.2 · unknown 3.8 (vs raised)
+ *        TEXT(≥4.5): up 10.1 · deg 10.9 · down 7.1 · unknown 6.7 (vs surface)
+ * (Plain `--color-border` is a quiet decorative separator and is NOT
+ *  required to hit 3:1; boundaries that convey state use
+ *  `--color-border-strong`.)
+ * ===================================================================== */
+
+@theme {
+  /* ── Type ───────────────────────────────────────────────────────────
+   * layout.tsx loads the real variable faces via next/font and puts
+   * `--font-geist-sans` / `--font-geist-mono` on <html>; these hooks
+   * reference them. A crisp sans for UI + a mono for metrics / IDs /
+   * response-times (the Linear / Vercel idiom: tabular mono for the
+   * numbers the dashboard lives on). Fallbacks keep text legible before
+   * the font swaps in. */
+  --font-sans:
+    var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:
+    var(--font-geist-mono), ui-monospace, 'SF Mono', Menlo, Monaco, 'Cascadia Mono', Consolas,
+    'Courier New', monospace;
+
+  /* Radii — clean SaaS leans on a tight, consistent corner. */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* ── Sovereign palette (LIGHT / canonical). Values live here so the
+   *    @theme utilities are generated; :root re-states them as the
+   *    runtime source of truth and .dark overrides. ────────────────── */
+
+  /* Grounds → raised surface ramp (cool, airy, near-white). */
+  --color-bg: oklch(0.992 0.002 265);
+  --color-surface: oklch(0.974 0.004 265);
+  --color-surface-raised: oklch(1 0 0);
+
+  /* Borders — `border` is a quiet hairline separator; `border-strong`
+   * is the interactive/component boundary token. */
+  --color-border: oklch(0.922 0.005 265);
+  --color-border-strong: oklch(0.84 0.008 265);
+
+  /* Foreground ramp. */
+  --color-fg: oklch(0.26 0.018 265);
+  --color-fg-muted: oklch(0.47 0.016 265);
+  --color-fg-subtle: oklch(0.545 0.014 265);
+
+  /* The single brand accent — a confident indigo (Linear/Vercel register).
+   * `brand` is the text/icon-safe ink; `brand-strong` the hover deepen;
+   * `brand-surface` a faint tinted wash for selected/active rows;
+   * `on-brand` the ink on a filled brand surface. */
+  --color-brand: oklch(0.52 0.19 262);
+  --color-brand-strong: oklch(0.46 0.2 262);
+  --color-brand-surface: oklch(0.95 0.03 262);
+  --color-on-brand: oklch(0.99 0.005 265);
+
+  /* shadcn `accent` = QUIET primitive hover surface (NOT brand). */
+  --color-accent: oklch(0.955 0.006 265);
+
+  /* ── Status semantics — the load-bearing tokens (DOT + TEXT) ──────── */
+  /* up = green */
+  --color-status-up: oklch(0.58 0.16 150);
+  --color-status-up-text: oklch(0.5 0.13 150);
+  --color-status-up-surface: oklch(0.95 0.04 150);
+  /* degraded = amber */
+  --color-status-degraded: oklch(0.635 0.165 66);
+  --color-status-degraded-text: oklch(0.52 0.13 70);
+  --color-status-degraded-surface: oklch(0.95 0.05 75);
+  /* down = red */
+  --color-status-down: oklch(0.56 0.21 27);
+  --color-status-down-text: oklch(0.52 0.21 27);
+  --color-status-down-surface: oklch(0.95 0.04 27);
+  /* unknown / idle = neutral */
+  --color-status-unknown: oklch(0.6 0.012 265);
+  --color-status-unknown-text: oklch(0.5 0.012 265);
+  --color-status-unknown-surface: oklch(0.955 0.004 265);
+
+  --color-ring: oklch(0.52 0.19 262);
+
+  /* ── shadcn/ui token bridge ───────────────────────────────────────
+   * Alias the generic shadcn vocabulary onto the sovereign tokens
+   * (never fresh values). `primary` is the deliberate brand indigo;
+   * `accent` is the quiet hover surface above. `destructive` reuses the
+   * down-status red so destructive actions and the down state read as
+   * one warning family. */
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-fg);
+  --color-primary: var(--color-brand);
+  --color-primary-foreground: var(--color-on-brand);
+  --color-secondary: var(--color-surface);
+  --color-secondary-foreground: var(--color-fg);
+  --color-muted: var(--color-surface);
+  --color-muted-foreground: var(--color-fg-muted);
+  --color-accent-foreground: var(--color-fg);
+  --color-destructive: var(--color-status-down);
+  --color-destructive-foreground: var(--color-on-brand);
+  --color-input: var(--color-border-strong);
+  --color-card: var(--color-surface-raised);
+  --color-card-foreground: var(--color-fg);
+  --color-popover: var(--color-surface-raised);
+  --color-popover-foreground: var(--color-fg);
+}
+
+/* =========================================================================
+ * Canonical LIGHT palette in :root — clean-SaaS default. The @theme values
+ * above already encode light; restating here is the explicit runtime
+ * anchor that `.dark` overrides.
+ * ===================================================================== */
+:root {
+  color-scheme: light;
+
+  --color-bg: oklch(0.992 0.002 265);
+  --color-surface: oklch(0.974 0.004 265);
+  --color-surface-raised: oklch(1 0 0);
+  --color-border: oklch(0.922 0.005 265);
+  --color-border-strong: oklch(0.84 0.008 265);
+
+  --color-fg: oklch(0.26 0.018 265);
+  --color-fg-muted: oklch(0.47 0.016 265);
+  --color-fg-subtle: oklch(0.545 0.014 265);
+
+  --color-brand: oklch(0.52 0.19 262);
+  --color-brand-strong: oklch(0.46 0.2 262);
+  --color-brand-surface: oklch(0.95 0.03 262);
+  --color-on-brand: oklch(0.99 0.005 265);
+
+  --color-accent: oklch(0.955 0.006 265);
+
+  --color-status-up: oklch(0.58 0.16 150);
+  --color-status-up-text: oklch(0.5 0.13 150);
+  --color-status-up-surface: oklch(0.95 0.04 150);
+  --color-status-degraded: oklch(0.635 0.165 66);
+  --color-status-degraded-text: oklch(0.52 0.13 70);
+  --color-status-degraded-surface: oklch(0.95 0.05 75);
+  --color-status-down: oklch(0.56 0.21 27);
+  --color-status-down-text: oklch(0.52 0.21 27);
+  --color-status-down-surface: oklch(0.95 0.04 27);
+  --color-status-unknown: oklch(0.6 0.012 265);
+  --color-status-unknown-text: oklch(0.5 0.012 265);
+  --color-status-unknown-surface: oklch(0.955 0.004 265);
+
+  --color-ring: oklch(0.52 0.19 262);
+}
+
+/* =========================================================================
+ * Intentional DARK palette — a deep cool-neutral "command-deck" register
+ * (the Vercel/Linear dark dashboard): near-black blue-grey grounds, a
+ * lifted indigo brand, and brighter status hues so the dots read as vivid
+ * signal against the dark field. Reviewed in its own right, not a
+ * mechanical inversion.
+ * ===================================================================== */
+.dark {
+  color-scheme: dark;
+
+  --color-bg: oklch(0.165 0.012 265);
+  --color-surface: oklch(0.205 0.014 265);
+  --color-surface-raised: oklch(0.245 0.015 265);
+  --color-border: oklch(0.3 0.014 265);
+  --color-border-strong: oklch(0.44 0.016 265);
+
+  --color-fg: oklch(0.965 0.004 265);
+  --color-fg-muted: oklch(0.74 0.014 265);
+  --color-fg-subtle: oklch(0.63 0.014 265);
+
+  --color-brand: oklch(0.72 0.15 264);
+  --color-brand-strong: oklch(0.8 0.15 264);
+  --color-brand-surface: oklch(0.3 0.06 264);
+  --color-on-brand: oklch(0.16 0.02 265);
+
+  --color-accent: oklch(0.245 0.015 265);
+
+  --color-status-up: oklch(0.74 0.15 152);
+  --color-status-up-text: oklch(0.8 0.14 152);
+  --color-status-up-surface: oklch(0.3 0.06 152);
+  --color-status-degraded: oklch(0.8 0.15 80);
+  --color-status-degraded-text: oklch(0.84 0.13 82);
+  --color-status-degraded-surface: oklch(0.32 0.06 75);
+  --color-status-down: oklch(0.68 0.19 25);
+  --color-status-down-text: oklch(0.74 0.17 25);
+  --color-status-down-surface: oklch(0.3 0.08 25);
+  --color-status-unknown: oklch(0.58 0.012 265);
+  --color-status-unknown-text: oklch(0.7 0.012 265);
+  --color-status-unknown-surface: oklch(0.26 0.01 265);
+
+  --color-ring: oklch(0.72 0.15 264);
+}
+
+/* =========================================================================
+ * Base layer.
+ * ===================================================================== */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv11', 'ss01';
+    min-height: 100dvh;
+  }
+
+  /* Tabular numbers everywhere a metric is read (uptime %, response-time
+   * ms, "last checked Ns ago", monitor counts). Pulse lives on numbers
+   * that must not jitter as they tick — page-wide default; override only
+   * for prose. */
+  :where(table, [data-numeric], .tabular-nums) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Visible focus ring — accessibility floor (docs/conventions.md § 1,
+   * CLAUDE.md § 4). Never `outline: none` without a replacement. The
+   * brand indigo clears AA contrast against every ground in both themes
+   * (light 5.6, dark 7.6); the offset detaches it from the surface. */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
+
+  /* Respect prefers-reduced-motion globally. Motion components add their
+   * own `useReducedMotion()` branch on top; this is the safety net for
+   * any CSS animation the React layer does not see (status-dot pulse,
+   * sparkline path transitions). */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  ::selection {
+    background-color: var(--color-brand-surface);
+    color: var(--color-fg);
+  }
+}

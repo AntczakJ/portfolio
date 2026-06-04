@@ -1,0 +1,60 @@
+{
+  "name": "pulse-server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "NestJS on Node 22 LTS backend for pulse — an uptime / status monitor. Phase 1 lands the scaffold (config + health), Drizzle + Postgres (ADR-005), Redis + BullMQ wiring (ADR-002/003), shared Zod schemas incl. the SSE event contract (ADR-003), and monitors CRUD with the scheduler-reconcile seam + SSRF guard (ADR-002). The probe scheduler / worker is Phase 2.",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/contract.ts"
+    },
+    "./events": {
+      "types": "./src/lib/schemas/events.ts"
+    }
+  },
+  "types": "./src/contract.ts",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "dev:worker": "tsx watch src/worker.ts",
+    "build": "tsc --noEmit",
+    "start": "node --import tsx src/main.ts",
+    "start:web": "node --import tsx src/main.ts",
+    "start:worker": "node --import tsx src/worker.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "redis:smoke": "tsx scripts/redis-smoke.ts"
+  },
+  "dependencies": {
+    "@nestjs/bullmq": "^11.0.4",
+    "@nestjs/common": "^11.1.24",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/core": "^11.1.24",
+    "@nestjs/platform-express": "^11.1.24",
+    "bullmq": "^5.78.0",
+    "drizzle-orm": "^0.45.2",
+    "drizzle-zod": "^0.8.3",
+    "ioredis": "5.10.1",
+    "postgres": "^3.4.9",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "undici": "^6.26.0",
+    "zod": "^3.23.8",
+    "better-auth": "^1.6.14"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

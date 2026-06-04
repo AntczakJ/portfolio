@@ -1,0 +1,209 @@
+name: pulse-e2e
+
+# Phase 8, Task 8.2 — Playwright E2E harness for pulse.
+#
+# Critical-path coverage for the live uptime monitor: the landing smoke
+# (production-CSP gate), the live status board (one SSE connection, real probe
+# state), the demo-incident arc (the synchronized down beat — the C-1 headline),
+# the ADR-007 auth boundary + demo gating, the incidents view, the redacted
+# public status page, and keyboard / reduced-motion.
+#
+# The surface under test is the BUILT + SERVED full stack (NOT next dev — the
+# strict CSP forbids unsafe-eval and the zero-CSP-violation assertions are only
+# meaningful against the prod build; the meld/razors-edge lesson carried in pulse
+# AGENT_NOTES). The full stack is required:
+#   - Postgres :5437 + Redis :6381 (service containers)
+#   - the NestJS web (:3080) AND worker processes
+#   - the seeded demo data (seed-demo-monitor + seed-demo-history + public-page)
+#   - the Next web (next start on :3081, NEXT_PUBLIC_API_URL=:3080)
+#
+# Trigger model (mirrors meld-e2e / razors-edge-e2e):
+#   - workflow_dispatch with an optional target_url — run against any deployed
+#     URL (a pre-promotion gate). Defaults to the in-job local stack.
+#   - push to main touching projects/pulse/** — gate the project on a passing
+#     sweep against the in-job built + served stack.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target URL to test against (defaults to the in-job local build)'
+        required: false
+        type: string
+        default: ''
+  push:
+    branches: [main]
+    paths:
+      - 'projects/pulse/**'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/pulse-e2e.yml'
+
+concurrency:
+  group: pulse-e2e-${{ github.event.inputs.target_url || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+jobs:
+  e2e:
+    name: e2e (built + served :3081 / :3080)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LOCAL_RUN: ${{ github.event.inputs.target_url == '' }}
+      BASE_URL: ${{ github.event.inputs.target_url || 'http://localhost:3081' }}
+      API_BASE_URL: ${{ github.event.inputs.target_url || 'http://localhost:3080' }}
+      DATABASE_URL: postgres://pulse:pulse@localhost:5437/pulse
+      REDIS_URL: redis://localhost:6381
+      DEMO_STATUS_SLUG: demo
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pulse
+          POSTGRES_PASSWORD: pulse
+          POSTGRES_DB: pulse
+        ports:
+          - 5437:5432
+        options: >-
+          --health-cmd "pg_isready -U pulse -d pulse"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6381:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright (chromium only)
+        run: pnpm -F pulse-e2e exec playwright install --with-deps chromium
+
+      # ---- the in-job full stack (skipped when testing a deployed target_url) ----
+      - name: Run DB migrations
+        if: env.LOCAL_RUN == 'true'
+        run: pnpm -F pulse-server db:migrate
+
+      - name: Seed the demo workspace
+        if: env.LOCAL_RUN == 'true'
+        run: |
+          pnpm -F pulse-server exec tsx scripts/seed-demo-monitor.ts
+          pnpm -F pulse-server exec tsx scripts/seed-demo-history.ts
+          pnpm -F pulse-server exec tsx scripts/seed-public-page.ts
+
+      - name: Start the NestJS API (web) on :3080
+        if: env.LOCAL_RUN == 'true'
+        env:
+          PORT: '3080'
+          NODE_ENV: production
+          BETTER_AUTH_SECRET: e2e-ci-secret-not-for-prod-0123456789
+          BETTER_AUTH_URL: http://localhost:3080
+          DEMO_TRIGGER_ENABLED: 'true'
+          CORS_ORIGINS: http://localhost:3081
+        run: |
+          nohup pnpm -F pulse-server start:web > /tmp/pulse-api.log 2>&1 &
+          echo "PULSE_API_PID=$!" >> $GITHUB_ENV
+
+      - name: Start the NestJS worker
+        if: env.LOCAL_RUN == 'true'
+        env:
+          NODE_ENV: production
+          BETTER_AUTH_SECRET: e2e-ci-secret-not-for-prod-0123456789
+          BETTER_AUTH_URL: http://localhost:3080
+          DEMO_TRIGGER_ENABLED: 'true'
+        run: |
+          nohup pnpm -F pulse-server start:worker > /tmp/pulse-worker.log 2>&1 &
+          echo "PULSE_WORKER_PID=$!" >> $GITHUB_ENV
+
+      - name: Wait for the API on :3080
+        if: env.LOCAL_RUN == 'true'
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3080/health > /dev/null; then
+              echo "pulse-api up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "pulse-api never came up. Last log:"; tail -n 200 /tmp/pulse-api.log || true
+          exit 1
+
+      - name: Build pulse-web
+        if: env.LOCAL_RUN == 'true'
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3080
+          NEXT_PUBLIC_SSE_URL: http://localhost:3080
+          NEXT_PUBLIC_SITE_URL: http://localhost:3081
+          NEXT_PUBLIC_DEMO_STATUS_SLUG: demo
+        run: pnpm -F pulse-web build
+
+      - name: Start pulse-web (next start on :3081)
+        if: env.LOCAL_RUN == 'true'
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3080
+          NEXT_PUBLIC_SSE_URL: http://localhost:3080
+          NEXT_PUBLIC_SITE_URL: http://localhost:3081
+          NEXT_PUBLIC_DEMO_STATUS_SLUG: demo
+        run: |
+          nohup pnpm -F pulse-web start > /tmp/pulse-web.log 2>&1 &
+          echo "PULSE_WEB_PID=$!" >> $GITHUB_ENV
+
+      - name: Wait for pulse-web on :3081
+        if: env.LOCAL_RUN == 'true'
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3081 > /dev/null; then
+              echo "pulse-web up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "pulse-web never came up. Last log:"; tail -n 200 /tmp/pulse-web.log || true
+          exit 1
+
+      - name: Run Playwright tests
+        run: pnpm -F pulse-e2e test --project=chromium
+
+      - name: Stop background processes
+        if: always() && env.LOCAL_RUN == 'true'
+        run: |
+          for pid in "${PULSE_WEB_PID:-}" "${PULSE_API_PID:-}" "${PULSE_WORKER_PID:-}"; do
+            if [ -n "$pid" ]; then kill "$pid" || true; fi
+          done
+
+      - name: Upload server logs on failure
+        if: failure() && env.LOCAL_RUN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulse-server-logs-${{ github.run_id }}
+          path: |
+            /tmp/pulse-api.log
+            /tmp/pulse-worker.log
+            /tmp/pulse-web.log
+          retention-days: 14
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulse-e2e-report-${{ github.run_id }}
+          path: projects/pulse/e2e/playwright-report
+          retention-days: 30

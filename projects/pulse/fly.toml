@@ -1,0 +1,135 @@
+# fly.toml — pulse-api (ADR-006).
+#
+# ONE image (Dockerfile), TWO processes:
+#   - web    : NestJS HTTP + the two @Sse() routes + better-auth + the public
+#              read surface + the /demo routes. Internal port 3080. This is the
+#              only process with a public [http_service].
+#   - worker : the BullMQ probe + rollup + GC worker. NO HTTP, NO public
+#              service — it talks only to Postgres + Redis.
+#
+# Both processes are kept WARM (`auto_stop_machines = 'off'` +
+# `min_machines_running = 1`): the live board's SSE connections and the
+# scheduler must never cold-start in front of a recruiter (the tape precedent —
+# the wow can't cold-start), and the worker must keep probing on schedule
+# (a stopped worker = a frozen board + a stuck demo arc).
+#
+# Region `fra` (EU — co-located with Fly Postgres + Upstash Redis; Pub/Sub +
+# BullMQ + DB latency all matter). Single region; multi-region probing is v2.
+#
+# pulse-web is a SEPARATE app (fly.web.toml) that reverse-proxies this API so
+# the browser is single-origin (cookie-auth SSE — ADR-003/ADR-007).
+
+app = 'pulse-api'
+primary_region = 'fra'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[deploy]
+  # Migrations + the idempotent demo seed run in the WEB process entrypoint on
+  # boot (RUN_MIGRATIONS=1 / RUN_SEED=1). We deliberately do NOT use a
+  # [deploy.release_command] for migrations because the seed needs Redis (it
+  # registers the demo monitor's BullMQ schedule) and a release machine is a
+  # transient one-off; the web entrypoint owns the migrate+seed step so the
+  # worker can wait-for-schema and both share the same DATABASE_URL/REDIS_URL.
+  strategy = 'rolling'
+
+[processes]
+  # The start command Fly passes to the image ENTRYPOINT. The entrypoint
+  # accepts the role token and wraps it with migrate+seed (web) /
+  # wait-for-db (worker). See entrypoint.sh.
+  web = 'web'
+  worker = 'worker'
+
+[env]
+  NODE_ENV = 'production'
+  PORT = '3080'
+  # Migrate + seed on boot (web process only; the entrypoint scopes them).
+  RUN_MIGRATIONS = '1'
+  RUN_SEED = '1'
+  # The clean PUBLIC host the demo monitor targets so the SSRF guard ALLOWS it
+  # and the full incident arc (open -> recover -> close) completes on the
+  # deployed demo (ADR-006). The seed derives DEMO_FLAKY_URL =
+  # PUBLIC_API_ORIGIN + '/demo/flaky' when DEMO_FLAKY_URL is unset. This is the
+  # API's OWN public host (NOT an ngrok hostname, NOT loopback) — the demo
+  # monitor probes pulse-api directly. (If you front the demo via the pulse-web
+  # proxy instead, set DEMO_FLAKY_URL to https://pulse-demo.fly.dev/demo/flaky.)
+  PUBLIC_API_ORIGIN = 'https://pulse-api.fly.dev'
+  # The recruiter-facing demo trigger stays ENABLED on the demo (the wow). Set
+  # to 'false' to disable /demo/* entirely in a locked-down environment.
+  DEMO_TRIGGER_ENABLED = 'true'
+  # CORS allowlist for the dashboard EventSource WITH CREDENTIALS. In the
+  # single-origin prod posture the browser hits pulse-web (which proxies this
+  # API), so the SSE request arrives same-origin from pulse-web's perspective —
+  # but better-auth's trustedOrigins + this allowlist still gate the public
+  # web origin. Set to the pulse-web public origin.
+  CORS_ORIGINS = 'https://pulse-demo.fly.dev'
+
+# --- web process: the public HTTP + SSE surface ---
+[http_service]
+  internal_port = 3080
+  force_https = true
+  # Keep the web machine warm — SSE connections are long-lived and the wow
+  # moment must not cold-start (tape precedent).
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+  # CRITICAL: this service belongs to the `web` process ONLY. The `worker`
+  # process has no public service (no HTTP, no health check).
+  processes = ['web']
+
+  [http_service.concurrency]
+    # SSE connections are long-lived; size the soft/hard limits generously so a
+    # handful of dashboard viewers each holding an EventSource do not trip the
+    # concurrency cap.
+    type = 'connections'
+    hard_limit = 400
+    soft_limit = 300
+
+[checks]
+  # HTTP health check on the web process only. /health returns
+  # { status, commit, ts, db, redis } (the NestJS HealthController). The worker
+  # process is intentionally absent here — it has no HTTP surface; its liveness
+  # is "the machine is started" + the BullMQ heartbeat in Redis.
+  [checks.web_health]
+    port = 3080
+    type = 'http'
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '40s'
+    method = 'get'
+    path = '/health'
+    protocol = 'http'
+    processes = ['web']
+
+# --- VM sizing (documented rationale) ---
+#
+# The Nest web + worker are heavier than the Next apps in the portfolio:
+#   - web   : NestJS (DI graph + Express + better-auth + Drizzle pool ~10 + the
+#             dedicated ioredis SSE subscriber + the in-memory 256-event ring
+#             buffer per scope). 512 MB gives headroom over the resting ~150 MB
+#             so a burst of SSE connections + the better-auth bcrypt cost on
+#             sign-up do not OOM. (The razors-edge lesson — 256 MB OOM'd on a
+#             single heavy path — argues against 256 for any non-trivial Node
+#             server; 512 is the safe floor.)
+#   - worker: the BullMQ probe runner (concurrency 20, undici outbound sockets +
+#             per-probe 512 KB body cap), the rollup job (an aggregate INSERT
+#             ... SELECT over the recent raw rows), and the GC sweep. 512 MB
+#             covers 20 concurrent probes each buffering up to 512 KB plus the
+#             rollup working set.
+# Both are shared-cpu-1x — the workload is I/O-bound (network probes, DB,
+# Redis), not CPU-bound; a dedicated CPU would be wasted spend at demo scale.
+# Bump to 1024 MB (no ADR needed) if the SSE connection count or the probe
+# concurrency grows past the demo profile.
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512
+  processes = ['web']
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512
+  processes = ['worker']

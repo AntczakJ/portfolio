@@ -1,0 +1,88 @@
+# fly.web.toml — pulse-web (ADR-006).
+#
+# The Next.js 15 standalone frontend, a SEPARATE Fly app from pulse-api (the
+# meld Next-proxies-API precedent). It reverse-proxies the NestJS route prefixes
+# to pulse-api over Fly's private network (web/next.config.ts `rewrites()` ->
+# API_PROXY_TARGET) so the browser sees ONE origin — which is what makes the
+# dashboard `EventSource` SSE stream carry the better-auth session cookie
+# first-party (ADR-003/ADR-007) and keeps the strict CSP `connect-src 'self'`.
+#
+# Deploy this with the web Dockerfile + this config explicitly:
+#   flyctl deploy --remote-only --app pulse-web \
+#     --config fly.web.toml --dockerfile Dockerfile.web .
+# (run from projects/pulse/ — the build context is the project dir, the meld
+# "deploy from the project dir" lesson that avoids the flyctl first-deploy
+# "No machines configured" quirk).
+
+app = 'pulse-web'
+primary_region = 'fra'
+
+[build]
+  dockerfile = 'Dockerfile.web'
+
+[deploy]
+  strategy = 'rolling'
+
+[env]
+  NODE_ENV = 'production'
+  PORT = '3000'
+  HOSTNAME = '0.0.0.0'
+  # The single-origin posture: the browser hits THIS app's origin for both the
+  # API fetches and the SSE stream (the rewrites forward them to pulse-api).
+  # These are also baked at BUILD time in Dockerfile.web (NEXT_PUBLIC_* inline
+  # into the client bundle); mirrored here as defence-in-depth + an audit signal
+  # in `flyctl status`, and honoured by the server-side reads (metadataBase,
+  # sitemap, robots, OG, JSON-LD).
+  NEXT_PUBLIC_API_URL = 'https://pulse-demo.fly.dev'
+  NEXT_PUBLIC_SSE_URL = 'https://pulse-demo.fly.dev'
+  NEXT_PUBLIC_SITE_URL = 'https://pulse-demo.fly.dev'
+  NEXT_PUBLIC_DEMO_STATUS_SLUG = 'demo'
+  # NOTE on API_PROXY_TARGET: Next BAKES the `rewrites()` destination into the
+  # routing manifest at BUILD time, so the effective proxy target is the
+  # Dockerfile.web `ARG API_PROXY_TARGET` (default http://pulse-api.internal:3080,
+  # Fly's private 6PN DNS — `pulse-api.internal` resolves to the api app's
+  # machines). The default is already correct for this topology, so no build-arg
+  # override is needed. This [env] entry is documentation/defence-in-depth only
+  # (it does NOT re-point the already-baked rewrite). If the api app is ever
+  # RENAMED, rebuild pulse-web with `--build-arg API_PROXY_TARGET=http://<new>.internal:3080`.
+  API_PROXY_TARGET = 'http://pulse-api.internal:3080'
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # Keep one machine warm so the showcase loads instantly (no cold-start before
+  # the 10-second wow judgement). `auto_stop = 'suspend'` would still risk a
+  # resume delay on the first hit; 'off' + min 1 guarantees a warm front door.
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+  [http_service.concurrency]
+    # The Next server also proxies the long-lived SSE connections to pulse-api,
+    # so size for connections (each open dashboard holds one EventSource through
+    # this proxy) rather than short requests.
+    type = 'connections'
+    hard_limit = 400
+    soft_limit = 300
+
+  # Health check on `/` — a 200 means the Next standalone server is up. (The
+  # app has a proxied `/health` too, but that would report pulse-api's health,
+  # not the web server's; `/` is the web server's own liveness signal.)
+  [[http_service.checks]]
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '20s'
+    method = 'get'
+    path = '/'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  # 512 MB. The razors-edge lesson is binding: the Next standalone server OOM'd
+  # at 256 MB on the FIRST on-demand next/image AVIF optimization + the OG
+  # `next/og` ImageResponse (satori) render — both of which pulse-web exercises
+  # (the public status page OG image, app icons). 512 MB serves image
+  # optimization + the OG render + the SSE proxy connections cleanly. Do NOT
+  # drop to 256.
+  memory_mb = 512
