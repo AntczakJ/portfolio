@@ -88,4 +88,25 @@ export default tseslint.config(
       '@typescript-eslint/no-extraneous-class': 'off',
     },
   },
+  {
+    // Test files legitimately use a few patterns the strict production config
+    // forbids: empty mock-method stubs (`no-empty-function`), non-null
+    // assertions on fixtures known to be present (`no-non-null-assertion`),
+    // `Array<T>` style and belt-and-braces assertions in type-shape checks
+    // (`array-type`, `no-unnecessary-type-assertion`). Relax those for test
+    // files ONLY — production code stays fully strict. This also reconciles the
+    // tape-web test suite (which lints via its own next/typescript config) with
+    // the repo-root strict gate that lint-staged runs on every staged file.
+    files: [
+      '**/__tests__/**/*.{ts,tsx}',
+      '**/*.{test,spec}.{ts,tsx}',
+      '**/__mocks__/**/*.{ts,tsx}',
+    ],
+    rules: {
+      '@typescript-eslint/no-empty-function': 'off',
+      '@typescript-eslint/no-non-null-assertion': 'off',
+      '@typescript-eslint/array-type': 'off',
+      '@typescript-eslint/no-unnecessary-type-assertion': 'off',
+    },
+  },
 );
