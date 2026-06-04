@@ -1,0 +1,104 @@
+{
+  "deltas": [
+    {
+      "tsMs": 1000,
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 0,
+      "priceBucket": 14246,
+      "bidVolumeDelta": 0,
+      "askVolumeDelta": 0.5,
+      "tradesDelta": 1
+    },
+    {
+      "tsMs": 2000,
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 0,
+      "priceBucket": 14246,
+      "bidVolumeDelta": 0.25,
+      "askVolumeDelta": 0,
+      "tradesDelta": 1
+    },
+    {
+      "tsMs": 3000,
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 0,
+      "priceBucket": 14248,
+      "bidVolumeDelta": 0,
+      "askVolumeDelta": 0.125,
+      "tradesDelta": 1
+    },
+    {
+      "tsMs": 60000,
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 60000,
+      "priceBucket": 14250,
+      "bidVolumeDelta": 1,
+      "askVolumeDelta": 0,
+      "tradesDelta": 1
+    },
+    {
+      "tsMs": 90000,
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 60000,
+      "priceBucket": 14250,
+      "bidVolumeDelta": 0,
+      "askVolumeDelta": 0.5,
+      "tradesDelta": 1
+    }
+  ],
+  "closes": [
+    {
+      "tsMs": 2000,
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 0,
+      "priceBucket": 14246,
+      "bidVolume": 0.25,
+      "askVolume": 0.5,
+      "trades": 2
+    },
+    {
+      "tsMs": 3000,
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 0,
+      "priceBucket": 14248,
+      "bidVolume": 0,
+      "askVolume": 0.125,
+      "trades": 1
+    },
+    {
+      "tsMs": 90000,
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 60000,
+      "priceBucket": 14250,
+      "bidVolume": 1,
+      "askVolume": 0.5,
+      "trades": 2
+    }
+  ],
+  "cvd": [
+    {
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 0,
+      "barDelta": 0.375,
+      "cvd": 0.375
+    },
+    {
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 60000,
+      "barDelta": -0.5,
+      "cvd": -0.125
+    }
+  ],
+  "finalSnapshot": {
+    "tsMs": 0,
+    "cellsOpen": [],
+    "ticksProcessed": 5
+  },
+  "counters": {
+    "outOfOrderTicks": 0,
+    "duplicateTicks": 0,
+    "sessionExtreme": {
+      "BTCUSDT-PERP": 2
+    }
+  }
+}

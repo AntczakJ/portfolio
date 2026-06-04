@@ -1,0 +1,11 @@
+{
+  "description": "Two 1-minute bars on BTCUSDT-PERP. Bar 0 (bucketTs 0) has two price buckets with a bid/ask mix; bar 1 (bucketTs 60000) has one bucket. A tick lands exactly on the 60000 boundary and must belong to bar 1. closeExpired(60001) closes bar 0 only; drainAll closes bar 1. Asserts: per-cell bid+ask=total volume, trades=tick count, bar rollover emits cell.close, mid-bar deltas, CVD steps once per closed bar.",
+  "ticks": [
+    { "tsMs": 1000, "symbol": "BTCUSDT-PERP", "price": 71234.5, "qty": 0.5, "aggressor": "buy" },
+    { "tsMs": 2000, "symbol": "BTCUSDT-PERP", "price": 71234.5, "qty": 0.25, "aggressor": "sell" },
+    { "tsMs": 3000, "symbol": "BTCUSDT-PERP", "price": 71240.0, "qty": 0.125, "aggressor": "buy" },
+    { "tsMs": 60000, "symbol": "BTCUSDT-PERP", "price": 71250.0, "qty": 1.0, "aggressor": "sell" },
+    { "tsMs": 90000, "symbol": "BTCUSDT-PERP", "price": 71250.0, "qty": 0.5, "aggressor": "buy" }
+  ],
+  "closeAt": [60001]
+}

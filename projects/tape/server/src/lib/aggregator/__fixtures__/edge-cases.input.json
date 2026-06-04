@@ -1,0 +1,12 @@
+{
+  "description": "Edge-case battery. Tick 2 is OUT OF ORDER (tsMs 1500 < prior 2000) but in the same open bucket, so it accumulates correctly and only bumps the out-of-order counter. Tick 4 is an EXACT DUPLICATE of tick 3 (same ts/price/qty/aggressor) and counts as a real trade while bumping the duplicate counter. Bar 0 trades, bar 1 (bucketTs 60000) is EMPTY (gap), bar 2 (bucketTs 120000) trades — CVD must step only on bars that traded. A tick lands exactly on the 120000 boundary and belongs to bar 2.",
+  "ticks": [
+    { "tsMs": 1000, "symbol": "BTCUSDT-PERP", "price": 71234.5, "qty": 0.5, "aggressor": "buy" },
+    { "tsMs": 2000, "symbol": "BTCUSDT-PERP", "price": 71234.5, "qty": 0.25, "aggressor": "buy" },
+    { "tsMs": 1500, "symbol": "BTCUSDT-PERP", "price": 71234.5, "qty": 0.125, "aggressor": "sell" },
+    { "tsMs": 5000, "symbol": "BTCUSDT-PERP", "price": 71240.0, "qty": 0.1, "aggressor": "sell" },
+    { "tsMs": 5000, "symbol": "BTCUSDT-PERP", "price": 71240.0, "qty": 0.1, "aggressor": "sell" },
+    { "tsMs": 120000, "symbol": "BTCUSDT-PERP", "price": 71260.0, "qty": 0.5, "aggressor": "buy" }
+  ],
+  "closeAt": [60001, 120001]
+}

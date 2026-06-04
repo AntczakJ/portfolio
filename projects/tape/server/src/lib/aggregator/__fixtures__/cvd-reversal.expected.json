@@ -1,0 +1,110 @@
+{
+  "deltas": [
+    {
+      "tsMs": 1000,
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 0,
+      "priceBucket": 14200,
+      "bidVolumeDelta": 0,
+      "askVolumeDelta": 1,
+      "tradesDelta": 1
+    },
+    {
+      "tsMs": 2000,
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 0,
+      "priceBucket": 14200,
+      "bidVolumeDelta": 0.25,
+      "askVolumeDelta": 0,
+      "tradesDelta": 1
+    },
+    {
+      "tsMs": 61000,
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 60000,
+      "priceBucket": 14201,
+      "bidVolumeDelta": 0,
+      "askVolumeDelta": 0.25,
+      "tradesDelta": 1
+    },
+    {
+      "tsMs": 62000,
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 60000,
+      "priceBucket": 14201,
+      "bidVolumeDelta": 1,
+      "askVolumeDelta": 0,
+      "tradesDelta": 1
+    },
+    {
+      "tsMs": 121000,
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 120000,
+      "priceBucket": 14202,
+      "bidVolumeDelta": 0,
+      "askVolumeDelta": 0.5,
+      "tradesDelta": 1
+    }
+  ],
+  "closes": [
+    {
+      "tsMs": 2000,
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 0,
+      "priceBucket": 14200,
+      "bidVolume": 0.25,
+      "askVolume": 1,
+      "trades": 2
+    },
+    {
+      "tsMs": 62000,
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 60000,
+      "priceBucket": 14201,
+      "bidVolume": 1,
+      "askVolume": 0.25,
+      "trades": 2
+    },
+    {
+      "tsMs": 121000,
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 120000,
+      "priceBucket": 14202,
+      "bidVolume": 0,
+      "askVolume": 0.5,
+      "trades": 1
+    }
+  ],
+  "cvd": [
+    {
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 0,
+      "barDelta": 0.75,
+      "cvd": 0.75
+    },
+    {
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 60000,
+      "barDelta": -0.75,
+      "cvd": 0
+    },
+    {
+      "symbol": "BTCUSDT-PERP",
+      "bucketTs": 120000,
+      "barDelta": 0.5,
+      "cvd": 0.5
+    }
+  ],
+  "finalSnapshot": {
+    "tsMs": 0,
+    "cellsOpen": [],
+    "ticksProcessed": 5
+  },
+  "counters": {
+    "outOfOrderTicks": 0,
+    "duplicateTicks": 0,
+    "sessionExtreme": {
+      "BTCUSDT-PERP": 2
+    }
+  }
+}

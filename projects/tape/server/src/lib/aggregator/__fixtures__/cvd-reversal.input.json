@@ -1,0 +1,11 @@
+{
+  "description": "CVD direction + reversal. Bar 0 is net aggressive BUYING (barDelta > 0, CVD rises). Bar 1 is net aggressive SELLING (barDelta < 0, CVD falls — the reversal). Bar 2 is net buying again (CVD rises). Asserts CVD is the running cumulative of per-bar delta and reverses direction exactly when a bar's barDelta flips sign, and that delta = ask_volume - bid_volume per bar.",
+  "ticks": [
+    { "tsMs": 1000, "symbol": "BTCUSDT-PERP", "price": 71000.0, "qty": 1.0, "aggressor": "buy" },
+    { "tsMs": 2000, "symbol": "BTCUSDT-PERP", "price": 71000.0, "qty": 0.25, "aggressor": "sell" },
+    { "tsMs": 61000, "symbol": "BTCUSDT-PERP", "price": 71005.0, "qty": 0.25, "aggressor": "buy" },
+    { "tsMs": 62000, "symbol": "BTCUSDT-PERP", "price": 71005.0, "qty": 1.0, "aggressor": "sell" },
+    { "tsMs": 121000, "symbol": "BTCUSDT-PERP", "price": 71010.0, "qty": 0.5, "aggressor": "buy" }
+  ],
+  "closeAt": [60001, 120001, 180001]
+}
