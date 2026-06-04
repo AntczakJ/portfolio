@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   wsCellClosePayloadSchema,
   wsCellDeltaPayloadSchema,
+  wsReplayBarPayloadSchema,
 } from './cell';
 import {
   wsControlHeartbeatPayloadSchema,
@@ -81,12 +82,15 @@ import { wsTickPayloadSchema } from './tick';
  *                                `wsControlHeartbeatPayloadSchema`.
  *                                Topic = `'control'`.
  *
- * Kinds reserved by ADR-004 / ADR-005 / ADR-006 but NOT shipped in
- * v1 because their producing tasks have not landed yet:
- * `'replay.bar'`, `'control.worker_ready'`,
- * `'control.worker_unavailable'`, `'control.replay_complete'`,
- * `'control.error'`. Each is one additional variant in the
- * discriminated union when its task ships — not a protocol bump.
+ * `'replay.bar'` (Task 3.6) is now a live variant — it carries one
+ * historic bar's absolute cell totals, materialised by the browser
+ * replay engine as the virtual clock crosses each `bucketTs` boundary
+ * (REPLAY mode only; the live server fan-out never emits it). Kinds
+ * still reserved by ADR-004 / ADR-006 but NOT shipped:
+ * `'control.worker_ready'`, `'control.worker_unavailable'`,
+ * `'control.replay_complete'`, `'control.error'`. Each is one
+ * additional variant in the discriminated union when its task ships —
+ * not a protocol bump.
  *
  * **No fallback parsing.** The envelope's
  * `z.discriminatedUnion('kind', ...)` produces a single Zod parse
@@ -103,6 +107,7 @@ export const wsFrameKindSchema = z.enum([
   'tick',
   'cell.delta',
   'cell.close',
+  'replay.bar',
   'snapshot',
   'control.overrun',
   'control.heartbeat',
@@ -136,6 +141,11 @@ export const wsFrameEnvelopeSchema = z.discriminatedUnion('kind', [
     topic: z.literal('cells.btc'),
     kind: z.literal('cell.close'),
     payload: wsCellClosePayloadSchema,
+  }),
+  z.object({
+    topic: z.literal('cells.btc'),
+    kind: z.literal('replay.bar'),
+    payload: wsReplayBarPayloadSchema,
   }),
   z.object({
     topic: z.literal('cells.btc'),

@@ -10,6 +10,7 @@ import type {
   WSCellClosePayload,
   WSCellDeltaPayload,
   WSFrame,
+  WSReplayBarPayload,
   WSSnapshotPayload,
   WSTickPayload,
 } from 'tape-server';
@@ -62,6 +63,10 @@ function deltaFrame(payload: WSCellDeltaPayload): WSFrame {
 
 function closeFrame(payload: WSCellClosePayload): WSFrame {
   return { topic: 'cells.btc', kind: 'cell.close', payload };
+}
+
+function replayBarFrame(payload: WSReplayBarPayload): WSFrame {
+  return { topic: 'cells.btc', kind: 'replay.bar', payload };
 }
 
 function makeSnapshot(
@@ -396,6 +401,126 @@ describe('useStreamStore', () => {
     expect(useStreamStore.getState().cvd).toBe(5);
     store.resetSession();
     expect(useStreamStore.getState().cvd).toBe(0);
+  });
+
+  it('ingestFrame(replay.bar) folds each cell into closedCells like cell.close (3.6)', () => {
+    const store = useStreamStore.getState();
+    store.ingestFrame(
+      replayBarFrame({
+        symbol: 'BTCUSDT-PERP',
+        bucketTs: 1000,
+        cells: [
+          { priceBucket: 1, bidVolume: 5, askVolume: 10, trades: 2, delta: 5 },
+          { priceBucket: 2, bidVolume: 3, askVolume: 1, trades: 1, delta: -2 },
+        ],
+      }),
+    );
+    const state = useStreamStore.getState();
+    expect(state.closedCells).toHaveLength(2);
+    expect(state.closedCells.map((c) => c.priceBucket)).toEqual([1, 2]);
+    // Each replayed cell carries the bar's symbol + bucketTs and the
+    // close-shaped totals (no *Delta fields).
+    expect(state.closedCells[0]!.bucketTs).toBe(1000);
+    expect(state.closedCells[0]!.symbol).toBe('BTCUSDT-PERP');
+    expect(state.closedCells[0]!.askVolume).toBe(10);
+  });
+
+  it('replay.bar folds CVD identically to a sequence of cell.close (3.6)', () => {
+    const store = useStreamStore.getState();
+    // Bar 1: +5 then -2 → running CVD 3.
+    store.ingestFrame(
+      replayBarFrame({
+        symbol: 'BTCUSDT-PERP',
+        bucketTs: 60_000,
+        cells: [
+          { priceBucket: 1, bidVolume: 0, askVolume: 5, trades: 1, delta: 5 },
+          { priceBucket: 2, bidVolume: 2, askVolume: 0, trades: 1, delta: -2 },
+        ],
+      }),
+    );
+    expect(useStreamStore.getState().cvd).toBe(3);
+    // One series point for bar 60_000 carrying the running CVD at close.
+    expect(useStreamStore.getState().cvdSeries).toEqual([
+      { bucketTs: 60_000, cvd: 3 },
+    ]);
+    // Bar 2: net -4 → running 3 - 4 = -1, appends a fresh series point.
+    store.ingestFrame(
+      replayBarFrame({
+        symbol: 'BTCUSDT-PERP',
+        bucketTs: 120_000,
+        cells: [
+          { priceBucket: 1, bidVolume: 4, askVolume: 0, trades: 1, delta: -4 },
+        ],
+      }),
+    );
+    expect(useStreamStore.getState().cvd).toBe(-1);
+    expect(useStreamStore.getState().cvdSeries).toEqual([
+      { bucketTs: 60_000, cvd: 3 },
+      { bucketTs: 120_000, cvd: -1 },
+    ]);
+  });
+
+  it('replay.bar matches an equivalent cell.close sequence exactly', () => {
+    // Drive the store two ways and assert the CVD + closed-cell ring agree.
+    const cells = [
+      { priceBucket: 1, bidVolume: 1, askVolume: 6, trades: 2, delta: 5 },
+      { priceBucket: 2, bidVolume: 4, askVolume: 0, trades: 1, delta: -4 },
+    ];
+    // Path A: replay.bar.
+    useStreamStore.getState().resetSession();
+    useStreamStore.getState().ingestFrame(
+      replayBarFrame({ symbol: 'BTCUSDT-PERP', bucketTs: 300_000, cells }),
+    );
+    const viaReplay = {
+      cvd: useStreamStore.getState().cvd,
+      series: useStreamStore.getState().cvdSeries,
+      closed: useStreamStore.getState().closedCells.length,
+    };
+    // Path B: two cell.close frames for the same bar.
+    useStreamStore.getState().resetSession();
+    for (const c of cells) {
+      useStreamStore.getState().ingestFrame(
+        closeFrame(
+          makeClose({
+            bucketTs: 300_000,
+            priceBucket: c.priceBucket,
+            bidVolume: c.bidVolume,
+            askVolume: c.askVolume,
+            trades: c.trades,
+          }),
+        ),
+      );
+    }
+    const viaClose = {
+      cvd: useStreamStore.getState().cvd,
+      series: useStreamStore.getState().cvdSeries,
+      closed: useStreamStore.getState().closedCells.length,
+    };
+    expect(viaReplay).toEqual(viaClose);
+  });
+
+  it('mode-switch reset: resetSession clears all replay-built cell state (3.6)', () => {
+    const store = useStreamStore.getState();
+    // Build replay state, then simulate leaving replay for live (the
+    // mode controller calls resetSession on the boundary).
+    store.ingestFrame(
+      replayBarFrame({
+        symbol: 'BTCUSDT-PERP',
+        bucketTs: 1000,
+        cells: [
+          { priceBucket: 1, bidVolume: 0, askVolume: 9, trades: 3, delta: 9 },
+        ],
+      }),
+    );
+    expect(useStreamStore.getState().closedCells.length).toBeGreaterThan(0);
+    expect(useStreamStore.getState().cvd).not.toBe(0);
+    store.resetSession();
+    const state = useStreamStore.getState();
+    expect(state.closedCells).toEqual([]);
+    expect(state.cvdSeries).toEqual([]);
+    expect(state.cvd).toBe(0);
+    expect(state.openCells.size).toBe(0);
+    expect(state.recentTicks).toEqual([]);
   });
 
   it('setConnectionState updates connectionState', () => {

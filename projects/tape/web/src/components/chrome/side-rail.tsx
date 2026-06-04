@@ -40,6 +40,9 @@ export function SideRail(): ReactNode {
   const railCollapsed = useUiStore((s) => s.railCollapsed);
   const toggleRail = useUiStore((s) => s.toggleRail);
   const setRailCollapsed = useUiStore((s) => s.setRailCollapsed);
+  const replayMode = useUiStore((s) => s.replayMode);
+  const setReplayMode = useUiStore((s) => s.setReplayMode);
+  const setReplayPositionMs = useUiStore((s) => s.setReplayPositionMs);
   const reduceMotion = useReducedMotion();
 
   // Tablet auto-collapse on first mount: between 768 px and 1023 px the
@@ -101,14 +104,21 @@ export function SideRail(): ReactNode {
         <RailEntry
           icon={<Activity className="size-4" aria-hidden="true" />}
           label="Live"
-          active
+          active={replayMode === 'live'}
           collapsed={railCollapsed}
+          onSelect={() => {
+            setReplayMode('live');
+            setReplayPositionMs(0);
+          }}
         />
         <RailEntry
           icon={<Circle className="size-4" aria-hidden="true" />}
           label="Replay"
-          disabled
+          active={replayMode === 'replay'}
           collapsed={railCollapsed}
+          onSelect={() => {
+            setReplayMode('replay');
+          }}
         />
       </nav>
     </motion.aside>
@@ -119,74 +129,48 @@ interface RailEntryProps {
   icon: ReactNode;
   label: string;
   active?: boolean;
-  disabled?: boolean;
   collapsed: boolean;
+  /** Selecting the entry switches the data-source mode (Live ↔ Replay). */
+  onSelect: () => void;
 }
 
 function RailEntry({
   icon,
   label,
   active = false,
-  disabled = false,
   collapsed,
+  onSelect,
 }: RailEntryProps): ReactNode {
   const className = cn(
-    'flex h-9 items-center gap-3 rounded-(--radius-sm) px-2.5 font-mono text-xs transition-colors',
+    'flex h-9 w-full items-center gap-3 rounded-(--radius-sm) px-2.5 text-left font-mono text-xs transition-colors',
     active &&
       'bg-(--color-surface-raised) text-(--color-fg) shadow-[inset_2px_0_0] shadow-(--color-accent)',
-    !active && !disabled && 'text-(--color-fg-muted) hover:bg-(--color-surface-raised) hover:text-(--color-fg)',
-    disabled && 'cursor-not-allowed text-(--color-fg-subtle) opacity-60',
+    !active && 'text-(--color-fg-muted) hover:bg-(--color-surface-raised) hover:text-(--color-fg)',
     collapsed && 'justify-center px-0',
   );
 
-  const content = (
-    <>
+  const button = (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={active ? 'page' : undefined}
+      aria-pressed={active}
+      className={className}
+    >
       <span className="shrink-0">{icon}</span>
       {!collapsed && <span>{label}</span>}
-    </>
+    </button>
   );
 
-  // Always tooltip when collapsed; tooltip the disabled "Replay" v2 hint
-  // when expanded so users know why it is greyed out.
-  const tooltipText = disabled
-    ? 'Replay mode arrives in v2.'
-    : label;
-
-  if (disabled) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span
-            role="link"
-            aria-disabled="true"
-            tabIndex={-1}
-            className={className}
-            data-state="disabled"
-          >
-            {content}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="right">{tooltipText}</TooltipContent>
-      </Tooltip>
-    );
-  }
-
+  // Tooltip the label when collapsed so the icon-only rail stays legible.
   if (collapsed) {
     return (
       <Tooltip>
-        <TooltipTrigger asChild>
-          <a href="#main" className={className} aria-current={active ? 'page' : undefined}>
-            {content}
-          </a>
-        </TooltipTrigger>
-        <TooltipContent side="right">{tooltipText}</TooltipContent>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent side="right">{label}</TooltipContent>
       </Tooltip>
     );
   }
 
-  return (
-    <a href="#main" className={className} aria-current={active ? 'page' : undefined}>
-      {content}
-    </a>
-  );
+  return button;
 }

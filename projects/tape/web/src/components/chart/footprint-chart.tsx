@@ -41,6 +41,7 @@ import { CellReadoutMirror } from '@/components/chart/cell-readout-mirror';
 import { CellTooltip } from '@/components/chart/cell-tooltip';
 import { CvdPane } from '@/components/chart/cvd-pane';
 import { FollowLivePill } from '@/components/chart/follow-live-pill';
+import { ReplayEmptyState } from '@/components/chart/replay-empty-state';
 import { FootprintEngineProvider } from '@/lib/chart/engine-context';
 import { FootprintChartEngine } from '@/lib/chart/footprint-engine';
 import { useStreamStore } from '@/lib/stores/stream-store';
@@ -205,6 +206,7 @@ export function FootprintChart(): ReactNode {
           <CellTooltip containerRef={containerRef} />
           <CellReadoutMirror />
           <FollowLivePill />
+          <ReplayEmptyState />
         </div>
         <CvdPane />
       </div>

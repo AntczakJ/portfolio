@@ -17,6 +17,17 @@ export type ReplaySpeed = (typeof REPLAY_SPEEDS)[number];
 export const REPLAY_DAY_MS = 86_400_000;
 
 /**
+ * The UTC date (YYYY-MM-DD) the replay session reads. v1 defaults to
+ * "today" — the demo seeds the current day's `footprint_cells` via the
+ * worker, so today is the only day with data without a historical
+ * backfill. v2 surfaces a date picker; v1 hard-defaults and the field
+ * exists so a future picker has a home.
+ */
+export function todayUtcDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
  * Persistent UI shell state.
  *
  * Lives outside React state because the value must survive a full page
@@ -59,6 +70,14 @@ export interface UiState {
    */
   replayPositionMs: number;
   setReplayPositionMs: (ms: number) => void;
+
+  /**
+   * The UTC date (YYYY-MM-DD) the replay session reads from the historic
+   * endpoint. Defaults to today (see `todayUtcDate`). v2 surfaces a
+   * picker; v1 keeps it as a single persisted field.
+   */
+  replayDate: string;
+  setReplayDate: (date: string) => void;
 }
 
 function clampPosition(ms: number): number {
@@ -92,6 +111,11 @@ export const useUiStore = create<UiState>()(
       replayPositionMs: 0,
       setReplayPositionMs: (ms) => {
         set({ replayPositionMs: clampPosition(ms) });
+      },
+
+      replayDate: todayUtcDate(),
+      setReplayDate: (date) => {
+        set({ replayDate: date });
       },
     }),
     {

@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import { useEffect, useId } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { Radio } from 'lucide-react';
+import { Pause, Play, Radio, Square } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -19,6 +19,11 @@ import {
   useUiStore,
   type ReplaySpeed,
 } from '@/lib/stores/ui-store';
+import {
+  useReplayLoadState,
+  useReplayPlaying,
+  useReplayStatusStore,
+} from '@/lib/replay/replay-status-store';
 import { cn } from '@/lib/cn';
 
 /* -------------------------------------------------------------------------
@@ -87,10 +92,15 @@ export function ReplayBar(): ReactNode {
   const replayPositionMs = useUiStore((s) => s.replayPositionMs);
   const setReplayPositionMs = useUiStore((s) => s.setReplayPositionMs);
 
+  const playing = useReplayPlaying();
+  const loadState = useReplayLoadState();
+  const dispatch = useReplayStatusStore((s) => s.dispatch);
+
   const reduceMotion = useReducedMotion();
   const sliderLabelId = useId();
 
   const isReplay = replayMode === 'replay';
+  const isEmpty = loadState === 'empty';
   const transition = reduceMotion
     ? { duration: 0 }
     : { duration: TRANSITION_DURATION_S, ease: TRANSITION_EASE };
@@ -167,6 +177,17 @@ export function ReplayBar(): ReactNode {
       transition={transition}
       className="relative shrink-0 overflow-hidden border-t border-(--color-border) bg-(--color-surface)"
     >
+      {/* Mode-change announcement for screen readers. Polite so it does
+          not interrupt; carries the empty-data state too so a replay of a
+          dataless day is spoken rather than silently empty. */}
+      <span className="sr-only" role="status" aria-live="polite">
+        {isReplay
+          ? isEmpty
+            ? 'Replay mode. No replay data for this date.'
+            : 'Replay mode active.'
+          : 'Live mode active.'}
+      </span>
+
       {!isReplay && (
         <div className="flex h-full items-center px-3 md:px-4">
           <button
@@ -198,6 +219,38 @@ export function ReplayBar(): ReactNode {
             <Radio className="size-3.5" aria-hidden="true" />
             Back to Live
           </Button>
+
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              onClick={() => {
+                dispatch(playing ? 'pause' : 'play');
+              }}
+              disabled={isEmpty}
+              aria-label={playing ? 'Pause replay' : 'Play replay'}
+              aria-pressed={playing}
+            >
+              {playing ? (
+                <Pause className="size-3.5" aria-hidden="true" />
+              ) : (
+                <Play className="size-3.5" aria-hidden="true" />
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              onClick={() => {
+                dispatch('stop');
+              }}
+              disabled={isEmpty}
+              aria-label="Stop replay and return to session start"
+            >
+              <Square className="size-3" aria-hidden="true" />
+            </Button>
+          </div>
 
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <span
@@ -255,6 +308,15 @@ export function ReplayBar(): ReactNode {
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
+
+          {isEmpty && (
+            <span
+              className="hidden shrink-0 font-mono text-[10px] uppercase tracking-[0.12em] text-(--color-fg-subtle) md:inline"
+              data-replay-empty
+            >
+              No data for this date
+            </span>
+          )}
 
           {/*
            * Dev-only state pip. The condition is a literal `'development'`

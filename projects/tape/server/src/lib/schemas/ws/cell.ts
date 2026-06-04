@@ -132,3 +132,51 @@ export const wsCellClosePayloadSchema = z.object({
 });
 
 export type WSCellClosePayload = z.infer<typeof wsCellClosePayloadSchema>;
+
+/**
+ * `replay.bar` — one historic bar replayed in REPLAY mode (Task 3.6,
+ * ADR-006 reserved kind). Carries every price cell of one closed bar
+ * as ABSOLUTE totals, replayed one bar at a time as the replay virtual
+ * clock crosses each `bucketTs` boundary.
+ *
+ * **Why one frame per BAR (not per cell).** Live mode emits one
+ * `cell.close` per `(bucketTs, priceBucket)` because the worker closes
+ * cells independently. Replay, by contrast, reads a whole bar's cells
+ * out of Postgres at once and materialises them together when the
+ * virtual clock crosses the boundary. Bundling the bar's cells into a
+ * single frame keeps the replay reducer's "rebase this bar" semantics
+ * atomic — the browser replaces the bar's entire cell set in one store
+ * update rather than N.
+ *
+ * **Cell shape = the `cell.close` TOTALS field names plus `delta`.**
+ * Each entry mirrors `replayCellRowSchema` (the NDJSON line shape,
+ * `src/lib/schemas/replay/cell.ts`) minus `symbol` (carried once on the
+ * frame, not per cell). The browser folds each cell exactly like a
+ * `cell.close`: push into the closed-cell ring + fold `askVolume −
+ * bidVolume` into the running CVD. There is no delta accumulation in
+ * replay — bars are already closed (ADR-006 § "replay.bar").
+ *
+ * Field map:
+ *  - `symbol`    — Exchange-qualified symbol, e.g. 'BTCUSDT-PERP'.
+ *  - `bucketTs`  — Start of the 1-min time bucket, ms since epoch (UTC).
+ *  - `cells`     — Absolute per-price-bucket totals for this bar,
+ *                  ordered by `priceBucket` ascending (as the replay
+ *                  query returns them).
+ */
+export const wsReplayBarCellSchema = z.object({
+  priceBucket: z.number().finite(),
+  bidVolume: z.number().nonnegative().finite(),
+  askVolume: z.number().nonnegative().finite(),
+  trades: z.number().int().nonnegative(),
+  delta: z.number().finite(),
+});
+
+export type WSReplayBarCell = z.infer<typeof wsReplayBarCellSchema>;
+
+export const wsReplayBarPayloadSchema = z.object({
+  symbol: z.string().min(1),
+  bucketTs: z.number().int().positive(),
+  cells: z.array(wsReplayBarCellSchema),
+});
+
+export type WSReplayBarPayload = z.infer<typeof wsReplayBarPayloadSchema>;

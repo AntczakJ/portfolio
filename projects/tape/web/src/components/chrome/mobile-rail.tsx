@@ -6,6 +6,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Activity, Circle, PanelLeft, PanelLeftClose } from 'lucide-react';
 
 import { Separator } from '@/components/ui/separator';
+import { useUiStore } from '@/lib/stores/ui-store';
 import { cn } from '@/lib/cn';
 
 /**
@@ -23,6 +24,9 @@ export function MobileRail(): ReactNode {
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const reduceMotion = useReducedMotion();
+  const replayMode = useUiStore((s) => s.replayMode);
+  const setReplayMode = useUiStore((s) => s.setReplayMode);
+  const setReplayPositionMs = useUiStore((s) => s.setReplayPositionMs);
 
   useEffect(() => {
     if (!open) return;
@@ -102,12 +106,21 @@ export function MobileRail(): ReactNode {
                 <MobileEntry
                   icon={<Activity className="size-4" aria-hidden="true" />}
                   label="Live"
-                  active
+                  active={replayMode === 'live'}
+                  onSelect={() => {
+                    setReplayMode('live');
+                    setReplayPositionMs(0);
+                    setOpen(false);
+                  }}
                 />
                 <MobileEntry
                   icon={<Circle className="size-4" aria-hidden="true" />}
                   label="Replay"
-                  disabled
+                  active={replayMode === 'replay'}
+                  onSelect={() => {
+                    setReplayMode('replay');
+                    setOpen(false);
+                  }}
                 />
               </nav>
             </motion.aside>
@@ -122,42 +135,32 @@ interface MobileEntryProps {
   icon: ReactNode;
   label: string;
   active?: boolean;
-  disabled?: boolean;
+  onSelect: () => void;
 }
 
 function MobileEntry({
   icon,
   label,
   active = false,
-  disabled = false,
+  onSelect,
 }: MobileEntryProps): ReactNode {
   const className = cn(
-    'flex h-9 items-center gap-3 rounded-(--radius-sm) px-2.5 font-mono text-xs transition-colors',
+    'flex h-9 w-full items-center gap-3 rounded-(--radius-sm) px-2.5 text-left font-mono text-xs transition-colors',
     active &&
       'bg-(--color-surface-raised) text-(--color-fg) shadow-[inset_2px_0_0] shadow-(--color-accent)',
-    !active && !disabled && 'text-(--color-fg-muted) hover:bg-(--color-surface-raised) hover:text-(--color-fg)',
-    disabled && 'cursor-not-allowed text-(--color-fg-subtle) opacity-60',
+    !active && 'text-(--color-fg-muted) hover:bg-(--color-surface-raised) hover:text-(--color-fg)',
   );
 
-  if (disabled) {
-    return (
-      <span
-        role="link"
-        aria-disabled="true"
-        tabIndex={-1}
-        className={className}
-        title="Replay mode arrives in v2."
-      >
-        <span className="shrink-0">{icon}</span>
-        <span>{label}</span>
-      </span>
-    );
-  }
-
   return (
-    <a href="#main" className={className} aria-current={active ? 'page' : undefined}>
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={active ? 'page' : undefined}
+      aria-pressed={active}
+      className={className}
+    >
       <span className="shrink-0">{icon}</span>
       <span>{label}</span>
-    </a>
+    </button>
   );
 }

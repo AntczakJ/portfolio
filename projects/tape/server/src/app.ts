@@ -45,6 +45,8 @@ export type {
   WSControlOverrunPayload,
   WSFrame,
   WSFrameKind,
+  WSReplayBarCell,
+  WSReplayBarPayload,
   WSSnapshotPayload,
   WSTickPayload,
   WSTopic,

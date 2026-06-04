@@ -72,6 +72,7 @@ import type {
   WSCellClosePayload,
   WSCellDeltaPayload,
   WSFrame,
+  WSReplayBarPayload,
   WSSnapshotPayload,
   WSTickPayload,
 } from 'tape-server';
@@ -200,6 +201,31 @@ function pushBoundedClosed(
  */
 function cellCloseDelta(cell: WSCellClosePayload): number {
   return cell.askVolume - cell.bidVolume;
+}
+
+/**
+ * Project one cell of a `replay.bar` frame into the `cell.close` shape
+ * the rest of the store reducers consume. The replay-bar cell drops the
+ * per-cell `symbol` (it lives once on the frame) and the read-time
+ * `delta` projection (the store re-derives delta from totals where it
+ * needs it). Carrying the bar's `symbol` + `bucketTs` onto each cell
+ * lets a replayed bar flow through the IDENTICAL closed-cell ring + CVD
+ * fold that live `cell.close` frames use — no second code path. The
+ * replay engine emits replay bars in forward `bucketTs` order, so the
+ * `pushCvdSeries` append/replace logic behaves exactly as it does live.
+ */
+function replayBarCellToClose(
+  payload: WSReplayBarPayload,
+  cell: WSReplayBarPayload['cells'][number],
+): WSCellClosePayload {
+  return {
+    symbol: payload.symbol,
+    bucketTs: payload.bucketTs,
+    priceBucket: cell.priceBucket,
+    bidVolume: cell.bidVolume,
+    askVolume: cell.askVolume,
+    trades: cell.trades,
+  };
 }
 
 /**
@@ -386,6 +412,42 @@ export const useStreamStore = create<StreamState>()((set) => ({
               frame.payload.bucketTs,
               nextCvd,
             ),
+            framesPerSec,
+          };
+        });
+        return;
+      }
+      case 'replay.bar': {
+        // Replay mode (Task 3.6). One frame carries a whole closed bar's
+        // absolute cell totals; the virtual clock has just crossed this
+        // bar's boundary. Fold each cell exactly like a `cell.close`:
+        // push into the closed-cell ring + accumulate the running CVD +
+        // mirror it into the per-bar CVD series (Task 3.2c seam). No
+        // delta accumulation — replay bars are already closed. Done in a
+        // single set() so the chart rebases the whole bar atomically.
+        const payload = frame.payload;
+        set((state) => {
+          let closed = state.closedCells;
+          let cvd = state.cvd;
+          let cvdSeries = state.cvdSeries;
+          const nextOpen = new Map(state.openCells);
+          for (const cell of payload.cells) {
+            const closeCell = replayBarCellToClose(payload, cell);
+            // A replayed bar supersedes any open-cell state at the same
+            // key (e.g. left over from a seek that materialised the bar
+            // as it was still open) — evict before pushing the close.
+            nextOpen.delete(
+              openCellKey(closeCell.bucketTs, closeCell.priceBucket),
+            );
+            closed = pushBoundedClosed(closed, closeCell);
+            cvd += cellCloseDelta(closeCell);
+            cvdSeries = pushCvdSeries(cvdSeries, payload.bucketTs, cvd);
+          }
+          return {
+            openCells: nextOpen,
+            closedCells: closed,
+            cvd,
+            cvdSeries,
             framesPerSec,
           };
         });

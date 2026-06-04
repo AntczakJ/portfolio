@@ -22,8 +22,15 @@
 export {
   wsCellClosePayloadSchema,
   wsCellDeltaPayloadSchema,
+  wsReplayBarCellSchema,
+  wsReplayBarPayloadSchema,
 } from './cell';
-export type { WSCellClosePayload, WSCellDeltaPayload } from './cell';
+export type {
+  WSCellClosePayload,
+  WSCellDeltaPayload,
+  WSReplayBarCell,
+  WSReplayBarPayload,
+} from './cell';
 
 export {
   wsControlHeartbeatPayloadSchema,
