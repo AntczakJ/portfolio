@@ -11,6 +11,7 @@ import { MonitorsModule } from './monitors/monitors.module';
 import { PublicModule } from './public/public.module';
 import { QueuesModule } from './queues/queues.module';
 import { RedisModule } from './redis/redis.module';
+import { RootModule } from './root/root.module';
 import { StreamModule } from './stream/stream.module';
 
 /**
@@ -41,6 +42,7 @@ import { StreamModule } from './stream/stream.module';
     AuthModule,
 
     // --- web live surface ---
+    RootModule,
     HealthModule,
     MonitorsModule,
     // Phase 5 read surface: the incident-history endpoints (GET /incidents,
