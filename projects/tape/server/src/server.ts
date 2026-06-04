@@ -17,6 +17,10 @@ import {
 import { getBinanceIngestor } from './lib/ingest/binance-ingestor';
 import { getRetentionScheduler } from './lib/ingest/retention-scheduler';
 import { getTickWriter } from './lib/ingest/tick-writer';
+import {
+  stripHopByHopRequestHeaders,
+  stripTransportEncodingResponseHeaders,
+} from './lib/proxy/transform';
 import { replayRoutes } from './lib/replay/route';
 import {
   HeartbeatLoop,
@@ -518,14 +522,31 @@ export const app = new Elysia()
   .all('*', async ({ request }) => {
     const url = new URL(request.url);
     const target = `http://127.0.0.1:3000${url.pathname}${url.search}`;
+    // Drop hop-by-hop REQUEST headers before forwarding so the upstream
+    // sees a request addressed to 127.0.0.1:3000 (see proxy/transform.ts
+    // for the full rationale on `host` / `connection`).
     const init: RequestInit = {
       method: request.method,
-      headers: request.headers,
+      headers: stripHopByHopRequestHeaders(request.headers),
     };
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       init.body = await request.arrayBuffer();
     }
-    return fetch(target, init);
+    const upstream = await fetch(target, init);
+    // Bun's fetch transparently decompresses the upstream gzip/br body
+    // but leaves the original `content-encoding` + `content-length`
+    // headers attached. Forwarding those verbatim makes the browser try
+    // to decompress an already-decompressed stream and fail with
+    // `ERR_CONTENT_DECODING_FAILED`. Because this proxy serves the
+    // ENTIRE Next frontend behind the single Fly port, that bug would
+    // take the whole UI down on first deploy. Strip the transport /
+    // encoding headers so the browser sees the post-decoded body for
+    // what it is. Mirrors meld's catch-all proxy fix (commit 39f06d2).
+    return new Response(upstream.body, {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers: stripTransportEncodingResponseHeaders(upstream.headers),
+    });
   });
 
 if (import.meta.main) {

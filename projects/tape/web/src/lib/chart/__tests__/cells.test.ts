@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  barDelta,
   computeImbalance,
   computeIntensity,
+  formatBarDelta,
   formatCellVolume,
+  formatSideVolume,
   isLowConfidence,
   LOW_CONFIDENCE_TRADE_THRESHOLD,
   normalizeClose,
@@ -89,6 +92,56 @@ describe('formatCellVolume', () => {
   it('uses K-notation above 1000', () => {
     expect(formatCellVolume(cell({ bidVolume: 1500 }))).toBe('1.5K');
     expect(formatCellVolume(cell({ bidVolume: 15_000 }))).toBe('15K');
+  });
+});
+
+describe('formatSideVolume (P0-2 footprint split)', () => {
+  it('returns empty string for a zero/empty side', () => {
+    expect(formatSideVolume(0)).toBe('');
+    expect(formatSideVolume(-1)).toBe('');
+  });
+
+  it('shows one decimal for sub-10 volumes', () => {
+    expect(formatSideVolume(0.42)).toBe('0.4');
+  });
+
+  it('rounds to integer between 10 and 1000', () => {
+    expect(formatSideVolume(123.4)).toBe('123');
+  });
+
+  it('uses K-notation above 1000', () => {
+    expect(formatSideVolume(1500)).toBe('1.5K');
+    expect(formatSideVolume(15_000)).toBe('15K');
+  });
+});
+
+describe('barDelta + formatBarDelta (P0-2 per-bar delta foot)', () => {
+  function c(bid: number, ask: number): NormalizedCell {
+    return cell({ bidVolume: bid, askVolume: ask });
+  }
+
+  it('sums ask - bid across every cell in the bar', () => {
+    // ask-bid: (8-2) + (1-5) = 6 - 4 = 2
+    expect(barDelta([c(2, 8), c(5, 1)])).toBeCloseTo(2);
+  });
+
+  it('is negative when selling dominates the bar', () => {
+    expect(barDelta([c(10, 1), c(7, 2)])).toBeLessThan(0);
+  });
+
+  it('is zero for an empty bar', () => {
+    expect(barDelta([])).toBe(0);
+  });
+
+  it('always carries an explicit sign so dominance reads in greyscale', () => {
+    expect(formatBarDelta(12)).toBe('+12');
+    expect(formatBarDelta(-12)).toBe('-12');
+    expect(formatBarDelta(0)).toBe('0');
+  });
+
+  it('uses K-notation for large deltas, sign preserved', () => {
+    expect(formatBarDelta(1500)).toBe('+1.5K');
+    expect(formatBarDelta(-15_000)).toBe('-15K');
   });
 });
 

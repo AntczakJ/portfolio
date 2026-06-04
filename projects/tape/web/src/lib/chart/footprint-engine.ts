@@ -33,7 +33,7 @@
  */
 import { type StoreApi } from 'zustand';
 
-import { parseOklch } from './color';
+import { formatOklch, parseOklch } from './color';
 import {
   normalizeClose,
   normalizeDelta,
@@ -41,7 +41,11 @@ import {
 } from './cells';
 import { paintAxes, type AxisPalette } from './painters/axes';
 import { paintBackground } from './painters/background';
-import { paintCells, type CellPalette } from './painters/cells';
+import {
+  paintBarDeltas,
+  paintCells,
+  type CellPalette,
+} from './painters/cells';
 import {
   paintCursor,
   type CursorCell,
@@ -50,14 +54,13 @@ import {
 } from './painters/cursor';
 import { paintCvd, type CvdPalette } from './painters/cvd';
 import { paintGrid } from './painters/grid';
-import { paintRightEdge, type StripPalette } from './painters/right-edge';
 import {
   chartConfig,
   computeAxisXRegion,
   computeAxisYRegion,
   computeBarRegion,
   computeCvdRegion,
-  computeStripRegion,
+  fitCellWidth,
   scrollClampMax,
   xToBucketTs,
   yToPriceBucket,
@@ -122,7 +125,6 @@ interface DerivedPalette {
   grid: string;
   cells: CellPalette;
   axes: AxisPalette;
-  strip: StripPalette;
   cursor: CursorPalette;
   cvd: CvdPalette;
 }
@@ -173,6 +175,11 @@ export class FootprintChartEngine {
   #targetScrollX = 0;
   #currentScrollX = 0;
   #priceMid: number | null = null;
+  // P0-1 fit-to-data bar-column width. Recomputed each paint while the
+  // user is pinned to the live right edge; frozen while scrolled into
+  // history so panning does not re-stretch the columns. Seeds to the
+  // static default so the first paint (before any data) is sensible.
+  #fittedCellWidth: number = chartConfig.cellWidth;
 
   // Session extreme — tracked across the engine lifetime, NOT
   // persisted (consistent with `useStreamStore` ephemerality).
@@ -536,22 +543,29 @@ export class FootprintChartEngine {
     this.#updateSessionExtreme(cells);
     this.#updatePriceMid(state, cells);
 
-    // Auto-follow live: if `scrollX === 0` (settled) and a new tick
-    // arrives, leave it at 0 — the new bar materialises at the right
-    // edge automatically because `latestBucketTs` advanced.
-    // If user has scrolled away (scrollX > 0), do NOT auto-snap.
-    const followLiveVisible = this.#currentScrollX > 0;
-
     const barRegion = computeBarRegion(vp);
-    const stripRegion = computeStripRegion(vp);
     const axisXRegion = computeAxisXRegion(vp);
     const axisYRegion = computeAxisYRegion(vp);
+
+    // P0-1 fit-to-data: size the bar columns so the available bars span
+    // the bar region instead of smearing into a thin right-edge sliver.
+    // `availableBars` is the distinct bar count the store can show
+    // (closed bars + the live open bar). The fit helper clamps the
+    // result to a legible band — at high bar counts it pins to the
+    // default width and lets the user scroll. We only fit while the user
+    // is pinned to the live right edge; once they scroll into history we
+    // freeze the width so panning does not re-stretch every column.
+    const availableBars = distinctBarCount(state);
+    if (this.#currentScrollX === 0 && this.#targetScrollX === 0) {
+      this.#fittedCellWidth = fitCellWidth(barRegion.w, availableBars);
+    }
 
     const latestBucketTs = latestBucketTimestamp(state);
     const scale: ChartScale = {
       barRegion,
       latestBucketTs,
       barDurationMs: BAR_DURATION_MS,
+      cellWidth: this.#fittedCellWidth,
       priceMid: this.#priceMid ?? 0,
       priceBucketSize: DEFAULT_PRICE_BUCKET_SIZE,
       scrollX: this.#currentScrollX,
@@ -580,6 +594,9 @@ export class FootprintChartEngine {
       this.#palette.cells,
       this.#dpr,
     );
+    // Per-bar delta foot numbers (P0-2) — one signed, colour-coded label
+    // per bar column at the foot of the bar region.
+    paintBarDeltas(this.#ctx, barRegion, scale, cells, this.#palette.cells);
     paintAxes(
       this.#ctx,
       barRegion,
@@ -589,15 +606,8 @@ export class FootprintChartEngine {
       this.#palette.axes,
       this.#dpr,
     );
-    paintRightEdge(
-      this.#ctx,
-      stripRegion,
-      state.recentTicks,
-      this.#palette.strip,
-      followLiveVisible,
-    );
 
-    // Cursor paint sits AFTER cells + tape strip and BEFORE axes —
+    // Cursor paint sits AFTER cells and BEFORE axes —
     // crosshair over cells, axis labels over crosshair. The painter
     // is a no-op when `cursorPx` is null.
     if (this.#cursorPx !== null) {
@@ -698,6 +708,7 @@ export class FootprintChartEngine {
       barRegion,
       latestBucketTs: latestBucketTimestamp(state),
       barDurationMs: BAR_DURATION_MS,
+      cellWidth: this.#fittedCellWidth,
       priceMid: this.#priceMid ?? 0,
       priceBucketSize: DEFAULT_PRICE_BUCKET_SIZE,
       scrollX: this.#currentScrollX,
@@ -873,6 +884,7 @@ export class FootprintChartEngine {
 \* ============================================================== */
 
 function derivePalette(t: ThemeTokensSnapshot): DerivedPalette {
+  const fontMono = t['--font-mono'];
   return {
     bg: t['--color-bg'],
     grid: t['--color-grid'],
@@ -885,21 +897,27 @@ function derivePalette(t: ThemeTokensSnapshot): DerivedPalette {
       imbalanceBuy: parseOklch(t['--color-cell-imbalance-buy']),
       imbalanceSell: parseOklch(t['--color-cell-imbalance-sell']),
       imbalanceNeutral: parseOklch(t['--color-cell-imbalance-neutral']),
+      bid: t['--color-bid'],
+      ask: t['--color-ask'],
+      deltaUp: t['--color-delta-up'],
+      deltaDown: t['--color-delta-down'],
+      // Opaque backdrop for the per-bar delta foot band (P0-2) — the
+      // chart background so the delta numbers read over any cells that
+      // reach the bottom row.
+      footBand: t['--color-bg'],
+      fontMono,
     },
     axes: {
       tick: t['--color-axis-tick'],
       label: t['--color-axis-label'],
-    },
-    strip: {
-      bid: t['--color-bid'],
-      ask: t['--color-ask'],
-      label: t['--color-axis-label'],
+      fontMono,
     },
     cursor: {
       line: t['--color-cell-cursor'],
       glow: t['--color-cell-cursor-glow'],
     },
     cvd: {
+      fontMono,
       // Slope-coded line: net buying rises (delta-up green), net
       // selling falls (delta-down red), flat is the neutral imbalance
       // tone. Reuses the existing footprint tokens so the CVD pane
@@ -911,6 +929,10 @@ function derivePalette(t: ThemeTokensSnapshot): DerivedPalette {
       neutral: t['--color-cell-imbalance-neutral'],
       baseline: t['--color-grid'],
       label: t['--color-axis-label'],
+      // Low-alpha area fill (P1-4): a translucent version of the
+      // cursor-accent hue so the swing silhouette reads without fighting
+      // the slope-coded line on top.
+      fill: formatOklch({ ...parseOklch(t['--color-cell-cursor']), alpha: 0.1 }),
     },
   };
 }
@@ -938,6 +960,26 @@ function collectCells(state: StreamState): NormalizedCell[] {
     out.push(normalizeDelta(open));
   }
   return out;
+}
+
+/**
+ * Count of DISTINCT bar columns the store can currently show — closed
+ * bars plus the live open bar. Drives the P0-1 fit-to-data width so the
+ * available bars span the bar region. `closedCells` holds one row per
+ * (bucketTs, priceBucket), so distinct bucketTs values are the real bar
+ * count; `openCells` shares a single live bucketTs.
+ *
+ * Falls back to a sensible minimum so a near-empty store still fits to a
+ * reasonable window rather than ballooning one bar across the pane while
+ * the first minute of data accrues.
+ */
+const FIT_MIN_BARS = 14;
+
+function distinctBarCount(state: StreamState): number {
+  const buckets = new Set<number>();
+  for (const c of state.closedCells) buckets.add(c.bucketTs);
+  for (const o of state.openCells.values()) buckets.add(o.bucketTs);
+  return Math.max(FIT_MIN_BARS, buckets.size);
 }
 
 function latestBucketTimestamp(state: StreamState): number {

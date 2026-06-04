@@ -77,11 +77,15 @@ export const chartConfig = {
    */
   axisYWidth: 56,
   /**
-   * Width of the "live tape strip" region between the rightmost bar
-   * and the price axis. The strip hosts the most recent ticks as a
-   * vertical micro-list. CSS pixels.
+   * Gap between the rightmost bar and the price axis. CSS pixels.
+   *
+   * P1-1 (Phase 4.1): the on-canvas right-edge tape strip was removed —
+   * the DOM `<TapeTicker />` is the single, legible tape — and its
+   * ~80 px width was reclaimed for the bar grid so the chart fills. A
+   * small gap remains so the rightmost (live) bar does not touch the
+   * price axis ticks.
    */
-  rightStripWidth: 80,
+  rightStripWidth: 8,
   /**
    * Vertical padding inside the viewport, top and bottom, CSS pixels.
    */
@@ -136,8 +140,11 @@ export function computeBarRegion(vp: Viewport): BarRegion {
 }
 
 /**
- * Right-edge tape strip region — sits just to the right of the bar
- * grid, just to the left of the price axis.
+ * Right-edge gap region — sits just to the right of the bar grid, just
+ * to the left of the price axis. P1-1 (Phase 4.1) removed the on-canvas
+ * tape that used to live here; the region is now a thin breathing gap
+ * (`rightStripWidth`) so the live bar does not abut the price ticks. Kept
+ * as a helper so `computeAxisYRegion` can offset past it.
  */
 export function computeStripRegion(vp: Viewport): BarRegion {
   const bar = computeBarRegion(vp);
@@ -231,6 +238,14 @@ export interface ChartScale {
   latestBucketTs: number;
   /** Length of one bar in ms (60_000 for 1-min bars). */
   barDurationMs: number;
+  /**
+   * Width of one bar column in CSS pixels (P0-1 fit-to-data). The engine
+   * computes this per paint so the available bars FILL the bar region on
+   * first paint instead of smearing into a thin right-edge sliver. Falls
+   * back to `chartConfig.cellWidth` when the engine has not supplied a
+   * value (older call sites / tests). Read it through `cellWidthOf`.
+   */
+  cellWidth?: number;
   /** Centre row of the visible Y range, in `priceBucket` INDEX units. */
   priceMid: number;
   /**
@@ -244,6 +259,45 @@ export interface ChartScale {
 }
 
 /**
+ * Resolve the effective bar-column width for a scale. Uses the scale's
+ * fit-to-data `cellWidth` when present, otherwise the static default.
+ * Floors at 1 px so the math never divides by zero on a degenerate
+ * viewport.
+ */
+export function cellWidthOf(scale: ChartScale): number {
+  const w = scale.cellWidth ?? chartConfig.cellWidth;
+  return w > 0 ? w : chartConfig.cellWidth;
+}
+
+/**
+ * Fit-to-data cell width (P0-1). Given the bar-region width and the
+ * number of bars available, return the column width that makes those
+ * bars span the region, clamped to a legible band:
+ *
+ *   - never narrower than `chartConfig.cellWidth` (the historic 24 px
+ *     default) — at high bar counts we keep the default and let the user
+ *     scroll, rather than crushing cells into illegible slivers;
+ *   - never wider than `FIT_CELL_MAX_WIDTH` — with only a handful of
+ *     bars we do not want one bar ballooning across the whole pane; we
+ *     widen up to a sensible cap and leave the remainder as right-anchor
+ *     breathing room.
+ *
+ * `availableBars` is the count of bars the store can show (closed + open).
+ * The result divides the region evenly so ~30 bars (PLAN: "the last ~30
+ * minutes") fill a typical 1100 px pane at ~36 px/bar — comfortably wide
+ * for the canonical bid|ask split.
+ */
+export const FIT_CELL_MAX_WIDTH = 96;
+
+export function fitCellWidth(regionWidth: number, availableBars: number): number {
+  if (availableBars <= 0 || regionWidth <= 0) return chartConfig.cellWidth;
+  const ideal = regionWidth / availableBars;
+  if (ideal < chartConfig.cellWidth) return chartConfig.cellWidth;
+  if (ideal > FIT_CELL_MAX_WIDTH) return FIT_CELL_MAX_WIDTH;
+  return ideal;
+}
+
+/**
  * Project a bucket timestamp to its left-edge X coordinate inside the
  * bar grid, in CSS pixels. Returns NaN if the bucket would fall on a
  * non-integer cell offset (corrupt input).
@@ -251,11 +305,12 @@ export interface ChartScale {
 export function bucketTsToX(scale: ChartScale, bucketTs: number): number {
   const offset = (scale.latestBucketTs - bucketTs) / scale.barDurationMs;
   if (!Number.isFinite(offset)) return Number.NaN;
+  const cw = cellWidthOf(scale);
   // Right-anchored: offset 0 -> rightmost cell, offset 1 -> one cell left.
   return (
     scale.barRegion.x +
     scale.barRegion.w -
-    (offset + 1) * chartConfig.cellWidth +
+    (offset + 1) * cw +
     scale.scrollX
   );
 }
@@ -268,7 +323,7 @@ export function bucketTsToX(scale: ChartScale, bucketTs: number): number {
 export function xToBucketTs(scale: ChartScale, px: number): number {
   const rightX =
     scale.barRegion.x + scale.barRegion.w + scale.scrollX;
-  const offset = Math.floor((rightX - px) / chartConfig.cellWidth);
+  const offset = Math.floor((rightX - px) / cellWidthOf(scale));
   return scale.latestBucketTs - offset * scale.barDurationMs;
 }
 
@@ -311,7 +366,7 @@ export function yToPriceBucket(scale: ChartScale, py: number): number {
  * open bar).
  */
 export function scrollClampMax(scale: ChartScale, historyBars: number): number {
-  const totalBarsWidth = historyBars * chartConfig.cellWidth;
+  const totalBarsWidth = historyBars * cellWidthOf(scale);
   const visibleWidth = scale.barRegion.w;
   return Math.max(0, totalBarsWidth - visibleWidth);
 }

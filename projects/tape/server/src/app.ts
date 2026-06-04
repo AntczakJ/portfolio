@@ -43,6 +43,8 @@ export type {
   WSCellDeltaPayload,
   WSControlHeartbeatPayload,
   WSControlOverrunPayload,
+  WSControlWorkerReadyPayload,
+  WSControlWorkerUnavailablePayload,
   WSFrame,
   WSFrameKind,
   WSReplayBarCell,

@@ -1,0 +1,8 @@
+{
+  "topic": "control",
+  "kind": "control.worker_ready",
+  "payload": {
+    "generation": 3,
+    "serverTsMs": 1748534400000
+  }
+}

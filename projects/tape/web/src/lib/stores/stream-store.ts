@@ -79,8 +79,18 @@ import type {
 
 import type { WSConnectionState } from '@/lib/ws/client';
 
-/** Closed-cell ring size — matches the WS snapshot's closed-cell pin. */
-export const STREAM_CLOSED_CELLS_CAP = 120;
+/**
+ * Closed-cell ring size. The WS snapshot pins the most-recent 120 closed
+ * cells (`WS_SNAPSHOT_CELLS_PIN`) so a fresh connect seeds ~6 bars, but
+ * the client retains MORE as live `cell.close` frames accrue: the
+ * footprint's wow-moment window is "the last ~30 minutes" (PLAN.md), i.e.
+ * ~30 one-minute bars, and at ~25 price levels per bar that needs ~750
+ * cells in the ring for the chart to FILL the canvas (Phase 4.1 P0-1)
+ * rather than smear ~6 bars into the right edge. 900 is a bounded,
+ * cheap ceiling (one `WSCellClosePayload` is five numbers) covering 30
+ * bars at 30 levels with headroom. The CVD series ring stays bar-count.
+ */
+export const STREAM_CLOSED_CELLS_CAP = 900;
 
 /**
  * CVD series ring size — one point per closed BAR (not per cell), so it
@@ -454,10 +464,17 @@ export const useStreamStore = create<StreamState>()((set) => ({
         return;
       }
       case 'control.heartbeat':
-      case 'control.overrun': {
+      case 'control.overrun':
+      case 'control.worker_ready':
+      case 'control.worker_unavailable': {
         // Control frames are observed but do not mutate domain state in
         // v1. The provider may surface them via separate side channels
         // (toast, banner) — schema validation has already happened.
+        // `control.worker_ready` / `control.worker_unavailable` (P1-1,
+        // ADR-004) are on the wire and validated; wiring them to a
+        // "worker offline" indicator is a separate frontend follow-up,
+        // so for now they fall through to the same observe-only path
+        // and keep the discriminated-union switch exhaustive.
         set({ framesPerSec });
         return;
       }
@@ -514,6 +531,19 @@ export const useStreamStore = create<StreamState>()((set) => ({
     });
   },
 }));
+
+/* -------------------------------------------------------------------------
+ * Dev-only escape hatch. Exposes the vanilla store on `window` so a
+ * headless-Chrome / CDP capture can seed a deterministic footprint
+ * snapshot without standing up the full Binance → worker → WS pipeline.
+ * Gated on `process.env.NODE_ENV === 'development'` so Next inlines the
+ * branch to `false` in production builds and the whole block is
+ * dead-code-eliminated — it never ships.
+ * --------------------------------------------------------------------- */
+if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
+  (window as unknown as { __tapeStore?: typeof useStreamStore }).__tapeStore =
+    useStreamStore;
+}
 
 /* -------------------------------------------------------------------------
  * Selector helpers — thin wrappers so consumers do not import the whole

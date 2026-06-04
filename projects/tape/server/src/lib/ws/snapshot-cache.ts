@@ -101,12 +101,36 @@ export class SnapshotCache {
       }
     }
     if (partial.cellsOpen !== undefined) {
-      // `cellsOpen` is the open-bar delta tail. On bar close the
-      // producer is expected to reset it; we accept any caller
-      // policy here (append-only or full replace) by treating the
-      // partial as additive, then trimming to the pin.
+      // `cellsOpen` is the open-bar delta tail. The pipeline feeds RAW
+      // per-coalescing-window deltas — one `update()` call per inbound
+      // `cell.delta` frame (pipeline.ts `#onCellDelta`). Across an open
+      // bar the SAME `(bucketTs, priceBucket)` cell therefore arrives as
+      // many partial-delta entries. If we merely appended them, a client
+      // connecting mid-bar would receive duplicate-keyed deltas and its
+      // reducer (last-write-wins by cell key) would keep only the last
+      // partial — the open bar renders UNDER-COUNTED until it closes
+      // (P0-2). So we COALESCE by `(bucketTs, priceBucket)`, summing the
+      // delta fields into a single running-total entry per cell. The
+      // result is the authoritative open-bar total a reconnector needs;
+      // it matches the absolute open-cell totals the worker emits on its
+      // snapshot poll (SnapshotPayload.cells_open per ADR-006).
       for (const open of partial.cellsOpen) {
-        record.cellsOpen.push(open);
+        const existing = record.cellsOpen.find(
+          (c) => c.bucketTs === open.bucketTs && c.priceBucket === open.priceBucket,
+        );
+        if (existing !== undefined) {
+          existing.bidVolumeDelta += open.bidVolumeDelta;
+          existing.askVolumeDelta += open.askVolumeDelta;
+          existing.tradesDelta += open.tradesDelta;
+          // Carry the newest observation timestamp so staleness logic on
+          // the browser reflects the latest activity for this cell.
+          existing.tsMs = Math.max(existing.tsMs, open.tsMs);
+        } else {
+          // Copy before storing — the caller's payload object may be
+          // shared (e.g. also broadcast through the registry), and the
+          // running-total mutation above must not leak back to it.
+          record.cellsOpen.push({ ...open });
+        }
       }
       if (record.cellsOpen.length > WS_SNAPSHOT_CELLS_PIN) {
         record.cellsOpen.splice(

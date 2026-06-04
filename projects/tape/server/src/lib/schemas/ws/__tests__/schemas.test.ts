@@ -24,6 +24,8 @@ import cellCloseFixture from '../__fixtures__/cell-close.json';
 import cellDeltaFixture from '../__fixtures__/cell-delta.json';
 import controlHeartbeatFixture from '../__fixtures__/control-heartbeat.json';
 import controlOverrunFixture from '../__fixtures__/control-overrun.json';
+import controlWorkerReadyFixture from '../__fixtures__/control-worker-ready.json';
+import controlWorkerUnavailableFixture from '../__fixtures__/control-worker-unavailable.json';
 import snapshotFixture from '../__fixtures__/snapshot.json';
 import tickFixture from '../__fixtures__/tick.json';
 
@@ -32,6 +34,8 @@ import {
   wsCellDeltaPayloadSchema,
   wsControlHeartbeatPayloadSchema,
   wsControlOverrunPayloadSchema,
+  wsControlWorkerReadyPayloadSchema,
+  wsControlWorkerUnavailablePayloadSchema,
   wsFrameSchema,
   wsSnapshotPayloadSchema,
   wsTickPayloadSchema,
@@ -178,6 +182,55 @@ describe('wsControlHeartbeatPayloadSchema', () => {
   });
 });
 
+describe('wsControlWorkerReadyPayloadSchema (P1-1)', () => {
+  test('accepts the canonical control.worker_ready fixture', () => {
+    const parsed = wsControlWorkerReadyPayloadSchema.parse(
+      controlWorkerReadyFixture.payload,
+    );
+    expect(parsed.generation).toBe(3);
+    expect(parsed.serverTsMs).toBe(1_748_534_400_000);
+  });
+
+  test('rejects a negative generation', () => {
+    const broken = {
+      ...controlWorkerReadyFixture,
+      payload: { ...controlWorkerReadyFixture.payload, generation: -1 },
+    };
+    expect(() => wsFrameSchema.parse(broken)).toThrow();
+  });
+
+  test('rejects a ready frame missing serverTsMs', () => {
+    const broken = withoutPayloadField(controlWorkerReadyFixture, 'serverTsMs');
+    expect(() => wsFrameSchema.parse(broken)).toThrow();
+  });
+});
+
+describe('wsControlWorkerUnavailablePayloadSchema (P1-1)', () => {
+  test('accepts the canonical control.worker_unavailable fixture', () => {
+    const parsed = wsControlWorkerUnavailablePayloadSchema.parse(
+      controlWorkerUnavailableFixture.payload,
+    );
+    expect(parsed.reason).toBe('handshake.timeout');
+    expect(parsed.serverTsMs).toBe(1_748_534_400_000);
+  });
+
+  test('rejects an empty reason string', () => {
+    const broken = {
+      ...controlWorkerUnavailableFixture,
+      payload: { ...controlWorkerUnavailableFixture.payload, reason: '' },
+    };
+    expect(() => wsFrameSchema.parse(broken)).toThrow();
+  });
+
+  test('rejects an unavailable frame missing reason', () => {
+    const broken = withoutPayloadField(
+      controlWorkerUnavailableFixture,
+      'reason',
+    );
+    expect(() => wsFrameSchema.parse(broken)).toThrow();
+  });
+});
+
 describe('wsFrameSchema (envelope discriminated union)', () => {
   test('routes the tick fixture to the tick variant', () => {
     const parsed = wsFrameSchema.parse(tickFixture);
@@ -210,6 +263,34 @@ describe('wsFrameSchema (envelope discriminated union)', () => {
   test('routes the control.heartbeat fixture to the control.heartbeat variant', () => {
     const parsed = wsFrameSchema.parse(controlHeartbeatFixture);
     expect(parsed.kind).toBe('control.heartbeat');
+  });
+
+  test('routes the control.worker_ready fixture to its variant (P1-1)', () => {
+    const parsed = wsFrameSchema.parse(controlWorkerReadyFixture);
+    expect(parsed.kind).toBe('control.worker_ready');
+    if (parsed.kind === 'control.worker_ready') {
+      expect(parsed.payload.generation).toBe(3);
+    }
+  });
+
+  test('routes the control.worker_unavailable fixture to its variant (P1-1)', () => {
+    const parsed = wsFrameSchema.parse(controlWorkerUnavailableFixture);
+    expect(parsed.kind).toBe('control.worker_unavailable');
+    if (parsed.kind === 'control.worker_unavailable') {
+      expect(parsed.payload.reason).toBe('handshake.timeout');
+    }
+  });
+
+  test('rejects a worker_ready frame on the wrong topic (P1-1 envelope)', () => {
+    // worker_ready must travel on 'control' — pairing it with
+    // 'cells.btc' violates the per-variant topic literal.
+    const broken = { ...controlWorkerReadyFixture, topic: 'cells.btc' };
+    expect(() => wsFrameSchema.parse(broken)).toThrow();
+  });
+
+  test('rejects a worker_unavailable frame on the wrong topic (P1-1 envelope)', () => {
+    const broken = { ...controlWorkerUnavailableFixture, topic: 'ticks.btc' };
+    expect(() => wsFrameSchema.parse(broken)).toThrow();
   });
 
   test('rejects a frame whose topic does not match its kind', () => {

@@ -6,20 +6,23 @@ import { z } from 'zod';
  * control frame is being received; this module declares the
  * per-kind payload shapes the browser routes on.
  *
- * v1 v1 ships two control kinds: `control.overrun` (sent right
- * before the server force-disconnects on backpressure overrun per
- * ADR-006 § Backpressure) and `control.heartbeat` (periodic
- * server-side liveness ping so the browser can detect stale
- * connections without waiting for a tick frame).
+ * v1 ships four control kinds: `control.overrun` (sent right before
+ * the server force-disconnects on backpressure overrun per ADR-006 §
+ * Backpressure), `control.heartbeat` (periodic server-side liveness
+ * ping so the browser can detect stale connections without waiting for
+ * a tick frame), and the worker-lifecycle pair `control.worker_ready`
+ * / `control.worker_unavailable` (Task 1.5c supervision plumbing per
+ * ADR-004 — broadcast to every subscribed client when the Rust
+ * aggregation worker comes up / goes down, so the browser can show a
+ * "worker offline" indicator instead of silently freezing the
+ * footprint while ticks keep flowing).
  *
- * Other control kinds reserved by ADR-004 / ADR-006 (`worker_ready`,
- * `worker_unavailable`, `replay_complete`, `error`) ARE NOT shipped
- * in v1. They land alongside the tasks that actually need them
- * (`worker_ready` / `worker_unavailable` ship with Task 1.5c
- * supervision plumbing; `replay_complete` ships with Task 3.6
- * replay mode; `error` ships with the first endpoint that needs a
- * structured error path). Each addition is one more variant in the
- * envelope's discriminated union — no protocol bump.
+ * Other control kinds reserved by ADR-006 (`replay_complete`, `error`)
+ * ARE NOT shipped in v1. They land alongside the tasks that actually
+ * need them (`replay_complete` ships with Task 3.6 replay mode; `error`
+ * ships with the first endpoint that needs a structured error path).
+ * Each addition is one more variant in the envelope's discriminated
+ * union — no protocol bump.
  */
 
 /**
@@ -99,4 +102,65 @@ export const wsControlHeartbeatPayloadSchema = z.object({
 
 export type WSControlHeartbeatPayload = z.infer<
   typeof wsControlHeartbeatPayloadSchema
+>;
+
+/**
+ * `control.worker_ready` — the Rust aggregation worker completed its
+ * bridge handshake and is producing cell deltas / closes again
+ * (ADR-004 § Elysia-as-supervisor). Broadcast to every subscribed
+ * client by the worker pipeline on `WorkerReady`.
+ *
+ * Why the browser cares: between a worker crash and its respawn, ticks
+ * keep flowing (the tape strip is fed by the direct Binance broadcast,
+ * decoupled from the worker per ADR-005) but cell updates stop, so the
+ * footprint silently freezes. The lifecycle pair lets the browser show
+ * a calm "worker offline → back online" indicator rather than a chart
+ * that just stops updating with no signal. The frontend consuming this
+ * is a separate follow-up — the schema only guarantees the frames are
+ * on the wire and validated.
+ *
+ * Field map:
+ *  - `generation`  — Supervisor's monotonic worker-generation counter
+ *                    at ready time. Non-negative int. Lets the browser
+ *                    (and ops logs) correlate a ready frame with the
+ *                    specific worker incarnation, and detect a missed
+ *                    restart cycle (generation jumped by more than 1).
+ *  - `serverTsMs`  — Server clock at emit time, ms since epoch.
+ *                    Positive int. Used by the browser as the "back
+ *                    online at HH:MM:SS" marker timestamp.
+ */
+export const wsControlWorkerReadyPayloadSchema = z.object({
+  generation: z.number().int().nonnegative(),
+  serverTsMs: z.number().int().positive(),
+});
+
+export type WSControlWorkerReadyPayload = z.infer<
+  typeof wsControlWorkerReadyPayloadSchema
+>;
+
+/**
+ * `control.worker_unavailable` — the Rust aggregation worker dropped
+ * (clean shutdown, SIGTERM, crash, or handshake timeout). Broadcast to
+ * every subscribed client by the worker pipeline so the footprint can
+ * surface a "worker offline" state instead of silently freezing while
+ * the tape strip keeps moving.
+ *
+ * Field map:
+ *  - `reason`      — Human / machine-readable cause forwarded from the
+ *                    worker's `WorkerUnavailable.reason` (e.g.
+ *                    `'shutdown'`, `'sigterm'`, `'handshake.timeout'`,
+ *                    `'crash'`). Non-empty string — kept open rather
+ *                    than an enum because the worker owns the
+ *                    vocabulary and v2 may add reasons; the browser
+ *                    treats unknown reasons as a generic "offline".
+ *  - `serverTsMs`  — Server clock at emit time, ms since epoch.
+ *                    Positive int. "Went offline at HH:MM:SS" marker.
+ */
+export const wsControlWorkerUnavailablePayloadSchema = z.object({
+  reason: z.string().min(1),
+  serverTsMs: z.number().int().positive(),
+});
+
+export type WSControlWorkerUnavailablePayload = z.infer<
+  typeof wsControlWorkerUnavailablePayloadSchema
 >;

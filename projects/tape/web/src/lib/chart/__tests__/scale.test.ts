@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   bucketTsToX,
+  cellWidthOf,
   chartConfig,
   computeBarRegion,
+  FIT_CELL_MAX_WIDTH,
+  fitCellWidth,
   priceToY,
   scrollClampMax,
   xToBucketTs,
@@ -106,5 +109,56 @@ describe('scrollClampMax', () => {
     const max = scrollClampMax(scale, huge);
     expect(max).toBe(huge * chartConfig.cellWidth - BAR_REGION.w);
     expect(max).toBeGreaterThan(0);
+  });
+});
+
+describe('cellWidthOf (P0-1 fit-to-data)', () => {
+  it('falls back to the static default when scale carries no cellWidth', () => {
+    expect(cellWidthOf(makeScale())).toBe(chartConfig.cellWidth);
+  });
+
+  it('honours a fit-to-data cellWidth when present', () => {
+    expect(cellWidthOf(makeScale({ cellWidth: 42 }))).toBe(42);
+  });
+
+  it('floors a degenerate (<=0) cellWidth back to the default', () => {
+    expect(cellWidthOf(makeScale({ cellWidth: 0 }))).toBe(chartConfig.cellWidth);
+  });
+
+  it('makes bucketTsToX honour the fit-to-data width', () => {
+    const wide = makeScale({ cellWidth: 60 });
+    const x0 = bucketTsToX(wide, wide.latestBucketTs);
+    const x1 = bucketTsToX(wide, wide.latestBucketTs - 60_000);
+    expect(x0 - x1).toBeCloseTo(60);
+  });
+});
+
+describe('fitCellWidth (P0-1)', () => {
+  it('spreads a small bar count to fill the region (up to the cap)', () => {
+    // 5 bars in a 1000 px region would want 200 px each — clamped to cap.
+    expect(fitCellWidth(1000, 5)).toBe(FIT_CELL_MAX_WIDTH);
+  });
+
+  it('divides the region evenly when the ideal width is in-band', () => {
+    // 30 bars in 1080 px => 36 px each (between default 24 and cap 96).
+    expect(fitCellWidth(1080, 30)).toBeCloseTo(36);
+  });
+
+  it('pins to the default width once bars no longer fit', () => {
+    // 100 bars in 1000 px => 10 px ideal, below the 24 px floor.
+    expect(fitCellWidth(1000, 100)).toBe(chartConfig.cellWidth);
+  });
+
+  it('never returns a non-finite or zero width for degenerate input', () => {
+    expect(fitCellWidth(0, 30)).toBe(chartConfig.cellWidth);
+    expect(fitCellWidth(1000, 0)).toBe(chartConfig.cellWidth);
+  });
+
+  it('30 bars FILL a typical pane — the wow-moment first paint', () => {
+    // PLAN: first paint = the last ~30 minutes. The fitted columns must
+    // span essentially the whole region (no dead left void).
+    const regionW = 1100;
+    const cw = fitCellWidth(regionW, 30);
+    expect(cw * 30).toBeGreaterThanOrEqual(regionW * 0.95);
   });
 });

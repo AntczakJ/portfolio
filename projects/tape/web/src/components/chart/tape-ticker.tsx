@@ -103,6 +103,15 @@ export function TapeTicker(): ReactNode {
     [ticks],
   );
 
+  // Rolling max quantity across the visible window (P1-2) — drives the
+  // per-row size-weighted background fill so big prints stand out at a
+  // glance. A trader scans the tape for SIZE, not just direction.
+  const maxQty = useMemo<number>(() => {
+    let m = 0;
+    for (const t of rows) if (t.qty > m) m = t.qty;
+    return m;
+  }, [rows]);
+
   /* ---- Virtualization scroll window ---- */
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [viewportH, setViewportH] = useState(0);
@@ -208,12 +217,23 @@ export function TapeTicker(): ReactNode {
                 pinned.tsMs === tick.tsMs &&
                 pinned.price === tick.price &&
                 pinned.qty === tick.qty;
+              // Time grouping (P1-2): draw a hairline above this row when
+              // its UTC second differs from the next-OLDER row's second
+              // (the row physically below it). Groups prints into the
+              // second they landed in. The oldest visible row never gets
+              // a separator (no older row to compare against).
+              const older = rows[absoluteIndex + 1];
+              const startsNewSecond =
+                older !== undefined &&
+                Math.floor(tick.tsMs / 1000) !== Math.floor(older.tsMs / 1000);
               return (
                 <TapeRowItem
                   key={`${String(tick.tsMs)}-${String(absoluteIndex)}`}
                   tick={tick}
                   offsetY={absoluteIndex * TAPE_ROW_HEIGHT}
                   pinned={isPinned}
+                  intensity={maxQty > 0 ? tick.qty / maxQty : 0}
+                  startsNewSecond={startsNewSecond}
                   onPin={handlePin}
                 />
               );
@@ -233,6 +253,10 @@ interface TapeRowItemProps {
   tick: WSTickPayload;
   offsetY: number;
   pinned: boolean;
+  /** Size weight in [0, 1] vs the rolling max qty — drives the fill. */
+  intensity: number;
+  /** Whether this row opens a new UTC-second group (draws a hairline). */
+  startsNewSecond: boolean;
   onPin: (tick: WSTickPayload) => void;
 }
 
@@ -240,6 +264,8 @@ function TapeRowItem({
   tick,
   offsetY,
   pinned,
+  intensity,
+  startsNewSecond,
   onPin,
 }: TapeRowItemProps): ReactNode {
   // Aggressor colour + glyph (never colour-alone):
@@ -247,12 +273,24 @@ function TapeRowItem({
   //   'buy'  -> ask red,   ▲ (taker lifted the ask)
   const isSell = tick.aggressor === 'sell';
   const sideColor = isSell ? 'text-(--color-bid)' : 'text-(--color-ask)';
+  const sideVar = isSell ? '--color-bid' : '--color-ask';
   const glyph = isSell ? '▼' : '▲';
   const sideLabel = isSell ? 'Sell' : 'Buy';
 
   const handleClick = useCallback(() => {
     onPin(tick);
   }, [onPin, tick]);
+
+  // Size-weighted background (P1-2). The fill alpha tracks the print's
+  // size against the rolling-window max, tinted to the aggressor side,
+  // so a large trade reads as a coloured band the eye lands on. We floor
+  // the fill so the smallest prints stay transparent (no noise). The
+  // alpha is genuinely dynamic, so it belongs inline.
+  const fillAlpha = intensity > 0.04 ? Math.round(intensity * 22) : 0;
+  const background =
+    pinned || fillAlpha === 0
+      ? undefined
+      : `color-mix(in oklch, var(${sideVar}) ${String(fillAlpha)}%, transparent)`;
 
   return (
     <li
@@ -267,9 +305,10 @@ function TapeRowItem({
         type="button"
         onClick={handleClick}
         aria-pressed={pinned}
+        style={background === undefined ? undefined : { backgroundColor: background }}
         className={`flex h-full w-full items-baseline gap-2 px-3 text-left transition-colors hover:bg-(--color-surface) focus-visible:bg-(--color-surface) focus-visible:outline-none ${
-          pinned ? 'bg-(--color-surface-raised)' : ''
-        }`}
+          startsNewSecond ? 'border-t border-(--color-border)' : ''
+        } ${pinned ? 'bg-(--color-surface-raised)' : ''}`}
       >
         <span className="w-[58px] shrink-0 text-(--color-fg-subtle)">
           {formatUtcTime(tick.tsMs)}

@@ -1,4 +1,9 @@
-import { chartConfig, type BarRegion, type ChartScale } from '../scale';
+import {
+  cellWidthOf,
+  chartConfig,
+  type BarRegion,
+  type ChartScale,
+} from '../scale';
 
 /**
  * Hairline horizontal + vertical grid inside the bar region.
@@ -53,12 +58,13 @@ export function paintGrid(
 
   // Vertical lines: every barTickStride bars. We walk from the right
   // edge backward because the chart is right-anchored.
+  const cw = cellWidthOf(scale);
   const barStride = barTickStride();
-  const totalBars = Math.ceil(region.w / chartConfig.cellWidth) + 2;
+  const totalBars = Math.ceil(region.w / cw) + 2;
   const rightX = region.x + region.w + scale.scrollX;
   for (let i = 0; i < totalBars; i++) {
     if (i % barStride !== 0) continue;
-    const x = rightX - i * chartConfig.cellWidth;
+    const x = rightX - i * cw;
     if (x < region.x || x > region.x + region.w) continue;
     const px = Math.round(x) + snap;
     ctx.moveTo(px, region.y);

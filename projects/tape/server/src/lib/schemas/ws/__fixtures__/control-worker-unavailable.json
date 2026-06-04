@@ -1,0 +1,8 @@
+{
+  "topic": "control",
+  "kind": "control.worker_unavailable",
+  "payload": {
+    "reason": "handshake.timeout",
+    "serverTsMs": 1748534400000
+  }
+}

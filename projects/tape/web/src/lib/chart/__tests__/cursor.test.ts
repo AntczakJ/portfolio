@@ -35,6 +35,7 @@ const TOKENS: ThemeTokensSnapshot = Object.freeze({
   '--color-cell-cursor-glow': 'oklch(0.82 0.16 195 / 0.25)',
   '--color-axis-tick': 'oklch(0.38 0.012 250)',
   '--color-axis-label': 'oklch(0.7 0.012 250)',
+  '--font-mono': "'JetBrains Mono', ui-monospace, monospace",
 });
 
 function makeThemeBridge() {

@@ -1,5 +1,6 @@
 import {
   bucketTsToX,
+  cellWidthOf,
   chartConfig,
   priceToY,
   type BarRegion,
@@ -9,6 +10,8 @@ import {
 export interface AxisPalette {
   tick: string;
   label: string;
+  /** Resolved monospace family for `ctx.font` (P0-3). */
+  fontMono: string;
 }
 
 /**
@@ -48,7 +51,7 @@ export function paintAxes(
   ctx.stroke();
 
   ctx.fillStyle = palette.label;
-  ctx.font = `${chartConfig.axisFontSize}px var(--font-mono), ui-monospace, monospace`;
+  ctx.font = `${chartConfig.axisFontSize}px ${palette.fontMono}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
 
@@ -97,13 +100,13 @@ export function paintAxes(
   // 5-minute label cadence. We sample every bar and only render
   // labels whose bucket falls on a 5-minute boundary, so the labels
   // stay clock-aligned across scroll.
-  const visibleBars =
-    Math.ceil(barRegion.w / chartConfig.cellWidth) + 2;
+  const cw = cellWidthOf(scale);
+  const visibleBars = Math.ceil(barRegion.w / cw) + 2;
   const labelEveryMs = 5 * 60_000;
   for (let i = 0; i < visibleBars; i++) {
     const ts = scale.latestBucketTs - i * scale.barDurationMs;
     if (ts % labelEveryMs !== 0) continue;
-    const x = bucketTsToX(scale, ts) + chartConfig.cellWidth / 2;
+    const x = bucketTsToX(scale, ts) + cw / 2;
     if (x < axisXRegion.x || x > axisXRegion.x + axisXRegion.w) continue;
     // Tick.
     ctx.strokeStyle = palette.tick;

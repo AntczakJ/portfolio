@@ -34,6 +34,7 @@
  */
 import {
   bucketTsToX,
+  cellWidthOf,
   chartConfig,
   type BarRegion,
   type ChartScale,
@@ -51,6 +52,10 @@ export interface CvdPalette {
   baseline: string;
   /** Numeric label + zero tick text. */
   label: string;
+  /** Low-alpha area fill between the line and the zero baseline (P1-4). */
+  fill: string;
+  /** Resolved monospace family for `ctx.font` (P0-3). */
+  fontMono: string;
 }
 
 /** Vertical inset inside the pane so the line never touches the edges. */
@@ -130,6 +135,7 @@ export function paintCvd(
 
   const snap = 0.5 / dpr;
   const range = cvdValueRange(series);
+  const cw = cellWidthOf(scale);
 
   // ---- 1. Baseline zero line. Always drawn.
   const zeroY = cvdValueToY(0, range, region);
@@ -140,8 +146,32 @@ export function paintCvd(
   ctx.lineTo(region.x + region.w, Math.round(zeroY) + snap);
   ctx.stroke();
 
-  // ---- 2. CVD polyline. Only when we have at least two points to join.
-  if (series.length >= 2) {
+  // Build the polyline point list once — reused by the area fill and
+  // the stroke so both trace the identical path.
+  const pts: { x: number; y: number }[] = [];
+  for (const point of series) {
+    // Each bar's CVD point anchors at the bar's CELL CENTRE X so the
+    // line tracks the column centres of the footprint above.
+    const x = bucketTsToX(scale, point.bucketTs) + cw / 2;
+    if (!Number.isFinite(x)) continue;
+    pts.push({ x, y: cvdValueToY(point.cvd, range, region) });
+  }
+
+  // ---- 2a. Area fill between the line and the zero baseline (P1-4) —
+  // low alpha so the swing magnitude reads as a filled silhouette, not
+  // just a hairline. Drawn UNDER the stroke.
+  if (pts.length >= 2) {
+    ctx.fillStyle = palette.fill;
+    ctx.beginPath();
+    ctx.moveTo(pts[0]!.x, zeroY);
+    for (const p of pts) ctx.lineTo(p.x, p.y);
+    ctx.lineTo(pts[pts.length - 1]!.x, zeroY);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // ---- 2b. CVD polyline. Only when we have at least two points to join.
+  if (pts.length >= 2) {
     const dir = cvdSlopeDirection(series);
     ctx.strokeStyle =
       dir > 0 ? palette.up : dir < 0 ? palette.down : palette.neutral;
@@ -149,32 +179,16 @@ export function paintCvd(
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.beginPath();
-    let started = false;
-    for (const point of series) {
-      // Each bar's CVD point anchors at the bar's CELL CENTRE X so the
-      // line tracks the column centres of the footprint above.
-      const x = bucketTsToX(scale, point.bucketTs) + chartConfig.cellWidth / 2;
-      if (!Number.isFinite(x)) continue;
-      // Clip off-pane points horizontally — but keep the segment
-      // continuous by still issuing the lineTo (Canvas clips for us at
-      // the region via the caller's clearRect; cheap enough at <=120
-      // points to not pre-cull).
-      const y = cvdValueToY(point.cvd, range, region);
-      if (!started) {
-        ctx.moveTo(x, y);
-        started = true;
-      } else {
-        ctx.lineTo(x, y);
-      }
-    }
-    if (started) ctx.stroke();
+    ctx.moveTo(pts[0]!.x, pts[0]!.y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+    ctx.stroke();
   }
 
   // ---- 3. Numeric readout. Current cumulative value, top-left.
   const lastPoint = series[series.length - 1];
   const current = lastPoint?.cvd ?? 0;
   ctx.fillStyle = palette.label;
-  ctx.font = `${String(chartConfig.axisFontSize)}px var(--font-mono), ui-monospace, monospace`;
+  ctx.font = `${String(chartConfig.axisFontSize)}px ${palette.fontMono}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(
@@ -188,4 +202,29 @@ export function paintCvd(
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   ctx.fillText('0', region.x + region.w - 4, Math.round(zeroY));
+
+  // ---- 4. Min / max Y labels at the right edge (P1-4) so the swing
+  // magnitude is readable. Only when the series has a real (non-
+  // degenerate) extent — otherwise the synthetic ±1 guard range would
+  // print misleading bounds.
+  const hasExtent = range.max > 0 || range.min < 0;
+  if (hasExtent) {
+    ctx.fillStyle = palette.label;
+    if (range.max > 0) {
+      ctx.textBaseline = 'top';
+      ctx.fillText(
+        formatValue(range.max),
+        region.x + region.w - 4,
+        cvdValueToY(range.max, range, region) + 1,
+      );
+    }
+    if (range.min < 0) {
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(
+        formatValue(range.min),
+        region.x + region.w - 4,
+        cvdValueToY(range.min, range, region) - 1,
+      );
+    }
+  }
 }

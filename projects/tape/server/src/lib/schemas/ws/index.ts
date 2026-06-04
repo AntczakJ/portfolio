@@ -35,10 +35,14 @@ export type {
 export {
   wsControlHeartbeatPayloadSchema,
   wsControlOverrunPayloadSchema,
+  wsControlWorkerReadyPayloadSchema,
+  wsControlWorkerUnavailablePayloadSchema,
 } from './control';
 export type {
   WSControlHeartbeatPayload,
   WSControlOverrunPayload,
+  WSControlWorkerReadyPayload,
+  WSControlWorkerUnavailablePayload,
 } from './control';
 
 export {

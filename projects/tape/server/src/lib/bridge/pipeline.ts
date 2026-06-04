@@ -293,14 +293,27 @@ export class WorkerPipeline {
     }
   }
 
-  #onWorkerReady(_payload: WorkerReady): void {
+  #onWorkerReady(payload: WorkerReady): void {
     this.#cancelHandshakeTimer();
     this.#handshakeResolved = true;
     this.#metrics.workerReady = true;
     this.#backoff.reset();
     console.log('[worker-pipeline] worker handshake OK');
-    // Broadcast a future ADR-004-pinned `control.worker_ready` once the
-    // schema variant lands (deferred per the WS schema docblock).
+    // Broadcast the ADR-004 worker-lifecycle frame so every subscribed
+    // client can clear its "worker offline" indicator. The generation
+    // counter is advisory — it lets the browser correlate the ready
+    // frame with the specific worker incarnation. `generation` arrives
+    // from the worker as a JS `number` (ts-rs maps it to `number`), but
+    // coerce defensively in case the bridge ever widens it to a bigint.
+    const readyFrame: WSFrame = {
+      topic: 'control',
+      kind: 'control.worker_ready',
+      payload: {
+        generation: bigIntToNumber(payload.generation),
+        serverTsMs: Date.now(),
+      },
+    };
+    this.#registry.broadcast(readyFrame);
   }
 
   #onWorkerUnavailable(payload: WorkerUnavailable): void {
@@ -308,9 +321,23 @@ export class WorkerPipeline {
     console.warn(
       `[worker-pipeline] worker unavailable: ${payload.reason}`,
     );
-    // Same comment as #onWorkerReady — control.worker_unavailable WS
-    // variant ships when ADR-004's reserved kind is added to the
-    // discriminated union.
+    // Broadcast the ADR-004 worker-lifecycle frame. Without this the
+    // footprint silently freezes on a worker crash-loop while the tape
+    // strip keeps moving (ticks are decoupled from the worker per
+    // ADR-005) — the documented Task 1.5c gap. `reason` may be empty on
+    // a malformed frame; fall back to a generic token so the WS schema
+    // (which requires a non-empty string) still parses and the client
+    // still gets the offline signal.
+    const reason = payload.reason.length > 0 ? payload.reason : 'unavailable';
+    const unavailableFrame: WSFrame = {
+      topic: 'control',
+      kind: 'control.worker_unavailable',
+      payload: {
+        reason,
+        serverTsMs: Date.now(),
+      },
+    };
+    this.#registry.broadcast(unavailableFrame);
   }
 
   #onCellDelta(payload: CellDelta): void {

@@ -8,6 +8,8 @@ import {
 import {
   wsControlHeartbeatPayloadSchema,
   wsControlOverrunPayloadSchema,
+  wsControlWorkerReadyPayloadSchema,
+  wsControlWorkerUnavailablePayloadSchema,
 } from './control';
 import { wsSnapshotPayloadSchema } from './snapshot';
 import { wsTickPayloadSchema } from './tick';
@@ -81,16 +83,23 @@ import { wsTickPayloadSchema } from './tick';
  *   6. `'control.heartbeat'`  — Periodic liveness. Payload =
  *                                `wsControlHeartbeatPayloadSchema`.
  *                                Topic = `'control'`.
+ *   7. `'control.worker_ready'`       — Rust aggregation worker came
+ *                                up (ADR-004). Payload =
+ *                                `wsControlWorkerReadyPayloadSchema`.
+ *                                Topic = `'control'`.
+ *   8. `'control.worker_unavailable'` — Worker dropped; footprint may
+ *                                freeze while ticks keep flowing.
+ *                                Payload =
+ *                                `wsControlWorkerUnavailablePayloadSchema`.
+ *                                Topic = `'control'`.
  *
  * `'replay.bar'` (Task 3.6) is now a live variant — it carries one
  * historic bar's absolute cell totals, materialised by the browser
  * replay engine as the virtual clock crosses each `bucketTs` boundary
  * (REPLAY mode only; the live server fan-out never emits it). Kinds
- * still reserved by ADR-004 / ADR-006 but NOT shipped:
- * `'control.worker_ready'`, `'control.worker_unavailable'`,
- * `'control.replay_complete'`, `'control.error'`. Each is one
- * additional variant in the discriminated union when its task ships —
- * not a protocol bump.
+ * still reserved by ADR-006 but NOT shipped: `'control.replay_complete'`,
+ * `'control.error'`. Each is one additional variant in the discriminated
+ * union when its task ships — not a protocol bump.
  *
  * **No fallback parsing.** The envelope's
  * `z.discriminatedUnion('kind', ...)` produces a single Zod parse
@@ -111,6 +120,8 @@ export const wsFrameKindSchema = z.enum([
   'snapshot',
   'control.overrun',
   'control.heartbeat',
+  'control.worker_ready',
+  'control.worker_unavailable',
 ]);
 
 export type WSFrameKind = z.infer<typeof wsFrameKindSchema>;
@@ -161,6 +172,16 @@ export const wsFrameEnvelopeSchema = z.discriminatedUnion('kind', [
     topic: z.literal('control'),
     kind: z.literal('control.heartbeat'),
     payload: wsControlHeartbeatPayloadSchema,
+  }),
+  z.object({
+    topic: z.literal('control'),
+    kind: z.literal('control.worker_ready'),
+    payload: wsControlWorkerReadyPayloadSchema,
+  }),
+  z.object({
+    topic: z.literal('control'),
+    kind: z.literal('control.worker_unavailable'),
+    payload: wsControlWorkerUnavailablePayloadSchema,
   }),
 ]);
 

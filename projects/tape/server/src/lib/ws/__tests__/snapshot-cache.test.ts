@@ -17,6 +17,7 @@ import {
   WS_SNAPSHOT_TICKS_PIN,
   wsSnapshotPayloadSchema,
   type WSCellClosePayload,
+  type WSCellDeltaPayload,
   type WSTickPayload,
 } from '../../schemas/ws';
 import { SnapshotCache } from '../snapshot-cache';
@@ -31,6 +32,22 @@ function makeCell(bucketTs: number, priceBucket: number): WSCellClosePayload {
     bidVolume: 1,
     askVolume: 2,
     trades: 3,
+  };
+}
+
+function makeDelta(
+  bucketTs: number,
+  priceBucket: number,
+  overrides: Partial<WSCellDeltaPayload> = {},
+): WSCellDeltaPayload {
+  return {
+    tsMs: bucketTs + 100,
+    bucketTs,
+    priceBucket,
+    bidVolumeDelta: 0.1,
+    askVolumeDelta: 0.2,
+    tradesDelta: 1,
+    ...overrides,
   };
 }
 
@@ -96,7 +113,8 @@ describe('current() shape', () => {
 
 describe('ring sizes', () => {
   test('cells ring trims to WS_SNAPSHOT_CELLS_PIN', () => {
-    expect(WS_SNAPSHOT_CELLS_PIN).toBe(120);
+    // Trim is asserted relative to the pin (dynamic) — no hard-coded value, so
+    // a v1.x pin change (e.g. 120 -> 750 for first-paint fill) does not break it.
     const cells = Array.from({ length: WS_SNAPSHOT_CELLS_PIN + 50 }, (_, i) =>
       makeCell(i * 60_000, 71_200 + i),
     );
@@ -161,6 +179,95 @@ describe('ring sizes', () => {
     expect(snap).not.toBeNull();
     if (snap === null) return;
     expect(snap.cellsOpen.length).toBe(0);
+  });
+});
+
+describe('cellsOpen coalescing (P0-2)', () => {
+  test('N raw deltas for one cell collapse into a single summed entry', () => {
+    // The pipeline feeds one update() per inbound cell.delta frame. A
+    // mid-bar reconnector must see ONE coalesced entry per cell carrying
+    // the running open-bar total — not N duplicate-keyed partials.
+    const N = 5;
+    for (let i = 0; i < N; i++) {
+      cache.update(SYMBOL, {
+        currentBarTs: 60_000,
+        cellsOpen: [
+          makeDelta(60_000, 71_200, {
+            tsMs: 60_000 + i,
+            bidVolumeDelta: 0.1,
+            askVolumeDelta: 0.2,
+            tradesDelta: 1,
+          }),
+        ],
+      });
+    }
+    const snap = cache.current(SYMBOL);
+    expect(snap).not.toBeNull();
+    if (snap === null) return;
+    // One entry, not N.
+    expect(snap.cellsOpen.length).toBe(1);
+    const open = snap.cellsOpen[0];
+    expect(open).toBeDefined();
+    if (open === undefined) return;
+    // Summed running total, not last-write-wins.
+    expect(open.bidVolumeDelta).toBeCloseTo(0.1 * N);
+    expect(open.askVolumeDelta).toBeCloseTo(0.2 * N);
+    expect(open.tradesDelta).toBe(N);
+    // Newest observation timestamp wins.
+    expect(open.tsMs).toBe(60_000 + (N - 1));
+  });
+
+  test('distinct cells stay distinct; only same-key deltas coalesce', () => {
+    cache.update(SYMBOL, {
+      currentBarTs: 60_000,
+      cellsOpen: [
+        makeDelta(60_000, 71_200, { bidVolumeDelta: 1, tradesDelta: 1 }),
+        makeDelta(60_000, 71_205, { bidVolumeDelta: 2, tradesDelta: 1 }),
+      ],
+    });
+    cache.update(SYMBOL, {
+      currentBarTs: 60_000,
+      cellsOpen: [makeDelta(60_000, 71_200, { bidVolumeDelta: 3, tradesDelta: 1 })],
+    });
+    const snap = cache.current(SYMBOL);
+    expect(snap).not.toBeNull();
+    if (snap === null) return;
+    expect(snap.cellsOpen.length).toBe(2);
+    const cellA = snap.cellsOpen.find((c) => c.priceBucket === 71_200);
+    const cellB = snap.cellsOpen.find((c) => c.priceBucket === 71_205);
+    expect(cellA?.bidVolumeDelta).toBeCloseTo(4);
+    expect(cellA?.tradesDelta).toBe(2);
+    expect(cellB?.bidVolumeDelta).toBeCloseTo(2);
+    expect(cellB?.tradesDelta).toBe(1);
+  });
+
+  test('coalesced snapshot still validates against the WS schema', () => {
+    for (let i = 0; i < 3; i++) {
+      cache.update(SYMBOL, {
+        currentBarTs: 60_000,
+        cellsOpen: [makeDelta(60_000, 71_200)],
+      });
+    }
+    const snap = cache.current(SYMBOL);
+    expect(snap).not.toBeNull();
+    if (snap === null) return;
+    const parsed = wsSnapshotPayloadSchema.parse(snap);
+    expect(parsed.cellsOpen.length).toBe(1);
+  });
+
+  test('coalescing does not mutate the caller-supplied payload', () => {
+    const delta = makeDelta(60_000, 71_200, {
+      bidVolumeDelta: 0.5,
+      tradesDelta: 1,
+    });
+    cache.update(SYMBOL, { currentBarTs: 60_000, cellsOpen: [delta] });
+    cache.update(SYMBOL, {
+      currentBarTs: 60_000,
+      cellsOpen: [makeDelta(60_000, 71_200, { bidVolumeDelta: 0.5, tradesDelta: 1 })],
+    });
+    // The first caller's object must not have absorbed the second delta.
+    expect(delta.bidVolumeDelta).toBe(0.5);
+    expect(delta.tradesDelta).toBe(1);
   });
 });
 

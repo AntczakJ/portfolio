@@ -112,16 +112,57 @@ export function isLowConfidence(cell: NormalizedCell): boolean {
 export function formatCellVolume(cell: NormalizedCell): string {
   const total = cell.bidVolume + cell.askVolume;
   if (total <= 0) return '';
-  if (total < 10) {
+  return formatVolume(total);
+}
+
+/**
+ * Compact volume label for a single side of the footprint split (bid
+ * OR ask). Same scale as `formatCellVolume` but on one volume figure
+ * rather than the total — this is the canonical two-number footprint
+ * cell (`bid | ask`). Returns `''` for a zero/empty side so the painter
+ * skips it (a side with no volume should not print a `0`).
+ */
+export function formatSideVolume(volume: number): string {
+  if (volume <= 0) return '';
+  return formatVolume(volume);
+}
+
+function formatVolume(value: number): string {
+  if (value < 10) {
     // Show one decimal for sub-10 volumes so a BTC cell with 0.42 BTC
     // does not collapse to "0".
-    return total.toFixed(1);
+    return value.toFixed(1);
   }
-  if (total < 1000) {
-    return Math.round(total).toString();
+  if (value < 1000) {
+    return Math.round(value).toString();
   }
-  if (total < 10000) {
-    return `${(total / 1000).toFixed(1)}K`;
+  if (value < 10000) {
+    return `${(value / 1000).toFixed(1)}K`;
   }
-  return `${Math.round(total / 1000)}K`;
+  return `${Math.round(value / 1000)}K`;
+}
+
+/**
+ * Per-bar delta = total ask volume − total bid volume across every
+ * price cell in the bar (the canonical footprint "delta" printed at the
+ * foot of each bar column). Positive = net buying, negative = net
+ * selling.
+ */
+export function barDelta(cells: readonly NormalizedCell[]): number {
+  let delta = 0;
+  for (const c of cells) {
+    delta += c.askVolume - c.bidVolume;
+  }
+  return delta;
+}
+
+/**
+ * Signed, compact label for the per-bar delta foot number. Always
+ * carries an explicit `+`/`-` so dominance is legible without colour
+ * (WCAG: never colour as the sole channel). `0` is unsigned.
+ */
+export function formatBarDelta(delta: number): string {
+  if (delta === 0) return '0';
+  const sign = delta > 0 ? '+' : '-';
+  return `${sign}${formatVolume(Math.abs(delta))}`;
 }

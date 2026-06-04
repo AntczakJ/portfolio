@@ -28,6 +28,7 @@
  */
 import {
   bucketTsToX,
+  cellWidthOf,
   chartConfig,
   priceToY,
   type BarRegion,
@@ -53,8 +54,8 @@ export interface CursorCell {
   priceBucket: number;
 }
 
-/** Halo box size in CSS pixels. ~24 wide × 16 tall = one cell footprint. */
-const HALO_WIDTH = chartConfig.cellWidth;
+/** Halo box height in CSS pixels — one cell row. Width is derived per
+ * paint from the (fit-to-data) scale cell width. */
 const HALO_HEIGHT = chartConfig.cellHeight;
 const HALO_PAD = 4;
 
@@ -83,6 +84,8 @@ export function paintCursor(
   const x = clamp(cursorPx.x, region.x, region.x + region.w);
   const y = clamp(cursorPx.y, region.y, region.y + region.h);
 
+  const cw = cellWidthOf(scale);
+
   const prevAlpha = ctx.globalAlpha;
   const prevLineWidth = ctx.lineWidth;
   const prevStroke = ctx.strokeStyle;
@@ -93,9 +96,9 @@ export function paintCursor(
   ctx.fillStyle = palette.glow;
   ctx.globalAlpha = 1; // halo color carries its own alpha
   ctx.fillRect(
-    Math.round(x - HALO_WIDTH / 2 - HALO_PAD),
+    Math.round(x - cw / 2 - HALO_PAD),
     Math.round(y - HALO_HEIGHT / 2 - HALO_PAD),
-    HALO_WIDTH + HALO_PAD * 2,
+    cw + HALO_PAD * 2,
     HALO_HEIGHT + HALO_PAD * 2,
   );
 
@@ -133,7 +136,7 @@ export function paintCursor(
       // region. Outside-region cursor positions still get the crosshair
       // but not the focus ring.
       const inside =
-        cellX + chartConfig.cellWidth >= region.x &&
+        cellX + cw >= region.x &&
         cellX <= region.x + region.w &&
         cellY + chartConfig.cellHeight >= region.y &&
         cellY <= region.y + region.h;
@@ -142,7 +145,7 @@ export function paintCursor(
         ctx.strokeRect(
           Math.round(cellX) + snap,
           Math.round(cellY) + snap,
-          chartConfig.cellWidth,
+          cw,
           chartConfig.cellHeight,
         );
       }

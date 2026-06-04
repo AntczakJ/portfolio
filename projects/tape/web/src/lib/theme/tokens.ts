@@ -111,6 +111,17 @@ export const THEME_TOKENS = [
   // Axis (Task 2.5).
   '--color-axis-tick',
   '--color-axis-label',
+  // Monospace font family (Phase 4.1 P0-3). The Canvas2D `ctx.font`
+  // shorthand parser CANNOT resolve a CSS custom property — a string
+  // like `10px var(--font-mono)` silently falls back to the platform
+  // default mono, so the chosen JetBrains Mono never paints and the
+  // canvas digits mismatch the DOM tape (which DOES resolve the var via
+  // CSS). We read the COMPUTED `--font-mono` value here, once per theme
+  // flip, and feed the concrete family list literally into every
+  // `ctx.font` assignment. `--font-mono` does not change across themes,
+  // but routing it through the same snapshot keeps every painter reading
+  // one source of truth.
+  '--font-mono',
 ] as const;
 
 export type ThemeTokenName = (typeof THEME_TOKENS)[number];
@@ -146,6 +157,13 @@ const SSR_FALLBACK_TOKENS: ThemeTokensSnapshot = /*#__PURE__*/ Object.freeze({
   '--color-cell-cursor-glow': 'oklch(0.82 0.16 195 / 0.25)',
   '--color-axis-tick': 'oklch(0.38 0.012 250)',
   '--color-axis-label': 'oklch(0.7 0.012 250)',
+  // Mirrors the `--font-mono` declaration in globals.css. The Canvas2D
+  // render loop never runs SSR, so this literal is only ever consumed
+  // by the React adapter's getServerSnapshot — the browser bridge
+  // re-reads the computed value after hydration.
+  '--font-mono':
+    "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Monaco, " +
+    "'Cascadia Mono', Consolas, 'Courier New', monospace",
 });
 
 function isBrowser(): boolean {

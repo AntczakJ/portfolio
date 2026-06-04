@@ -85,8 +85,18 @@ import { wsTickPayloadSchema } from './tick';
  *  invariant the client must verify.
  */
 
-/** v1 snapshot pin — most-recent N closed cells included on connect. */
-export const WS_SNAPSHOT_CELLS_PIN = 120;
+/**
+ * v1 snapshot pin — most-recent N closed cells included on connect.
+ *
+ * Sized to seed roughly the chart's first-paint window (~30 one-minute bars x
+ * ~25 active price levels each) so a FRESH connect renders a full footprint
+ * immediately rather than a sparse right-edge sliver that fills over ~25 min of
+ * live accrual (the Phase 4.1 designer-critique P0-1). Matches the client-side
+ * `STREAM_CLOSED_CELLS_CAP = 900` ceiling — kept slightly under it so the cap
+ * never trims the seeded window. A ~750-cell snapshot is a one-time ~50-70 KB
+ * connect frame after MessagePack; the per-frame hot path is unaffected.
+ */
+export const WS_SNAPSHOT_CELLS_PIN = 750;
 
 /** v1 snapshot pin — most-recent N ticks included on connect. */
 export const WS_SNAPSHOT_TICKS_PIN = 200;
