@@ -37,7 +37,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useReducedMotion } from 'motion/react';
 
+import { CellReadoutMirror } from '@/components/chart/cell-readout-mirror';
 import { CellTooltip } from '@/components/chart/cell-tooltip';
+import { CvdPane } from '@/components/chart/cvd-pane';
 import { FollowLivePill } from '@/components/chart/follow-live-pill';
 import { FootprintEngineProvider } from '@/lib/chart/engine-context';
 import { FootprintChartEngine } from '@/lib/chart/footprint-engine';
@@ -183,20 +185,28 @@ export function FootprintChart(): ReactNode {
 
   return (
     <FootprintEngineProvider engine={engine}>
-      <div
-        ref={containerRef}
-        aria-label="Footprint chart"
-        className="relative h-full w-full overflow-hidden"
-      >
-        <canvas
-          ref={canvasRef}
-          className="block h-full w-full"
-          // Width / height are SET by the engine via the ResizeObserver
-          // callback (backing-store pixels = CSS pixels * DPR). The CSS
-          // size comes from the className above.
-        />
-        <CellTooltip containerRef={containerRef} />
-        <FollowLivePill />
+      {/* Flex column: footprint fills the remaining height, the CVD
+          sub-pane sits beneath it at a fixed height. Both canvases share
+          the same width (the column is full-width) so the engine's
+          single rAF pass can lock their X-axes together. */}
+      <div className="flex h-full w-full flex-col overflow-hidden">
+        <div
+          ref={containerRef}
+          aria-label="Footprint chart"
+          className="relative min-h-0 w-full flex-1 overflow-hidden"
+        >
+          <canvas
+            ref={canvasRef}
+            className="block h-full w-full"
+            // Width / height are SET by the engine via the ResizeObserver
+            // callback (backing-store pixels = CSS pixels * DPR). The CSS
+            // size comes from the className above.
+          />
+          <CellTooltip containerRef={containerRef} />
+          <CellReadoutMirror />
+          <FollowLivePill />
+        </div>
+        <CvdPane />
       </div>
     </FootprintEngineProvider>
   );

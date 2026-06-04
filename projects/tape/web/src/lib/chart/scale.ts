@@ -177,6 +177,34 @@ export function computeAxisXRegion(vp: Viewport): BarRegion {
 }
 
 /**
+ * CVD sub-pane region (Task 3.2c). The CVD line lives on its OWN canvas
+ * beneath the footprint, but it must share the footprint's X-axis so a
+ * `bucketTs` lands at the same X in both panes. This region therefore
+ * mirrors the bar region's horizontal bounds EXACTLY (same left
+ * padding, same right reservation for the tape strip + price axis) but
+ * spans its own canvas height top-to-bottom (the CVD pane has no
+ * bottom X-axis band of its own — the footprint above owns the shared
+ * time axis).
+ *
+ * `vp` here is the CVD canvas's own viewport (its CSS width/height).
+ * The width MUST equal the footprint canvas width for the X mapping to
+ * align; the React shell guarantees this by stacking the two canvases
+ * in the same flex column.
+ */
+export function computeCvdRegion(vp: Viewport): BarRegion {
+  return {
+    x: vp.x + chartConfig.paddingLeft,
+    y: vp.y + chartConfig.paddingY,
+    w:
+      vp.w -
+      chartConfig.paddingLeft -
+      chartConfig.rightStripWidth -
+      chartConfig.axisYWidth,
+    h: vp.h - chartConfig.paddingY * 2,
+  };
+}
+
+/**
  * The chart's data scale. Pure mapping from
  * (bucketTs, priceBucket) to (px, py).
  *

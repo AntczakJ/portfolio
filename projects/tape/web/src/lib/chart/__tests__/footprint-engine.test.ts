@@ -65,6 +65,7 @@ function makeStreamStore() {
     openCells: new Map(),
     closedCells: [],
     cvd: 0,
+    cvdSeries: [],
     lastSnapshot: null,
   };
   return createStore<StreamState>(
@@ -289,6 +290,51 @@ describe('FootprintChartEngine', () => {
     engine._testNotifyStoreChange();
     engine._testTick();
     expect(engine._testGetState().currentScrollX).toBe(0);
+    engine.stop();
+  });
+
+  it('attaches + paints the CVD sub-pane in the same rAF pass (3.2c)', () => {
+    const bridge = makeThemeBridge();
+    const store = makeStreamStore();
+    const canvas = makeCanvas();
+    const engine = new FootprintChartEngine(canvas, {
+      themeBridge: bridge,
+      streamStore: store,
+      prefersReducedMotion: false,
+    });
+    engine.handleResize(800, 600, 1);
+    engine.start();
+
+    expect(engine._testGetState().cvdCanvasAttached).toBe(false);
+
+    const cvdCanvas = makeCanvas();
+    engine.attachCvdCanvas(cvdCanvas);
+    engine.handleCvdResize(800, 96, 1);
+    expect(engine._testGetState().cvdCanvasAttached).toBe(true);
+    expect(engine._testGetState().cvdViewport).toEqual({
+      x: 0,
+      y: 0,
+      w: 800,
+      h: 96,
+    });
+
+    // Seed a CVD series so the pane has something to draw, then tick.
+    // The paint pass should not throw with the canvas-mock 2D context.
+    store.setState((state) => ({
+      ...state,
+      cvdSeries: [
+        { bucketTs: 1_780_000_000_000, cvd: 5 },
+        { bucketTs: 1_780_000_060_000, cvd: 12 },
+      ],
+    }));
+    engine._testNotifyStoreChange();
+    expect(() => {
+      engine._testTick();
+    }).not.toThrow();
+
+    // Detach: the footprint keeps running, the CVD pane stops.
+    engine.detachCvdCanvas();
+    expect(engine._testGetState().cvdCanvasAttached).toBe(false);
     engine.stop();
   });
 

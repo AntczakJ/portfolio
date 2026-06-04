@@ -48,6 +48,7 @@ import {
   type CursorPalette,
   type CursorPx,
 } from './painters/cursor';
+import { paintCvd, type CvdPalette } from './painters/cvd';
 import { paintGrid } from './painters/grid';
 import { paintRightEdge, type StripPalette } from './painters/right-edge';
 import {
@@ -55,6 +56,7 @@ import {
   computeAxisXRegion,
   computeAxisYRegion,
   computeBarRegion,
+  computeCvdRegion,
   computeStripRegion,
   scrollClampMax,
   xToBucketTs,
@@ -122,6 +124,7 @@ interface DerivedPalette {
   axes: AxisPalette;
   strip: StripPalette;
   cursor: CursorPalette;
+  cvd: CvdPalette;
 }
 
 /**
@@ -177,6 +180,16 @@ export class FootprintChartEngine {
 
   // Wheel listener stored so we can remove on dispose.
   #onWheel: ((e: WheelEvent) => void) | null = null;
+
+  // ----- CVD sub-pane (Task 3.2c). -----
+  // A second, OPTIONAL canvas painted in the SAME rAF pass with the
+  // SAME scale as the footprint so the X-axes stay locked. Null until
+  // the React shell calls `attachCvdCanvas`; the engine paints the CVD
+  // pane only when both the canvas and a non-zero viewport are present.
+  #cvdCanvas: HTMLCanvasElement | null = null;
+  #cvdCtx: CanvasRenderingContext2D | null = null;
+  #cvdViewport: Viewport = { x: 0, y: 0, w: 0, h: 0 };
+  #cvdDpr = 1;
 
   // Cursor state. `cursorPx` is the raw pointer coords in CSS pixels;
   // `cursorCell` is recomputed only when `cursorPx` changes (NOT every
@@ -285,6 +298,9 @@ export class FootprintChartEngine {
     this.#cursorSubscribers.clear();
     this.#scrollSubscribers.clear();
     this.#lastScrollNotification = null;
+    // Release the CVD pane canvas — the React shell re-attaches on the
+    // next engine instance.
+    this.detachCvdCanvas();
   }
 
   /**
@@ -301,6 +317,60 @@ export class FootprintChartEngine {
     this.#ctx.setTransform(1, 0, 0, 1, 0, 0); // reset accumulated scales
     this.#ctx.scale(dpr, dpr);
     this.#viewport = { x: 0, y: 0, w: cssWidth, h: cssHeight };
+    this.#dirty = true;
+  }
+
+  /* -------------------------------------------------------------- *\
+     CVD sub-pane API (Task 3.2c)
+  \* -------------------------------------------------------------- */
+
+  /**
+   * Attach the CVD sub-pane canvas. The engine paints it in the same
+   * rAF pass as the footprint using the same scale, so the X-axes are
+   * locked together. Idempotent — re-attaching the same canvas is a
+   * no-op. Flips dirty so the next tick paints the pane.
+   */
+  attachCvdCanvas(canvas: HTMLCanvasElement): void {
+    if (this.#cvdCanvas === canvas) return;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    if (ctx === null) {
+      throw new Error(
+        'FootprintChartEngine.attachCvdCanvas: failed to get 2D context.',
+      );
+    }
+    this.#cvdCanvas = canvas;
+    this.#cvdCtx = ctx;
+    this.#dirty = true;
+  }
+
+  /**
+   * Detach the CVD sub-pane canvas (React shell unmount of the pane).
+   * The footprint keeps running; only the CVD paint stops.
+   */
+  detachCvdCanvas(): void {
+    this.#cvdCanvas = null;
+    this.#cvdCtx = null;
+    this.#cvdViewport = { x: 0, y: 0, w: 0, h: 0 };
+  }
+
+  /**
+   * Sync the CVD canvas backing store to its CSS size. Mirrors
+   * `handleResize` for the sub-pane. The CVD canvas width MUST match
+   * the footprint canvas width for the shared X-axis to line up — the
+   * React shell stacks the two in the same flex column to guarantee
+   * this.
+   */
+  handleCvdResize(cssWidth: number, cssHeight: number, dpr: number): void {
+    if (this.#cvdCanvas === null) return;
+    this.#cvdDpr = dpr;
+    this.#cvdCanvas.width = Math.max(1, Math.round(cssWidth * dpr));
+    this.#cvdCanvas.height = Math.max(1, Math.round(cssHeight * dpr));
+    const ctx = this.#cvdCtx;
+    if (ctx !== null) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+    }
+    this.#cvdViewport = { x: 0, y: 0, w: cssWidth, h: cssHeight };
     this.#dirty = true;
   }
 
@@ -552,6 +622,39 @@ export class FootprintChartEngine {
     // actually changed. atRightEdge is the live-follow signal the
     // Follow-live pill subscribes to.
     this.#notifyScrollSubscribers();
+
+    // CVD sub-pane (Task 3.2c). Painted in the SAME pass, with the
+    // SAME `scale` — the CVD region's X bounds equal the bar region's
+    // (same padding / strip / axis reservation), so `bucketTsToX` maps
+    // a bar to the identical X column in both panes. The pane reads the
+    // client-derived `cvdSeries` (ADR-008 seam) — it never re-folds the
+    // cell stream.
+    this.#paintCvd(scale, state);
+  }
+
+  /**
+   * Paint the CVD sub-pane onto its own canvas. No-op when the pane is
+   * not attached or has no measured size. Uses the footprint's `scale`
+   * so the X-axis is locked to the chart above.
+   */
+  #paintCvd(scale: ChartScale, state: StreamState): void {
+    const ctx = this.#cvdCtx;
+    const cvp = this.#cvdViewport;
+    if (ctx === null || cvp.w <= 0 || cvp.h <= 0) return;
+
+    // Wipe the pane to the chart background each frame.
+    paintBackground(ctx, cvp, this.#palette.bg);
+
+    const region = computeCvdRegion(cvp);
+    paintCvd(
+      ctx,
+      region,
+      scale,
+      state.cvdSeries,
+      this.#palette.cvd,
+      this.#cvdDpr,
+      formatCvdValue,
+    );
   }
 
   /* -------------------------------------------------------------- *\
@@ -744,6 +847,8 @@ export class FootprintChartEngine {
       cursorCell: this.#cursorCell,
       cursorSubscriberCount: this.#cursorSubscribers.size,
       scrollSubscriberCount: this.#scrollSubscribers.size,
+      cvdCanvasAttached: this.#cvdCanvas !== null,
+      cvdViewport: this.#cvdViewport,
     };
   }
 
@@ -794,7 +899,34 @@ function derivePalette(t: ThemeTokensSnapshot): DerivedPalette {
       line: t['--color-cell-cursor'],
       glow: t['--color-cell-cursor-glow'],
     },
+    cvd: {
+      // Slope-coded line: net buying rises (delta-up green), net
+      // selling falls (delta-down red), flat is the neutral imbalance
+      // tone. Reuses the existing footprint tokens so the CVD pane
+      // theme-flips through the same getComputedStyle bridge — no new
+      // tokens introduced (Task 3.2c: read sovereign tokens, do not
+      // invent).
+      up: t['--color-delta-up'],
+      down: t['--color-delta-down'],
+      neutral: t['--color-cell-imbalance-neutral'],
+      baseline: t['--color-grid'],
+      label: t['--color-axis-label'],
+    },
   };
+}
+
+/**
+ * Format a CVD value for the in-pane numeric label. Signed, with a
+ * compact `K` suffix above 10 000 so the label stays narrow at high
+ * cumulative volumes. BTC perp CVD is in base-asset (BTC) units, so we
+ * keep one decimal below 100 for legibility on quiet sessions.
+ */
+function formatCvdValue(v: number): string {
+  const sign = v > 0 ? '+' : v < 0 ? '-' : '';
+  const abs = Math.abs(v);
+  if (abs >= 10_000) return `${sign}${(abs / 1000).toFixed(1)}K`;
+  if (abs >= 100) return `${sign}${Math.round(abs).toString()}`;
+  return `${sign}${abs.toFixed(1)}`;
 }
 
 function collectCells(state: StreamState): NormalizedCell[] {

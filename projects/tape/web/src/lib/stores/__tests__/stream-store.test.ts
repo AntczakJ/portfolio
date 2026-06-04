@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   STREAM_CLOSED_CELLS_CAP,
+  STREAM_CVD_SERIES_CAP,
   STREAM_RECENT_TICKS_CAP,
   useStreamStore,
 } from '../stream-store';
@@ -286,6 +287,107 @@ describe('useStreamStore', () => {
     );
     // Snapshot is a fresh fold: 7 + (-6) = 1, NOT 99 + 1.
     expect(useStreamStore.getState().cvd).toBe(1);
+  });
+
+  it('cvdSeries appends one running-CVD point per distinct bar (3.2c)', () => {
+    const store = useStreamStore.getState();
+    expect(useStreamStore.getState().cvdSeries).toEqual([]);
+    // Bar 1: two closes (two price buckets) — net +5 then +2 → running 7.
+    store.ingestFrame(
+      closeFrame(
+        makeClose({ bucketTs: 100, priceBucket: 1, bidVolume: 0, askVolume: 5 }),
+      ),
+    );
+    store.ingestFrame(
+      closeFrame(
+        makeClose({ bucketTs: 100, priceBucket: 2, bidVolume: 1, askVolume: 3 }),
+      ),
+    );
+    // One series point for bar 100, running cvd = 5 + 2 = 7.
+    expect(useStreamStore.getState().cvdSeries).toEqual([
+      { bucketTs: 100, cvd: 7 },
+    ]);
+    // Bar 2: net -10 → running 7 - 10 = -3, appends a new point.
+    store.ingestFrame(
+      closeFrame(
+        makeClose({ bucketTs: 160, priceBucket: 1, bidVolume: 10, askVolume: 0 }),
+      ),
+    );
+    expect(useStreamStore.getState().cvdSeries).toEqual([
+      { bucketTs: 100, cvd: 7 },
+      { bucketTs: 160, cvd: -3 },
+    ]);
+  });
+
+  it('cvdSeries trailing point updates in place for same-bar closes', () => {
+    const store = useStreamStore.getState();
+    store.ingestFrame(
+      closeFrame(
+        makeClose({ bucketTs: 200, priceBucket: 1, bidVolume: 0, askVolume: 4 }),
+      ),
+    );
+    expect(useStreamStore.getState().cvdSeries).toHaveLength(1);
+    store.ingestFrame(
+      closeFrame(
+        makeClose({ bucketTs: 200, priceBucket: 2, bidVolume: 0, askVolume: 6 }),
+      ),
+    );
+    const series = useStreamStore.getState().cvdSeries;
+    expect(series).toHaveLength(1);
+    expect(series[0]).toEqual({ bucketTs: 200, cvd: 10 });
+  });
+
+  it('cvdSeries ring is bounded at STREAM_CVD_SERIES_CAP', () => {
+    const store = useStreamStore.getState();
+    const n = STREAM_CVD_SERIES_CAP + 15;
+    for (let i = 0; i < n; i++) {
+      store.ingestFrame(
+        closeFrame(
+          makeClose({
+            bucketTs: 1000 + i * 60,
+            priceBucket: 1,
+            bidVolume: 0,
+            askVolume: 1,
+          }),
+        ),
+      );
+    }
+    const series = useStreamStore.getState().cvdSeries;
+    expect(series).toHaveLength(STREAM_CVD_SERIES_CAP);
+    // Oldest retained bar is the 16th we pushed (index 15).
+    expect(series[0]!.bucketTs).toBe(1000 + 15 * 60);
+    // Newest point carries the full running CVD (every cell was +1).
+    expect(series[series.length - 1]!.cvd).toBe(n);
+  });
+
+  it('ingestSnapshot rebuilds cvdSeries from snapshot closed cells (3.2c)', () => {
+    const store = useStreamStore.getState();
+    // Pre-fold a stale point so the snapshot reset can be observed.
+    store.ingestFrame(
+      closeFrame(makeClose({ bucketTs: 1, bidVolume: 0, askVolume: 99 })),
+    );
+    expect(useStreamStore.getState().cvdSeries).toHaveLength(1);
+    store.ingestSnapshot(
+      makeSnapshot({
+        cells: [
+          makeClose({ bucketTs: 500, bidVolume: 0, askVolume: 10 }), // +10
+          makeClose({ bucketTs: 500, bidVolume: 4, askVolume: 0 }), // -4 → 6
+          makeClose({ bucketTs: 560, bidVolume: 0, askVolume: 3 }), // +3 → 9
+        ],
+      }),
+    );
+    expect(useStreamStore.getState().cvdSeries).toEqual([
+      { bucketTs: 500, cvd: 6 },
+      { bucketTs: 560, cvd: 9 },
+    ]);
+  });
+
+  it('resetSession clears cvdSeries', () => {
+    const store = useStreamStore.getState();
+    store.ingestFrame(closeFrame(makeClose({ bidVolume: 0, askVolume: 5 })));
+    expect(useStreamStore.getState().cvdSeries).toHaveLength(1);
+    store.resetSession();
+    expect(useStreamStore.getState().cvdSeries).toEqual([]);
   });
 
   it('resetSession zeroes CVD', () => {

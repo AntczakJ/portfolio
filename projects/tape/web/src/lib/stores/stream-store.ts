@@ -40,14 +40,30 @@
  * `cell.close` (the same f64 data it already parses), seeded from the
  * snapshot's closed bars. This is the single client-side CVD
  * derivation site; the Phase 3.2c CVD line sub-pane consumes
- * `state.cvd` from here rather than re-folding. The fold is additive
- * and order-independent at the cell granularity (each `cell.close` is
- * the absolute total for one closed cell, so the running sum is the
- * net delta across all closed cells seen this session) — there is no
- * float-order constraint here because we are NOT trying to match the
- * Rust per-bar fold bit-for-bit on the client; the Rust copy is the
- * canonical one for conformance (ADR-008). The client CVD is a live
- * visual aid, seeded fresh on every snapshot.
+ * `state.cvd` (scalar) AND `state.cvdSeries` (time series) from here
+ * rather than re-folding. The fold is additive and order-independent
+ * at the cell granularity (each `cell.close` is the absolute total for
+ * one closed cell, so the running sum is the net delta across all
+ * closed cells seen this session) — there is no float-order constraint
+ * here because we are NOT trying to match the Rust per-bar fold
+ * bit-for-bit on the client; the Rust copy is the canonical one for
+ * conformance (ADR-008). The client CVD is a live visual aid, seeded
+ * fresh on every snapshot.
+ *
+ * **cvdSeries ring (Task 3.2c, additive).** The scalar `cvd` is enough
+ * for a status readout but the CVD line sub-pane needs a per-bar time
+ * series to draw against the footprint's X-axis. `cvdSeries` is a
+ * bounded ring of `{ bucketTs, cvd }` points — one point per closed
+ * bar, carrying the RUNNING cumulative CVD at that bar's close.
+ * Multiple `cell.close` frames for the SAME `bucketTs` (one per price
+ * bucket) update the same trailing point in place (the bar is still
+ * accumulating its closes); a `cell.close` for a NEW, larger
+ * `bucketTs` appends a fresh point seeded from the previous running
+ * value. The ring is sized to `STREAM_CLOSED_CELLS_CAP` so it covers
+ * at least the same horizontal span the footprint renders. The series
+ * is the seam the CVD pane consumes; it is derived in this one place,
+ * never re-folded downstream. Replay (Task 3.6) reuses the identical
+ * fold over historic `cell.close` / `replay.bar` frames.
  */
 import { create } from 'zustand';
 import { shallow } from 'zustand/shallow';
@@ -64,6 +80,29 @@ import type { WSConnectionState } from '@/lib/ws/client';
 
 /** Closed-cell ring size — matches the WS snapshot's closed-cell pin. */
 export const STREAM_CLOSED_CELLS_CAP = 120;
+
+/**
+ * CVD series ring size — one point per closed BAR (not per cell), so it
+ * covers at least as many bars as the footprint can show on the widest
+ * realistic viewport. A single bar can produce many `cell.close` frames
+ * (one per price bucket) that all fold into one series point, so this
+ * cap is bar-count, not cell-count. Matches `STREAM_CLOSED_CELLS_CAP`
+ * for symmetry — the closed-cell ring is the upper bound on distinct
+ * bars the client retains.
+ */
+export const STREAM_CVD_SERIES_CAP = 120;
+
+/**
+ * One point on the cumulative-volume-delta time series. `cvd` is the
+ * RUNNING cumulative value at this bar's close (NOT the per-bar delta).
+ * `bucketTs` is the bar's UTC-aligned 1-minute bucket timestamp — the
+ * same X-axis key the footprint cells use, so the CVD pane aligns to
+ * the chart without a second time model.
+ */
+export interface CvdPoint {
+  bucketTs: number;
+  cvd: number;
+}
 
 /** Recent-ticks ring size — matches the WS snapshot's tick pin. */
 export const STREAM_RECENT_TICKS_CAP = 200;
@@ -92,6 +131,13 @@ export interface StreamState {
    * session, seeded from the snapshot's closed cells. NOT on the wire.
    */
   cvd: number;
+  /**
+   * Per-bar CVD time series (Task 3.2c). Oldest at index 0, newest at
+   * the end. One point per closed bar, carrying the running cumulative
+   * CVD at that bar's close. The CVD line sub-pane reads this; it is
+   * NOT re-folded anywhere else. Bounded at `STREAM_CVD_SERIES_CAP`.
+   */
+  cvdSeries: CvdPoint[];
   /** Retained for the reconnect-from-snapshot path. */
   lastSnapshot: WSSnapshotPayload | null;
 
@@ -156,6 +202,84 @@ function cellCloseDelta(cell: WSCellClosePayload): number {
   return cell.askVolume - cell.bidVolume;
 }
 
+/**
+ * Fold one closed cell into the per-bar CVD series, returning the next
+ * (bounded) series. Pure — no mutation of `current`.
+ *
+ * Rules:
+ *   - The new running CVD (`runningCvd`) is the cumulative value AFTER
+ *     this cell.close has been added to the scalar accumulator.
+ *   - If the trailing point already covers `bucketTs`, we replace its
+ *     `cvd` with `runningCvd` (the bar is still accumulating its
+ *     per-price-bucket closes within the same minute — they share one
+ *     series point).
+ *   - If `bucketTs` is newer than the trailing point (or the series is
+ *     empty), we append a fresh point.
+ *   - An out-of-order older `bucketTs` (should not happen in a forward
+ *     live stream, but possible across a reconnect race) updates the
+ *     matching existing point if present, else appends — the line stays
+ *     monotonic in render order because we sort-free trust the wire's
+ *     forward ordering and only special-case the trailing bar.
+ *
+ * The ring trims from the head, never affecting the scalar `cvd`
+ * accumulator (which is unbounded by design — see `cellCloseDelta`).
+ */
+function pushCvdSeries(
+  current: CvdPoint[],
+  bucketTs: number,
+  runningCvd: number,
+): CvdPoint[] {
+  const last = current[current.length - 1];
+  if (last?.bucketTs === bucketTs) {
+    // Same bar — replace the trailing point's running value.
+    const next = current.slice(0, current.length - 1);
+    next.push({ bucketTs, cvd: runningCvd });
+    return next;
+  }
+  if (last === undefined || bucketTs > last.bucketTs) {
+    // New (forward) bar — append, trimming the head if over cap.
+    const appended =
+      current.length < STREAM_CVD_SERIES_CAP
+        ? [...current, { bucketTs, cvd: runningCvd }]
+        : [
+            ...current.slice(current.length - STREAM_CVD_SERIES_CAP + 1),
+            { bucketTs, cvd: runningCvd },
+          ];
+    return appended;
+  }
+  // Out-of-order older bucket — update in place if present.
+  const idx = current.findIndex((p) => p.bucketTs === bucketTs);
+  if (idx === -1) {
+    return [...current, { bucketTs, cvd: runningCvd }];
+  }
+  const next = current.slice();
+  next[idx] = { bucketTs, cvd: runningCvd };
+  return next;
+}
+
+/**
+ * Build the full per-bar CVD series from a snapshot's closed-cell list.
+ * Closed cells arrive grouped by bar (the server emits them
+ * bar-by-bar); we fold the running CVD and emit one point per distinct
+ * `bucketTs`, in first-seen order. Bounded at the tail to
+ * `STREAM_CVD_SERIES_CAP` so the seeded series matches the live-ring
+ * cap.
+ */
+function seedCvdSeries(cells: WSCellClosePayload[]): CvdPoint[] {
+  const series: CvdPoint[] = [];
+  let running = 0;
+  for (const cell of cells) {
+    running += cellCloseDelta(cell);
+    const last = series[series.length - 1];
+    if (last?.bucketTs === cell.bucketTs) {
+      last.cvd = running;
+    } else {
+      series.push({ bucketTs: cell.bucketTs, cvd: running });
+    }
+  }
+  return series.slice(-STREAM_CVD_SERIES_CAP);
+}
+
 function seedFromSnapshot(
   snapshot: WSSnapshotPayload,
 ): {
@@ -163,6 +287,7 @@ function seedFromSnapshot(
   openCells: Map<string, WSCellDeltaPayload>;
   closedCells: WSCellClosePayload[];
   cvd: number;
+  cvdSeries: CvdPoint[];
 } {
   const recentTicks = snapshot.recentTicks.slice(-STREAM_RECENT_TICKS_CAP);
   const closedCells = snapshot.cells.slice(-STREAM_CLOSED_CELLS_CAP);
@@ -178,7 +303,10 @@ function seedFromSnapshot(
   for (const cell of snapshot.cells) {
     cvd += cellCloseDelta(cell);
   }
-  return { recentTicks, openCells, closedCells, cvd };
+  // The per-bar series is folded from the SAME full history; its tail
+  // is ring-trimmed to the series cap (the scalar above is not).
+  const cvdSeries = seedCvdSeries(snapshot.cells);
+  return { recentTicks, openCells, closedCells, cvd, cvdSeries };
 }
 
 export const useStreamStore = create<StreamState>()((set) => ({
@@ -190,6 +318,7 @@ export const useStreamStore = create<StreamState>()((set) => ({
   openCells: new Map(),
   closedCells: [],
   cvd: 0,
+  cvdSeries: [],
   lastSnapshot: null,
 
   ingestFrame: (frame) => {
@@ -241,13 +370,22 @@ export const useStreamStore = create<StreamState>()((set) => ({
         set((state) => {
           const nextOpen = new Map(state.openCells);
           nextOpen.delete(key);
+          // Fold this closed cell into the running CVD (ADR-008).
+          // Additive over the cell stream; the ring trim only bounds
+          // the RENDERED history, never the CVD accumulator.
+          const nextCvd = state.cvd + cellCloseDelta(frame.payload);
           return {
             openCells: nextOpen,
             closedCells: pushBoundedClosed(state.closedCells, frame.payload),
-            // Fold this closed cell into the running CVD (ADR-008).
-            // Additive over the cell stream; the ring trim above only
-            // bounds the RENDERED history, never the CVD accumulator.
-            cvd: state.cvd + cellCloseDelta(frame.payload),
+            cvd: nextCvd,
+            // Mirror the running CVD into the per-bar series (Task
+            // 3.2c). Same bar updates its trailing point; a new bar
+            // appends. This is the seam the CVD line pane consumes.
+            cvdSeries: pushCvdSeries(
+              state.cvdSeries,
+              frame.payload.bucketTs,
+              nextCvd,
+            ),
             framesPerSec,
           };
         });
@@ -290,6 +428,7 @@ export const useStreamStore = create<StreamState>()((set) => ({
       openCells: seeded.openCells,
       closedCells: seeded.closedCells,
       cvd: seeded.cvd,
+      cvdSeries: seeded.cvdSeries,
     });
   },
 
@@ -308,6 +447,7 @@ export const useStreamStore = create<StreamState>()((set) => ({
       openCells: new Map(),
       closedCells: [],
       cvd: 0,
+      cvdSeries: [],
       lastSnapshot: null,
     });
   },
@@ -354,6 +494,17 @@ export function useClosedCells(): WSCellClosePayload[] {
  */
 export function useCvd(): number {
   return useStreamStore((state) => state.cvd);
+}
+
+/**
+ * Client-derived per-bar CVD series (Task 3.2c). The CVD line sub-pane
+ * consumes this; it is the single derivation site — consumers never
+ * re-fold the cell stream. `useShallow` because the return is an array
+ * (the ring reference changes on each fold, but identical contents
+ * across no-op renders are deduped by shallow element comparison).
+ */
+export function useCvdSeries(): CvdPoint[] {
+  return useStreamStore(useShallow((state) => state.cvdSeries));
 }
 
 export function useOpenCells(): Map<string, WSCellDeltaPayload> {

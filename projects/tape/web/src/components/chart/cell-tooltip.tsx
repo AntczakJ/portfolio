@@ -21,11 +21,15 @@
  *     vertically (above the cursor). A 12 px safe margin to the
  *     container edges keeps the tooltip readable even at the corners.
  *
- * Aria:
- *   - `role="status"` + `aria-live="polite"` so screen readers
- *     announce the latest cell data when the cursor moves. The hook
- *     debounces announcements to one per cell change, NOT one per
- *     pointer move, by keying on `${bucketTs}:${priceBucket}`.
+ * Aria (Task 3.5 split):
+ *   - This tooltip is now PURELY VISUAL — `aria-hidden="true"`. It
+ *     repositions on every pointer move (the `px` field changes), which
+ *     would spam an `aria-live` region. Screen-reader announcement is
+ *     owned by the dedicated `<CellReadoutMirror />`, which throttles to
+ *     one announcement per CELL change (keyed on
+ *     `${bucketTs}:${priceBucket}`), not one per pointer move. Splitting
+ *     the visual surface from the SR surface keeps the live region
+ *     quiet under rapid cursor movement.
  *
  * Motion:
  *   - Fade in / out at 120 ms via plain CSS opacity transition (no
@@ -131,13 +135,12 @@ export function CellTooltip({ containerRef }: CellTooltipProps): ReactNode {
   return (
     <div
       ref={tooltipRef}
-      role="status"
-      aria-live="polite"
-      aria-atomic="true"
-      aria-label="Cell readout"
-      // Always rendered so it can be measured AND so screen readers
-      // pick up the latest data without a mount churn. Pointer events
-      // disabled so it never steals hover from the canvas.
+      aria-hidden="true"
+      data-testid="cell-tooltip"
+      // Always rendered so it can be measured. Pointer events disabled
+      // so it never steals hover from the canvas. SR announcement is
+      // handled by <CellReadoutMirror />, not here (Task 3.5) — this
+      // surface is visual-only and `aria-hidden`.
       className={[
         'pointer-events-none absolute z-20 min-w-[180px] rounded-md',
         'border border-(--color-grid) bg-(--color-surface)/90 px-2 py-1.5',
