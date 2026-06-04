@@ -60,6 +60,8 @@ import {
 } from '../schemas/ws';
 import { type WSConnectionRegistry } from '../ws/connections';
 import { type SnapshotCache } from '../ws/snapshot-cache';
+import { type CellWriter, getCellWriter } from '../ingest/cell-writer';
+import { getIngestSession, type IngestSession } from '../ingest/ingest-session';
 
 import { Backoff } from './backoff';
 import { BridgeClient } from './client';
@@ -81,6 +83,21 @@ export interface WorkerPipelineOptions {
   readonly handshakeTimeoutMs?: number;
   /** Override the snapshot poll cadence (tests). */
   readonly snapshotPollMs?: number;
+  /**
+   * Footprint-cell persistence writer (Task 1.5f / ADR-005). Defaults
+   * to the process-singleton `getCellWriter()`. Receives every
+   * `cell.close` frame and persists closed bars to `footprint_cells`
+   * (one transaction per bar, idempotent upsert). Injected in tests.
+   */
+  readonly cellWriter?: CellWriter;
+  /**
+   * Ingest session providing the `footprint_cells.session_id` FK.
+   * Defaults to the process-singleton `getIngestSession()` — the SAME
+   * session the Binance ingestor opens, so cells and ticks share a
+   * session row. For the offline synth path (no Binance ingestor) the
+   * pipeline opens this session itself at `start()`. Injected in tests.
+   */
+  readonly session?: IngestSession;
 }
 
 interface PipelineMetrics {
@@ -97,6 +114,8 @@ export class WorkerPipeline {
   readonly #bridgePath: string;
   readonly #handshakeTimeoutMs: number;
   readonly #snapshotPollMs: number;
+  readonly #cellWriter: CellWriter;
+  readonly #session: IngestSession;
   readonly #client: BridgeClient;
   readonly #backoff = new Backoff();
   #pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -118,6 +137,8 @@ export class WorkerPipeline {
     this.#handshakeTimeoutMs =
       options.handshakeTimeoutMs ?? BRIDGE_HANDSHAKE_TIMEOUT_MS;
     this.#snapshotPollMs = options.snapshotPollMs ?? BRIDGE_SNAPSHOT_POLL_MS;
+    this.#cellWriter = options.cellWriter ?? getCellWriter();
+    this.#session = options.session ?? getIngestSession();
 
     this.#client = new BridgeClient({
       path: this.#bridgePath,
@@ -134,6 +155,21 @@ export class WorkerPipeline {
   async start(): Promise<void> {
     if (this.#running) return;
     this.#running = true;
+    // Ensure a session row exists so persisted cells have a valid
+    // `footprint_cells.session_id` FK. `IngestSession.start()` is
+    // idempotent and singleton-backed: when the Binance ingestor already
+    // opened a session, this reuses its id; on the offline synth path
+    // (no Binance ingestor) the pipeline opens one here. Tolerant — a DB
+    // hiccup at session open degrades persistence (cells will log a null
+    // session id and be dropped), it does not block the live board.
+    try {
+      await this.#session.start();
+    } catch (err) {
+      console.error(
+        '[worker-pipeline] failed to open ingest session for cell persistence (persistence degraded, live board unaffected)',
+        err,
+      );
+    }
     this.#supervisor.start();
     // The supervisor's start path is synchronous — `Bun.spawn` returns
     // before the worker has touched the bridge endpoint, so we need to
@@ -160,6 +196,11 @@ export class WorkerPipeline {
       // The client throws inside its disconnecting path — non-fatal.
     }
     await this.#supervisor.stop();
+    // Flush the last buffered bar (the worker drains every open cell on
+    // SIGTERM, but the final bar may still be buffered in the writer).
+    // Tolerant — `flushPending` swallows transient DB errors so a stuck
+    // DB does not hang shutdown.
+    await this.#cellWriter.flushPending();
   }
 
   /**
@@ -310,6 +351,24 @@ export class WorkerPipeline {
       payload: wsPayload,
     };
     this.#registry.broadcast(wsFrame);
+    // Persist the closed cell (Task 1.5f / ADR-005). Enqueue is sync and
+    // never throws; the writer groups by bar and upserts one transaction
+    // per bar off the hot path. A null session id means no session row
+    // is open (DB hiccup at start, or pre-session race) — drop the cell
+    // from persistence rather than violate the NOT NULL FK; the live
+    // board already has the frame.
+    const sessionId = this.#session.currentId;
+    if (sessionId !== null) {
+      this.#cellWriter.enqueueClose({
+        symbol: wsPayload.symbol,
+        bucketTs: wsPayload.bucketTs,
+        priceBucket: wsPayload.priceBucket,
+        bidVolume: wsPayload.bidVolume,
+        askVolume: wsPayload.askVolume,
+        trades: wsPayload.trades,
+        sessionId,
+      });
+    }
     // Push into the closed-cell ring; reset the open-cell tail for
     // this symbol because the bar just closed.
     this.#snapshotCache.update(payload.symbol, {
