@@ -88,17 +88,60 @@ where
 /// 1. `BRIDGE_PATH` env override wins when set.
 /// 2. On Windows, default to `\\.\pipe\tape-bridge`.
 /// 3. On Linux / macOS, default to `/tmp/tape-bridge.sock`.
+///
+/// The resolved value passes through [`normalize_bridge_path`] so a
+/// Windows named-pipe path that lost its leading backslash during a
+/// `Bun.spawn` env round-trip is repaired before the `interprocess`
+/// listener rejects it.
 pub fn default_bridge_path() -> String {
-    if let Ok(path) = std::env::var("BRIDGE_PATH") {
-        if !path.is_empty() {
-            return path;
-        }
-    }
+    let raw = match std::env::var("BRIDGE_PATH") {
+        Ok(path) if !path.is_empty() => path,
+        _ => default_bridge_path_for_os(),
+    };
+    normalize_bridge_path(&raw)
+}
+
+fn default_bridge_path_for_os() -> String {
     if cfg!(windows) {
         String::from(r"\\.\pipe\tape-bridge")
     } else {
         String::from("/tmp/tape-bridge.sock")
     }
+}
+
+/// Repair a Windows named-pipe path whose leading `\\` was collapsed to
+/// a single `\` while crossing a process boundary.
+///
+/// **Why this exists.** Bun's `Bun.spawn` on Windows collapses every
+/// `\\` in an inherited env value to a single `\` before handing it to
+/// the child (verified empirically: the supervisor passes
+/// `\\.\pipe\tape-bridge` in `process.env`, the worker's
+/// `std::env::var("BRIDGE_PATH")` reads back `\.\pipe\tape-bridge`).
+/// The `interprocess` crate's named-pipe `is_pipefs` check requires the
+/// canonical `\\HOST\pipe\NAME` form, so the collapsed value is rejected
+/// with "not a named pipe path" and the worker cannot bind — breaking
+/// the entire supervised pipeline on the owner's Windows dev machine.
+///
+/// The repair is unambiguous: a local Windows pipe path is always
+/// `\\.\pipe\<name>` (local host `.`). If we see the collapsed
+/// `\.\pipe\` or the further-collapsed `.\pipe\` at the start, we
+/// restore the canonical `\\.\pipe\` prefix. Non-pipe paths (POSIX UDS,
+/// already-canonical pipe paths) pass through untouched, so this is a
+/// no-op on Linux and on any correctly-formed input.
+pub fn normalize_bridge_path(path: &str) -> String {
+    // Already canonical (`\\.\pipe\...` or `\\host\pipe\...`) — leave it.
+    if path.starts_with(r"\\") {
+        return path.to_string();
+    }
+    // Collapsed local-pipe form: `\.\pipe\name` → `\\.\pipe\name`.
+    if let Some(rest) = path.strip_prefix(r"\.\pipe\") {
+        return format!(r"\\.\pipe\{rest}");
+    }
+    // Further-collapsed / host-form: `.\pipe\name` → `\\.\pipe\name`.
+    if let Some(rest) = path.strip_prefix(r".\pipe\") {
+        return format!(r"\\.\pipe\{rest}");
+    }
+    path.to_string()
 }
 
 #[cfg(test)]
@@ -154,5 +197,34 @@ mod tests {
         tx.flush().await.expect("flush");
         let err = read_frame(&mut rx).await.expect_err("must error");
         assert!(err.to_string().contains("too large"));
+    }
+
+    #[test]
+    fn normalize_repairs_collapsed_windows_pipe_path() {
+        // The exact corruption a `Bun.spawn` env round-trip produces on
+        // Windows: `\\.\pipe\tape-bridge` arrives as `\.\pipe\tape-bridge`.
+        assert_eq!(
+            normalize_bridge_path(r"\.\pipe\tape-bridge"),
+            r"\\.\pipe\tape-bridge"
+        );
+        // A doubly-collapsed / host-form variant is also repaired.
+        assert_eq!(
+            normalize_bridge_path(r".\pipe\tape-bridge-e2e"),
+            r"\\.\pipe\tape-bridge-e2e"
+        );
+    }
+
+    #[test]
+    fn normalize_leaves_canonical_and_posix_paths_untouched() {
+        // Already-canonical pipe path passes through.
+        assert_eq!(
+            normalize_bridge_path(r"\\.\pipe\tape-bridge"),
+            r"\\.\pipe\tape-bridge"
+        );
+        // POSIX UDS path is not a pipe path — untouched.
+        assert_eq!(
+            normalize_bridge_path("/tmp/tape-bridge.sock"),
+            "/tmp/tape-bridge.sock"
+        );
     }
 }

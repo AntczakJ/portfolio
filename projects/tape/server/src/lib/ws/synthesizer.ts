@@ -49,6 +49,7 @@ import {
   TIME_BUCKET_MS,
   timeBucket,
 } from '../aggregator/bucketing';
+import { type WorkerPipeline } from '../bridge';
 import { WS_SNAPSHOT_CELLS_PIN } from '../schemas/ws';
 
 import type { WSConnectionRegistry } from './connections';
@@ -134,6 +135,30 @@ export interface SynthesizerOptions {
   setInterval?: (cb: () => void, ms: number) => unknown;
   /** Inject the matching clearer. */
   clearInterval?: (handle: unknown) => void;
+  /**
+   * **Offline cell-producing path (worker-fed synth).** When provided,
+   * the synthesizer pushes every synthesised tick INTO the Rust worker
+   * via `pipeline.sendTick(...)` — making the worker the authoritative
+   * cell aggregator just as it is on the real Binance ingest path. In
+   * this mode the synthesizer's OWN `cell.delta` / `cell.close`
+   * emission is SUPPRESSED (the worker emits those over the bridge and
+   * the `WorkerPipeline` fans them out), so there is exactly one cell
+   * producer and no double-counting.
+   *
+   * This is the local/offline equivalent of the Binance pipeline: it
+   * exercises the full `synth tick -> Elysia -> bridge -> Rust worker
+   * -> aggregated cell -> bridge -> WS broadcast` loop without a live
+   * Binance feed, which Task 1.3 documented as unreachable on the
+   * owner's network and which the deploy fallback also needs.
+   *
+   * When `undefined` (the historic default), the synthesizer keeps its
+   * self-contained behaviour: it broadcasts ticks AND emits its own
+   * cells directly to the registry, the bridge is not in the loop.
+   * Production paths (Binance) never construct a worker-fed synth — the
+   * boot mutex in `src/server.ts` only wires this when
+   * `WS_SYNTHESIZE=1 + WORKER_PIPELINE_ENABLED=1 + BINANCE_WS_ENABLED=0`.
+   */
+  workerPipeline?: WorkerPipeline;
 }
 
 /**
@@ -151,6 +176,7 @@ interface OpenBarState {
 export class WSSynthesizer {
   readonly #registry: WSConnectionRegistry;
   readonly #snapshotCache: SnapshotCache;
+  readonly #workerPipeline: WorkerPipeline | null;
   readonly #rng: LCG;
   readonly #now: () => number;
   readonly #setInterval: (cb: () => void, ms: number) => unknown;
@@ -168,6 +194,7 @@ export class WSSynthesizer {
   constructor(options: SynthesizerOptions) {
     this.#registry = options.registry;
     this.#snapshotCache = options.snapshotCache;
+    this.#workerPipeline = options.workerPipeline ?? null;
     this.#rng = new LCG(options.seed ?? SYNTH_DEFAULT_SEED);
     this.#now = options.now ?? (() => Date.now());
     this.#setInterval =
@@ -199,18 +226,25 @@ export class WSSynthesizer {
       },
       SYNTH_TICK_INTERVAL_MS,
     );
-    this.#cellDeltaTimer = this.#setInterval(
-      () => {
-        this.#emitCellDelta();
-      },
-      SYNTH_CELL_DELTA_INTERVAL_MS,
-    );
-    this.#cellCloseTimer = this.#setInterval(
-      () => {
-        this.#emitCellClose();
-      },
-      SYNTH_CELL_CLOSE_INTERVAL_MS,
-    );
+    // Worker-fed mode: the Rust worker is the authoritative cell
+    // aggregator (fed by `#emitTick`'s `pipeline.sendTick`), so the
+    // synthesizer must NOT also emit its own cell.delta / cell.close —
+    // that would double-count. The cell timers stay disarmed; cells
+    // arrive over the bridge and the `WorkerPipeline` fans them out.
+    if (this.#workerPipeline === null) {
+      this.#cellDeltaTimer = this.#setInterval(
+        () => {
+          this.#emitCellDelta();
+        },
+        SYNTH_CELL_DELTA_INTERVAL_MS,
+      );
+      this.#cellCloseTimer = this.#setInterval(
+        () => {
+          this.#emitCellClose();
+        },
+        SYNTH_CELL_CLOSE_INTERVAL_MS,
+      );
+    }
   }
 
   stop(): void {
@@ -291,6 +325,24 @@ export class WSSynthesizer {
         aggressor,
       },
     });
+
+    // Worker-fed mode: push this synth tick INTO the Rust worker so it
+    // aggregates the footprint cell and emits cell.delta / cell.close
+    // back over the bridge (the `WorkerPipeline` fans those out). This
+    // is the offline equivalent of the Binance ingest path's
+    // `pipeline.sendTick(...)` call — same topology, deterministic
+    // synth source instead of the live feed. A no-op when the bridge
+    // client is not yet `connected` (handshake pending / mid-restart);
+    // the worker sees ticks again once it reconnects.
+    if (this.#workerPipeline !== null) {
+      this.#workerPipeline.sendTick({
+        tsMs,
+        symbol: SYNTH_SYMBOL,
+        price: roundedPrice,
+        qty: roundedQty,
+        aggressor,
+      });
+    }
 
     // Accumulate into the open bar so the matching `cell.close`
     // emits correct absolute totals.

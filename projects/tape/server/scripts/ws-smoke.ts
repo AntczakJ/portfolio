@@ -1,20 +1,31 @@
 /**
- * WS smoke — Task 1.6b.
+ * WS smoke — Task 1.6b + Task 1.5c/1.5d end-to-end pipeline proof.
  *
  * Connects to a running `tape-server` at `ws://localhost:3001/ws/stream`,
- * decodes the initial snapshot, counts frames for 10 s grouped by
- * `kind`, then exits with code 0 if it received any frames and 1 if
- * the connection produced nothing at all.
+ * decodes the initial snapshot, counts frames grouped by `kind`, then
+ * exits 0 / 1 depending on the assertion mode (see below).
  *
  * Intended manual workflow:
  *
- *   # Terminal 1
- *   WS_SYNTHESIZE=1 pnpm -F tape-server dev
+ *   # Terminal 1 — synth-only (ticks + synth cells, no worker)
+ *   WS_SYNTHESIZE=1 BINANCE_WS_ENABLED=0 pnpm -F tape-server dev
+ *
+ *   # Terminal 1 — FULL offline pipeline (synth -> bridge -> Rust worker
+ *   #              -> aggregated cell -> bridge -> WS):
+ *   WORKER_PIPELINE_ENABLED=1 WS_SYNTHESIZE=1 BINANCE_WS_ENABLED=0 \
+ *     DATABASE_URL=postgres://tape:tape@localhost:5435/tape \
+ *     bun src/server.ts
  *
  *   # Terminal 2
  *   bun projects/tape/server/scripts/ws-smoke.ts
  *
- * Override target with `WS_URL=ws://...` or `--url=ws://...`.
+ * Overrides:
+ *   - `WS_URL=ws://...` or `--url=ws://...`  — target endpoint.
+ *   - `WS_SMOKE_DURATION_MS=70000`           — capture window. Use ≥ 61 s
+ *     to cross a 1-minute bar boundary and observe a `cell.close`.
+ *   - `WS_SMOKE_REQUIRE_CELLS=1`             — fail (exit 1) unless BOTH a
+ *     `cell.delta` AND a `cell.close` arrive (the full-pipeline proof).
+ *     Default mode only requires "any frame at all".
  *
  * NOT a Bun test — this is a one-shot operator-facing script. The
  * CI-tracked behaviour lives in `src/lib/ws/__tests__/`.
@@ -24,7 +35,7 @@ import { decode } from '../src/lib/bridge/codec';
 import { type WSFrame, wsFrameSchema } from '../src/lib/schemas/ws';
 
 const DEFAULT_URL = 'ws://localhost:3001/ws/stream';
-const RUN_DURATION_MS = 10_000;
+const DEFAULT_DURATION_MS = 10_000;
 
 function resolveUrl(): string {
   const fromEnv = process.env.WS_URL;
@@ -35,8 +46,20 @@ function resolveUrl(): string {
   return DEFAULT_URL;
 }
 
+function resolveDurationMs(): number {
+  const fromEnv = process.env.WS_SMOKE_DURATION_MS;
+  if (fromEnv !== undefined && fromEnv.length > 0) {
+    const n = Number(fromEnv);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  return DEFAULT_DURATION_MS;
+}
+
+const REQUIRE_CELLS = process.env.WS_SMOKE_REQUIRE_CELLS === '1';
+
 async function main(): Promise<number> {
   const url = resolveUrl();
+  const durationMs = resolveDurationMs();
   console.log(`[ws-smoke] connecting to ${url}`);
 
   const ws = new WebSocket(url);
@@ -53,7 +76,11 @@ async function main(): Promise<number> {
 
     ws.addEventListener('open', () => {
       clearTimeout(timeoutId);
-      console.log('[ws-smoke] connected, listening for 10 s');
+      console.log(
+        `[ws-smoke] connected, listening for ${String(Math.round(durationMs / 1000))} s${
+          REQUIRE_CELLS ? ' (require cell.delta + cell.close)' : ''
+        }`,
+      );
       resolve();
     });
 
@@ -86,7 +113,7 @@ async function main(): Promise<number> {
     }
   });
 
-  await new Promise<void>((resolve) => setTimeout(resolve, RUN_DURATION_MS));
+  await new Promise<void>((resolve) => setTimeout(resolve, durationMs));
 
   console.log('[ws-smoke] done — frame counts by kind:');
   for (const [kind, count] of countsByKind) {
@@ -95,6 +122,23 @@ async function main(): Promise<number> {
   console.log(`  total: ${String(totalFrames)}`);
 
   ws.close(1000, 'smoke complete');
+
+  if (REQUIRE_CELLS) {
+    const snapshots = countsByKind.get('snapshot') ?? 0;
+    const ticks = countsByKind.get('tick') ?? 0;
+    const deltas = countsByKind.get('cell.delta') ?? 0;
+    const closes = countsByKind.get('cell.close') ?? 0;
+    const ok = snapshots >= 1 && ticks >= 1 && deltas >= 1 && closes >= 1;
+    console.log(
+      ok
+        ? '[ws-smoke] PASS — snapshot + tick + cell.delta + cell.close all observed (full pipeline live)'
+        : `[ws-smoke] FAIL — require snapshot>=1 tick>=1 cell.delta>=1 cell.close>=1, got snapshot=${String(
+            snapshots,
+          )} tick=${String(ticks)} cell.delta=${String(deltas)} cell.close=${String(closes)}`,
+    );
+    return ok ? 0 : 1;
+  }
+
   return totalFrames > 0 ? 0 : 1;
 }
 

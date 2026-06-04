@@ -25,12 +25,45 @@
 export function defaultBridgePath(): string {
   const override = process.env.BRIDGE_PATH;
   if (override && override.length > 0) {
-    return override;
+    return normalizeBridgePath(override);
   }
   if (process.platform === 'win32') {
     return '\\\\.\\pipe\\tape-bridge';
   }
   return '/tmp/tape-bridge.sock';
+}
+
+/**
+ * Repair a Windows named-pipe path whose leading `\\` was collapsed to
+ * a single `\`.
+ *
+ * **Why this exists.** `Bun.spawn` on Windows collapses every `\\` in an
+ * inherited env value to a single `\` when handing it to a child
+ * process — so a `BRIDGE_PATH=\\.\pipe\tape-bridge` set in the parent is
+ * read back as `\.\pipe\tape-bridge` by the spawned Rust worker, and the
+ * `interprocess` crate then rejects it as "not a named pipe path". The
+ * Rust side has the canonical repair (`bridge/transport.rs ::
+ * normalize_bridge_path`); this TS mirror covers the symmetric case
+ * where the PARENT itself was handed a collapsed value (e.g. a hand-
+ * edited `.env` with a single-backslash pipe path) so the bridge client
+ * still connects to the canonical `\\.\pipe\` form the worker binds.
+ *
+ * A local Windows pipe path is always `\\.\pipe\<name>`. Already-
+ * canonical paths and POSIX UDS paths pass through untouched, so this is
+ * a no-op on Linux and on correctly-formed input.
+ */
+export function normalizeBridgePath(path: string): string {
+  // Already canonical (`\\.\pipe\...` / `\\host\pipe\...`) — leave it.
+  if (path.startsWith('\\\\')) return path;
+  // Collapsed local-pipe form: `\.\pipe\name` → `\\.\pipe\name`.
+  if (path.startsWith('\\.\\pipe\\')) {
+    return `\\\\${path.slice(1)}`;
+  }
+  // Further-collapsed / host-form: `.\pipe\name` → `\\.\pipe\name`.
+  if (path.startsWith('.\\pipe\\')) {
+    return `\\\\.${path.slice(1)}`;
+  }
+  return path;
 }
 
 /**

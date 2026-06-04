@@ -191,21 +191,6 @@ const BINANCE_WS_ENABLED = (process.env.BINANCE_WS_ENABLED ?? '1') === '1';
 const SYNTH_WANTED = process.env.WS_SYNTHESIZE === '1';
 const SYNTH_ENABLED = SYNTH_WANTED && !BINANCE_WS_ENABLED;
 
-let synthesizer: WSSynthesizer | null = null;
-if (SYNTH_ENABLED) {
-  // Deterministic seed: env override → default 1. Documented in the
-  // synthesizer module + the README so a reported demo session is
-  // reproducible.
-  const seedEnv = process.env.WS_SYNTHESIZE_SEED;
-  const seed = seedEnv !== undefined ? Number(seedEnv) : undefined;
-  synthesizer = new WSSynthesizer({
-    registry: wsRegistry,
-    snapshotCache,
-    ...(seed !== undefined && !Number.isNaN(seed) ? { seed } : {}),
-  });
-}
-export { synthesizer };
-
 /**
  * Worker pipeline singleton (Task 1.5). Constructed only when
  * `WORKER_PIPELINE_ENABLED=1`. Holds the BridgeClient connection to
@@ -221,6 +206,30 @@ export const workerPipeline = WORKER_PIPELINE_ENABLED
       snapshotCache,
     })
   : null;
+
+let synthesizer: WSSynthesizer | null = null;
+if (SYNTH_ENABLED) {
+  // Deterministic seed: env override → default 1. Documented in the
+  // synthesizer module + the README so a reported demo session is
+  // reproducible.
+  const seedEnv = process.env.WS_SYNTHESIZE_SEED;
+  const seed = seedEnv !== undefined ? Number(seedEnv) : undefined;
+  synthesizer = new WSSynthesizer({
+    registry: wsRegistry,
+    snapshotCache,
+    ...(seed !== undefined && !Number.isNaN(seed) ? { seed } : {}),
+    // Offline cell-producing path: when the worker pipeline is also
+    // enabled (WS_SYNTHESIZE=1 + WORKER_PIPELINE_ENABLED=1 +
+    // BINANCE_WS_ENABLED=0), the synthesizer feeds its ticks INTO the
+    // Rust worker so the full bridge loop produces cells without a live
+    // Binance feed. The synthesizer suppresses its own cell emission in
+    // this mode (the worker becomes the cell authority). When the
+    // pipeline is null, the synthesizer keeps its self-contained
+    // behaviour (emits ticks AND cells directly; bridge not in loop).
+    ...(workerPipeline !== null ? { workerPipeline } : {}),
+  });
+}
+export { synthesizer };
 
 /**
  * Binance ingestor singleton (Task 1.3 + Task 1.5). Constructed only

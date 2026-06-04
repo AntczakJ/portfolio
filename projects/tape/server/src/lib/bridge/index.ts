@@ -23,7 +23,7 @@ export { Backoff } from './backoff';
 export { decode, encode } from './codec';
 export { encodeFrame, FrameReader } from './frame';
 export type { FrameReaderOptions } from './frame';
-export { defaultBridgePath, isPipe } from './path';
+export { defaultBridgePath, isPipe, normalizeBridgePath } from './path';
 export { BridgeClient } from './client';
 export type { BridgeClientOptions, BridgeClientState } from './client';
 export { WorkerSupervisor } from './supervisor';
