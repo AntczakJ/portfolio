@@ -4,7 +4,7 @@
 
 ## State
 
-- **Projects:** 4 (`tape` — implement phase Phase 3.2 landed; `meld` — v1 shipped, demo live at https://meld-demo.fly.dev; `razors-edge` — built 2026-06-03, web-only dark-luxe barbershop showcase, reviewer GREEN, 53 unit + 18 E2E pass, not yet deployed; `pulse` — planned 2026-06-03, api-heavy NestJS uptime monitor, slot 4, handed to architect for Phase 0 ADRs)
+- **Projects:** 4 (`tape` — implement phase Phase 3.2 landed; `meld` — v1 shipped, demo live at https://meld-demo.fly.dev; `razors-edge` — built 2026-06-03, web-only dark-luxe barbershop showcase, reviewer GREEN, 53 unit + 18 E2E pass, not yet deployed; `pulse` — v1 shipped + deployed 2026-06-04, api-heavy NestJS uptime monitor, slot 4, demo live at https://pulse-demo-web.fly.dev)
 - **Scaffold:** done (2026-05-28)
 - **CI:** green on empty repo (placeholder workflows)
 - **First commit:** pending owner ACK
