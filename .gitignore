@@ -44,3 +44,6 @@ Thumbs.db
 
 # Lighthouse CI local output
 .lighthouseci/
+
+# Per-project scratch review artifacts (screenshots + capture scripts)
+**/.review/

@@ -14,6 +14,7 @@ export default tseslint.config(
       '**/coverage/**',
       '**/playwright-report/**',
       '**/test-results/**',
+      '**/.review/**',
       '**/*.min.js',
       '**/*.min.css',
       // Next.js generates `next-env.d.ts` on every build and gitignores it. It
@@ -35,11 +36,12 @@ export default tseslint.config(
       // does not fail on them with a "not found by the project service" parse
       // error.
       '**/scripts/**',
-      // Vitest config files live at each web package root, outside that
-      // package's tsconfig include, so the type-aware project service rejects
-      // them with the same "not found by the project service" parse error.
-      // They are build-tool config, not authored app source.
+      // Build-tool config files (vitest, drizzle-kit) live at a package root
+      // outside that package's tsconfig include, so the type-aware project
+      // service rejects them with a "not found by the project service" parse
+      // error. They are build-tool config, not authored app source.
       '**/vitest.config.{ts,mts}',
+      '**/drizzle.config.{ts,mts}',
     ],
   },
   js.configs.recommended,
@@ -75,5 +77,15 @@ export default tseslint.config(
       },
     },
     ...tseslint.configs.disableTypeChecked,
+  },
+  {
+    // NestJS module/controller classes are decorator-only by framework
+    // design (an `@Module({...})` class legitimately has no members), which
+    // `no-extraneous-class` flags. Disable it for the Nest server so the
+    // strict monorepo config does not fight the framework idiom.
+    files: ['projects/pulse/server/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-extraneous-class': 'off',
+    },
   },
 );
