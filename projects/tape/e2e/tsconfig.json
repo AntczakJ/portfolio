@@ -1,0 +1,24 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node"],
+    "noEmit": true,
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@helpers/*": ["helpers/*"]
+    },
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "preserve"
+  },
+  "include": [
+    "playwright.config.ts",
+    "tests/**/*.ts",
+    "helpers/**/*.ts",
+    "fixtures/**/*.ts",
+    "env.d.ts"
+  ],
+  "exclude": ["node_modules", "playwright-report", "test-results"]
+}
