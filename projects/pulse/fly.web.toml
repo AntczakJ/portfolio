@@ -14,7 +14,7 @@
 # "deploy from the project dir" lesson that avoids the flyctl first-deploy
 # "No machines configured" quirk).
 
-app = 'pulse-web'
+app = 'pulse-demo-web'
 primary_region = 'fra'
 
 [build]
@@ -33,19 +33,19 @@ primary_region = 'fra'
   # into the client bundle); mirrored here as defence-in-depth + an audit signal
   # in `flyctl status`, and honoured by the server-side reads (metadataBase,
   # sitemap, robots, OG, JSON-LD).
-  NEXT_PUBLIC_API_URL = 'https://pulse-demo.fly.dev'
-  NEXT_PUBLIC_SSE_URL = 'https://pulse-demo.fly.dev'
-  NEXT_PUBLIC_SITE_URL = 'https://pulse-demo.fly.dev'
+  NEXT_PUBLIC_API_URL = 'https://pulse-demo-web.fly.dev'
+  NEXT_PUBLIC_SSE_URL = 'https://pulse-demo-web.fly.dev'
+  NEXT_PUBLIC_SITE_URL = 'https://pulse-demo-web.fly.dev'
   NEXT_PUBLIC_DEMO_STATUS_SLUG = 'demo'
   # NOTE on API_PROXY_TARGET: Next BAKES the `rewrites()` destination into the
   # routing manifest at BUILD time, so the effective proxy target is the
-  # Dockerfile.web `ARG API_PROXY_TARGET` (default http://pulse-api.internal:3080,
+  # Dockerfile.web `ARG API_PROXY_TARGET` (default http://pulse-demo-api.internal:3080,
   # Fly's private 6PN DNS — `pulse-api.internal` resolves to the api app's
   # machines). The default is already correct for this topology, so no build-arg
   # override is needed. This [env] entry is documentation/defence-in-depth only
   # (it does NOT re-point the already-baked rewrite). If the api app is ever
   # RENAMED, rebuild pulse-web with `--build-arg API_PROXY_TARGET=http://<new>.internal:3080`.
-  API_PROXY_TARGET = 'http://pulse-api.internal:3080'
+  API_PROXY_TARGET = 'http://pulse-demo-api.internal:3080'
 
 [http_service]
   internal_port = 3000

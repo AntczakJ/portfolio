@@ -19,7 +19,7 @@
 # pulse-web is a SEPARATE app (fly.web.toml) that reverse-proxies this API so
 # the browser is single-origin (cookie-auth SSE — ADR-003/ADR-007).
 
-app = 'pulse-api'
+app = 'pulse-demo-api'
 primary_region = 'fra'
 
 [build]
@@ -54,7 +54,7 @@ primary_region = 'fra'
   # API's OWN public host (NOT an ngrok hostname, NOT loopback) — the demo
   # monitor probes pulse-api directly. (If you front the demo via the pulse-web
   # proxy instead, set DEMO_FLAKY_URL to https://pulse-demo.fly.dev/demo/flaky.)
-  PUBLIC_API_ORIGIN = 'https://pulse-api.fly.dev'
+  PUBLIC_API_ORIGIN = 'https://pulse-demo-api.fly.dev'
   # The recruiter-facing demo trigger stays ENABLED on the demo (the wow). Set
   # to 'false' to disable /demo/* entirely in a locked-down environment.
   DEMO_TRIGGER_ENABLED = 'true'
@@ -63,7 +63,7 @@ primary_region = 'fra'
   # API), so the SSE request arrives same-origin from pulse-web's perspective —
   # but better-auth's trustedOrigins + this allowlist still gate the public
   # web origin. Set to the pulse-web public origin.
-  CORS_ORIGINS = 'https://pulse-demo.fly.dev'
+  CORS_ORIGINS = 'https://pulse-demo-web.fly.dev'
 
 # --- web process: the public HTTP + SSE surface ---
 [http_service]

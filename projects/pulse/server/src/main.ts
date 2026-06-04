@@ -10,8 +10,9 @@ import { COMMIT_SHA } from './lib/commit';
 /**
  * pulse-server entrypoint (Task 1.1).
  *
- * Binds 0.0.0.0:PORT (required so the Fly machine / a container can reach it,
- * not just localhost). Enables Nest shutdown hooks so the DbModule /
+ * Binds [::]:PORT (dual-stack: IPv6 for Fly's private 6PN app-to-app network
+ * plus IPv4-mapped, so both the public service and pulse-web's reverse proxy
+ * reach it). Enables Nest shutdown hooks so the DbModule /
  * RedisModule drain their pools on SIGTERM/SIGINT (graceful queue drain
  * lands with the worker in Phase 2; the connection drain is wired today).
  */
@@ -55,10 +56,17 @@ async function bootstrap(): Promise<void> {
     allowedHeaders: ['Content-Type', 'Authorization', 'Last-Event-ID'],
   });
 
-  await app.listen(port, '0.0.0.0');
+  // Bind dual-stack (`::`) rather than `0.0.0.0`. Fly's private 6PN network
+  // (app-to-app `*.internal` DNS) is IPv6, so pulse-web's reverse proxy reaches
+  // pulse-api at `web.process.pulse-demo-api.internal:PORT` over IPv6 — an
+  // IPv4-only `0.0.0.0` bind refuses that connection (ECONNREFUSED) even though
+  // the public fly-proxy path works. `::` accepts both IPv6 and IPv4-mapped
+  // connections (Linux dual-stack), so both the public service and the private
+  // proxy reach the server.
+  await app.listen(port, '::');
 
   new Logger('Bootstrap').log(
-    `pulse-server (commit ${COMMIT_SHA}) listening on http://0.0.0.0:${String(port)} ` +
+    `pulse-server (commit ${COMMIT_SHA}) listening on http://[::]:${String(port)} ` +
       `[env=${config.nodeEnv}]`,
   );
 }
