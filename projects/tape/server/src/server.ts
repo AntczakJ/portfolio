@@ -17,6 +17,7 @@ import {
 import { getBinanceIngestor } from './lib/ingest/binance-ingestor';
 import { getRetentionScheduler } from './lib/ingest/retention-scheduler';
 import { getTickWriter } from './lib/ingest/tick-writer';
+import { replayRoutes } from './lib/replay/route';
 import {
   HeartbeatLoop,
   WSSynthesizer,
@@ -50,10 +51,11 @@ import { type WSFrame } from './lib/schemas/ws';
  *   - Task 1.4b: bridge serialization tooling + ts-rs codegen pipeline.
  *   - Task 1.4a: bridge transport scaffold + `/health.worker` observability.
  *   - Task 1.6b: WS fan-out endpoint + `/health.ws` observability.
+ *   - Task 1.7: historic replay routes (`GET /api/replay/:symbol/:date`
+ *     NDJSON cell stream + `GET /api/replay/:symbol/:date/ticks` bounded
+ *     tick-tail window), Postgres-only read path per ADR-005.
  *
- * Binance ingestion (1.3), aggregator (1.4), Rust worker (1.5),
- * replay (1.7), and auth (1.8) are subsequent tasks — do not
- * pre-implement.
+ * Auth (1.8) is a subsequent task — do not pre-implement.
  *
  * ADR-004 + Task 1.4a: the supervisor singleton below is constructed at
  * boot but is NOT started by `app.listen()`. Task 1.5 owns the spawn
@@ -324,6 +326,14 @@ export const app = new Elysia()
       },
     }),
   )
+  /**
+   * Historic replay routes (Task 1.7, ADR-005). Mounted before `/health`
+   * and the catch-all so `GET /api/replay/...` is served by the
+   * NDJSON-streaming handler rather than proxied to Next.js. Replay reads
+   * Postgres only (`footprint_cells` + `ticks`) — the offline-safe half
+   * of ADR-005's live/replay read-split.
+   */
+  .use(replayRoutes)
   .get('/health', async (): Promise<HealthResponse> => {
     // `pingDb` tolerates a missing DATABASE_URL by design — `/health`
     // must answer on a fresh checkout. The rest of the app does not.
@@ -500,8 +510,8 @@ export const app = new Elysia()
     },
   })
   // Catch-all proxy: forward any HTTP request not handled above
-  // (everything except /health, /swagger, /ws/stream) to the
-  // co-located Next.js standalone server on localhost:3000.
+  // (everything except /health, /swagger, /ws/stream, /api/replay/*) to
+  // the co-located Next.js standalone server on localhost:3000.
   // Production deploy collapses both processes behind a single
   // external port — Fly only routes 443 to one internal port, so
   // the server takes the role of edge reverse proxy.

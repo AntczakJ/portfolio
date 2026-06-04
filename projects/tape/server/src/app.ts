@@ -49,3 +49,20 @@ export type {
   WSTickPayload,
   WSTopic,
 } from './lib/schemas/ws';
+
+/**
+ * Replay NDJSON line types (Task 1.7 / ADR-005).
+ *
+ * The replay routes (`GET /api/replay/:symbol/:date` and its `/ticks`
+ * sibling) return a chunked NDJSON body — bytes to the client, NOT an
+ * Eden-Treaty-typed JSON response. So the *per-line* shape does not flow
+ * through the inferred `App` type the way an HTTP JSON route would; the
+ * browser replay reducer (Task 3.6) parses each line itself. Re-exporting
+ * the line types here gives `tape-web` a stable import path
+ * (`import type { ReplayCellRow } from 'tape-server'`) so 3.6 types its
+ * `JSON.parse(line) as ReplayCellRow` against the server's single source
+ * of truth — same pattern as the WS frame types above, for the same
+ * reason (the body is a byte stream outside Eden Treaty's HTTP lane).
+ */
+export type { ReplayCellRow } from './lib/schemas/replay/cell';
+export type { ReplayTickRow } from './lib/schemas/replay/tick';
