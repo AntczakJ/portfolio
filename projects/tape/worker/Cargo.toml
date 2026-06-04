@@ -44,3 +44,9 @@ anyhow = "1"
 
 [dev-dependencies]
 pretty_assertions = "1"
+# Task 1.5e: the aggregator-conformance integration test parses the
+# shared `*.input.json` / `*.expected.json` fixtures (authored canonically
+# by the TS generator `server/scripts/gen-aggregator-fixtures.ts`) and
+# asserts the Rust aggregator's CVD / deltas / closes match. JSON only —
+# CVD is OFF the bridge per ADR-008, so it never touches rmp-serde / ts-rs.
+serde_json = "1"

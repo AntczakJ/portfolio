@@ -72,6 +72,7 @@
  * runtime bug in this glue does not kill the WebSocket connection.
  */
 
+import { timeBucket } from '../aggregator/bucketing';
 import type { BinanceAggTrade } from '../schemas/binance/agg-trade';
 import { getRegistry, type WSConnectionRegistry } from '../ws/connections';
 import { getSnapshotCache, type SnapshotCache } from '../ws/snapshot-cache';
@@ -285,7 +286,12 @@ export class BinanceIngestor {
     // (Task 1.5) will overwrite this with its authoritative open-bar
     // timestamp once it lands; until then, the wall-clock bucket of
     // the most recent tick is the right approximation.
-    const bucketTs = event.T - (event.T % 60_000);
+    //
+    // Delegates to the shared `timeBucket` helper (ADR-007 single source
+    // of truth) — identical output to the previous
+    // `event.T - (event.T % 60_000)` for non-negative epoch-ms, no
+    // behaviour change, one bucketing definition.
+    const bucketTs = timeBucket(event.T);
     this.#snapshotCache.update(INGEST_SYMBOL, {
       symbol: INGEST_SYMBOL,
       currentBarTs: bucketTs,

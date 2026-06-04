@@ -22,16 +22,17 @@
  *   - 1-minute time buckets (`TIME_BUCKET_MS = 60_000`).
  *   - $5 price buckets on BTC-PERP (`PRICE_BUCKET_USD = 5`).
  *
- * These are the values the existing Rust worker already commits to
- * (`worker/src/bucketing.rs`), the synthesizer already commits to
- * (`lib/ws/synthesizer.ts` — `SYNTH_PRICE_BUCKET_WIDTH = 5`, 60_000 ms
- * buckets), and the ingest snapshot-cache path already commits to
- * (`binance-ingestor.ts` — `event.T - (event.T % 60_000)`). This module
- * does NOT invent a new magic number; it names and documents the value
- * the rest of the codebase already assumed implicitly. The bar-interval
- * / tick-size choice is flagged in AGENT_NOTES as a candidate for a
- * ratifying architect ADR (it is currently asserted in three places
- * with no single ADR owning it).
+ * These are the values the Rust worker commits to
+ * (`worker/src/bucketing.rs`). Per ADR-007 (single source of truth) the
+ * synthesizer (`lib/ws/synthesizer.ts`) and the ingest snapshot-cache
+ * path (`binance-ingestor.ts`) no longer hard-code `5` / `60_000`
+ * inline — they import `priceBucket` / `timeBucket` / `TIME_BUCKET_MS`
+ * from THIS module (Task 1.4c). The four-way duplication ADR-007 called
+ * out is now collapsed to two irreducible literals (one per language —
+ * here and in `bucketing.rs`) guarded by the Task 5.2 conformance
+ * assertion. Do NOT re-inline `5` or `60_000` as bucketing math anywhere
+ * else; that would defeat the guard, which only watches these two named
+ * declarations.
  *
  * **v2 multi-symbol note.** When ETH-PERP / SOL-PERP land in v2, replace
  * the flat `PRICE_BUCKET_USD` constant with a per-symbol lookup

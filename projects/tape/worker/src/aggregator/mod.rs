@@ -29,6 +29,37 @@
 //!   - `Aggressor::Sell` → taker sold into the maker bid → cell's
 //!                          **bid_volume** increases.
 //!
+//! ## CVD (Task 1.5e, ADR-008)
+//!
+//! CVD (cumulative volume delta) lives in the pure aggregator on BOTH
+//! sides, computed identically, conformance-checked, but stays OFF the
+//! WS wire. Per closed bar:
+//!   - `bar_delta = ask_volume − bid_volume` summed over the bar's cells
+//!     (net aggressive buying; the SAME `ask − bid` operand order as the
+//!     TS reference `core.ts`).
+//!   - `cvd`       = running per-symbol cumulative of `bar_delta`,
+//!     stepped exactly once per closed bar.
+//!
+//! **Determinism (the load-bearing constraint).** To stay byte-identical
+//! with `core.ts` on the conformance fixtures the fold order must mirror
+//! the TS reference exactly:
+//!   1. Expired cells are drained in `(symbol, bucket_ts, price_bucket)`
+//!      sorted order (mirrors `core.ts`'s sorted `expiredKeys`) so the
+//!      within-bar `bar_delta` accumulation order matches. Our `open`
+//!      map is a `HashMap` with no insertion order, so the sort is what
+//!      makes the close emission AND the f64 accumulation reproducible.
+//!   2. Bars are folded into the running CVD in `(symbol, bucket_ts)`
+//!      sorted order (mirrors `core.ts` line ~293). Same-order IEEE-754
+//!      `f64` addition is bit-identical between Rust and V8, so this
+//!      yields byte-identical `cvd` values, not merely close ones.
+//! Do NOT "optimise" by folding in HashMap-iteration order — that
+//! reintroduces a last-ULP divergence the conformance fixtures catch.
+//!
+//! CVD is exposed as a sibling return value of `close_expired_with_cvd`
+//! / `drain_all_with_cvd` and as the queryable `cvd(symbol)` getter — it
+//! is NOT a new `OutboundFrame` / `BridgeFrame` variant (ADR-008: CVD
+//! does not go on the bridge or the WS wire).
+//!
 //! The aggregator emits ONE `CellDelta` per `on_tick` call: the worker's
 //! coalescing happens implicitly because we sum into the open cell
 //! before emitting. A reviewer occasionally proposes "emit one delta
@@ -84,6 +115,30 @@ pub enum OutboundFrame {
     Close(CellClose),
 }
 
+/// Per-bar delta + running CVD rollup — Task 1.5e (ADR-008).
+///
+/// The Rust mirror of the TS `CvdRollup` (`aggregator/types.ts`). It is a
+/// SIBLING value of the close frames, NOT a bridge / WS frame: ADR-008
+/// keeps CVD off the wire in v1, so this type deliberately does NOT derive
+/// `TS` and is NOT a `BridgeFrame` variant. It is the conformance
+/// reference (vs `core.ts`), the replay source of truth, and a reserved
+/// (un-built) v2 wire promotion.
+///
+///  - `symbol`    — the symbol the bar belongs to.
+///  - `bucket_ts` — start of the closed bar.
+///  - `bar_delta` — net aggressive flow for the bar
+///    = `Σ (ask_volume − bid_volume)` over the bar's cells. Positive =
+///    net aggressive buying, negative = net aggressive selling.
+///  - `cvd`       — cumulative volume delta = running sum of `bar_delta`
+///    across closed bars for this symbol, INCLUDING this bar.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CvdRollup {
+    pub symbol: String,
+    pub bucket_ts: i64,
+    pub bar_delta: f64,
+    pub cvd: f64,
+}
+
 /// The aggregator's state.
 ///
 /// `open` — currently-open bars across all symbols, keyed by
@@ -103,6 +158,11 @@ pub struct Aggregator {
     open: HashMap<CellKey, CellState>,
     session_extreme: HashMap<String, u32>,
     ticks_processed: u64,
+    /// Per-symbol running cumulative volume delta (sum of closed
+    /// `bar_delta`). Mirrors the TS `#cvd` map. Steps on bar CLOSE, not
+    /// on tick arrival — `0.0` for a symbol whose first bar has not
+    /// closed yet. Off the wire per ADR-008; queryable via `cvd(symbol)`.
+    cvd: HashMap<String, f64>,
 }
 
 impl Aggregator {
@@ -171,10 +231,34 @@ impl Aggregator {
     /// `OutboundFrame::Close`. Session extremes are NOT cleared at bar
     /// boundary — they live for the lifetime of the aggregator, per
     /// the renderer's expectation.
+    ///
+    /// This is the back-compat wrapper the live worker binary calls — it
+    /// still updates the per-symbol CVD as a side effect (CVD must
+    /// advance on every close so `cvd(symbol)` stays correct) but
+    /// discards the rollup vector. Use `close_expired_with_cvd` when the
+    /// rollups themselves are needed (fixture replay, conformance).
     pub fn close_expired(&mut self, now_ms: i64) -> Vec<OutboundFrame> {
-        // Collect keys to drain first so we do not mutate the map
-        // while iterating it.
-        let expired_keys: Vec<CellKey> = self
+        self.close_expired_with_cvd(now_ms).0
+    }
+
+    /// Emit `cell.close` for every expired cell AND the per-bar CVD
+    /// rollups, advancing the running per-symbol CVD.
+    ///
+    /// **Fold order (the byte-identity contract with `core.ts`).**
+    ///   1. Expired keys are sorted by `(symbol, bucket_ts, price_bucket)`
+    ///      before draining, so both the `cell.close` emission order and
+    ///      the within-bar `bar_delta` accumulation order match the TS
+    ///      reference exactly (which sorts its `expiredKeys` the same way).
+    ///   2. Per-bar deltas are keyed by `(symbol, bucket_ts)` and folded
+    ///      into the running CVD in `(symbol, bucket_ts)` sorted order,
+    ///      mirroring `core.ts`. The `ask − bid` subtraction operand
+    ///      order and the `running + bar_delta` addition order are
+    ///      identical to TS, so the resulting `f64` CVD is bit-identical.
+    pub fn close_expired_with_cvd(
+        &mut self,
+        now_ms: i64,
+    ) -> (Vec<OutboundFrame>, Vec<CvdRollup>) {
+        let mut expired_keys: Vec<CellKey> = self
             .open
             .iter()
             .filter(|(key, _)| {
@@ -183,23 +267,45 @@ impl Aggregator {
             })
             .map(|(key, _)| key.clone())
             .collect();
+        // Deterministic drain order — mirrors `core.ts`'s sorted
+        // `expiredKeys`. Without this the HashMap iteration order would
+        // make both the close sequence and the f64 fold non-reproducible.
+        expired_keys.sort_by(|a, b| {
+            a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2))
+        });
 
         let mut frames = Vec::with_capacity(expired_keys.len());
+        // Per-bar `(symbol, bucket_ts) -> bar_delta`. We keep insertion
+        // order via a parallel key vec so the subsequent sort is total
+        // and stable, matching the TS `Map` + sort.
+        let mut bar_order: Vec<(String, i64)> = Vec::new();
+        let mut bar_deltas: HashMap<(String, i64), f64> = HashMap::new();
+
         for key in expired_keys {
             if let Some(cell) = self.open.remove(&key) {
                 let (symbol, bucket_ts, price_bk) = key;
                 frames.push(OutboundFrame::Close(CellClose {
                     ts_ms: cell.last_ts_ms,
-                    symbol,
+                    symbol: symbol.clone(),
                     bucket_ts,
                     price_bucket: price_bk,
                     bid_volume: cell.bid_volume_total,
                     ask_volume: cell.ask_volume_total,
                     trades: cell.trades_total,
                 }));
+
+                let bar_key = (symbol, bucket_ts);
+                let entry = bar_deltas.entry(bar_key.clone()).or_insert_with(|| {
+                    bar_order.push(bar_key.clone());
+                    0.0
+                });
+                // SAME operand order as `core.ts`: ask − bid.
+                *entry += cell.ask_volume_total - cell.bid_volume_total;
             }
         }
-        frames
+
+        let cvd = self.fold_cvd(bar_order, &bar_deltas);
+        (frames, cvd)
     }
 
     /// Drain every currently-open cell as a `cell.close` frame, leaving
@@ -207,22 +313,53 @@ impl Aggregator {
     /// SIGTERM — every in-flight bar is published as an absolute total
     /// so the supervisor / WS clients see a clean checkpoint instead of
     /// a silent end-of-stream.
+    ///
+    /// Back-compat wrapper for the worker binary — advances CVD as a side
+    /// effect and discards the rollups. Equivalent in effect to
+    /// `close_expired_with_cvd(i64::MAX)` (every open bar is past), but
+    /// named for intent.
     pub fn drain_all(&mut self) -> Vec<OutboundFrame> {
-        let mut frames = Vec::with_capacity(self.open.len());
-        let drained: Vec<(CellKey, CellState)> = self.open.drain().collect();
-        for (key, cell) in drained {
-            let (symbol, bucket_ts, price_bk) = key;
-            frames.push(OutboundFrame::Close(CellClose {
-                ts_ms: cell.last_ts_ms,
+        self.drain_all_with_cvd().0
+    }
+
+    /// Drain every open cell AND return the per-bar CVD rollups, advancing
+    /// the running per-symbol CVD. Same fold-order contract as
+    /// `close_expired_with_cvd` — every remaining open bar is closed
+    /// regardless of `now_ms`, in `(symbol, bucket_ts, price_bucket)`
+    /// sorted order, folded by `(symbol, bucket_ts)`.
+    pub fn drain_all_with_cvd(&mut self) -> (Vec<OutboundFrame>, Vec<CvdRollup>) {
+        // i64::MAX guarantees every open bar is "expired". Reusing
+        // `close_expired_with_cvd` keeps the fold order identical to the
+        // timed path — one code path, one ordering, no divergence.
+        self.close_expired_with_cvd(i64::MAX)
+    }
+
+    /// Fold the accumulated per-bar deltas into the running per-symbol
+    /// CVD in `(symbol, bucket_ts)` sorted order (mirrors `core.ts`).
+    fn fold_cvd(
+        &mut self,
+        mut bar_order: Vec<(String, i64)>,
+        bar_deltas: &HashMap<(String, i64), f64>,
+    ) -> Vec<CvdRollup> {
+        // Sort the bars by (symbol, bucket_ts) — the TS reference sorts
+        // its `barDeltas.values()` the same way before the running fold.
+        bar_order.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        let mut rollups = Vec::with_capacity(bar_order.len());
+        for (symbol, bucket_ts) in bar_order {
+            let bar_delta = bar_deltas
+                .get(&(symbol.clone(), bucket_ts))
+                .copied()
+                .unwrap_or(0.0);
+            let running = self.cvd.get(&symbol).copied().unwrap_or(0.0) + bar_delta;
+            self.cvd.insert(symbol.clone(), running);
+            rollups.push(CvdRollup {
                 symbol,
                 bucket_ts,
-                price_bucket: price_bk,
-                bid_volume: cell.bid_volume_total,
-                ask_volume: cell.ask_volume_total,
-                trades: cell.trades_total,
-            }));
+                bar_delta,
+                cvd: running,
+            });
         }
-        frames
+        rollups
     }
 
     /// Snapshot the open-bar state as a `SnapshotPayload`. The `ts_ms`
@@ -294,6 +431,16 @@ impl Aggregator {
     #[must_use]
     pub fn session_extreme(&self, symbol: &str) -> u32 {
         self.session_extreme.get(symbol).copied().unwrap_or(0)
+    }
+
+    /// Current running CVD for a symbol — the sum of every closed bar's
+    /// `bar_delta` so far. `0.0` for a symbol whose first bar has not
+    /// closed yet (CVD steps on bar CLOSE, not tick arrival). Mirrors the
+    /// TS `cvd(symbol)` getter. Off the wire per ADR-008 — this is the
+    /// conformance reference + replay source of truth.
+    #[must_use]
+    pub fn cvd(&self, symbol: &str) -> f64 {
+        self.cvd.get(symbol).copied().unwrap_or(0.0)
     }
 }
 
@@ -470,6 +617,69 @@ mod tests {
         assert_eq!(c.trades_delta, 2);
         assert_eq!(snap.ts_ms, 2_000);
         assert_eq!(snap.ticks_processed, 2);
+    }
+
+    #[test]
+    fn cvd_steps_per_closed_bar_and_reverses_on_sign_flip() {
+        // Mirrors the TS `cvd-reversal` fixture + suite invariant:
+        // bar 0 net BUYING (bar_delta > 0, CVD rises), bar 1 net SELLING
+        // (bar_delta < 0, CVD falls — the reversal), bar 2 net buying
+        // again (CVD rises). All quantities are exact dyadic rationals so
+        // the comparison is exact f64 equality, not epsilon.
+        let mut agg = Aggregator::new();
+        // Bar 0: ask 1.0, bid 0.25 -> bar_delta +0.75.
+        agg.on_tick(tick(1_000, "BTCUSDT-PERP", 71_000.0, 1.0, Aggressor::Buy));
+        agg.on_tick(tick(2_000, "BTCUSDT-PERP", 71_000.0, 0.25, Aggressor::Sell));
+        let (_f0, cvd0) = agg.close_expired_with_cvd(60_001);
+        assert_eq!(cvd0.len(), 1);
+        assert_eq!(cvd0[0].bar_delta, 0.75);
+        assert_eq!(cvd0[0].cvd, 0.75);
+        assert_eq!(agg.cvd("BTCUSDT-PERP"), 0.75);
+
+        // Bar 1: ask 0.25, bid 1.0 -> bar_delta -0.75 (reversal). CVD
+        // returns to exactly 0.0.
+        agg.on_tick(tick(61_000, "BTCUSDT-PERP", 71_005.0, 0.25, Aggressor::Buy));
+        agg.on_tick(tick(62_000, "BTCUSDT-PERP", 71_005.0, 1.0, Aggressor::Sell));
+        let (_f1, cvd1) = agg.close_expired_with_cvd(120_001);
+        assert_eq!(cvd1.len(), 1);
+        assert_eq!(cvd1[0].bar_delta, -0.75);
+        assert_eq!(cvd1[0].cvd, 0.0);
+        assert_eq!(agg.cvd("BTCUSDT-PERP"), 0.0);
+
+        // Bar 2: ask 0.5, bid 0.0 -> bar_delta +0.5. CVD rises again.
+        agg.on_tick(tick(121_000, "BTCUSDT-PERP", 71_010.0, 0.5, Aggressor::Buy));
+        let (_f2, cvd2) = agg.close_expired_with_cvd(180_001);
+        assert_eq!(cvd2.len(), 1);
+        assert_eq!(cvd2[0].bar_delta, 0.5);
+        assert_eq!(cvd2[0].cvd, 0.5);
+        assert_eq!(agg.cvd("BTCUSDT-PERP"), 0.5);
+    }
+
+    #[test]
+    fn cvd_is_zero_before_first_close_and_skips_empty_bars() {
+        let mut agg = Aggregator::new();
+        // No close yet — CVD is 0.0 even though ticks have arrived.
+        agg.on_tick(tick(1_000, "BTCUSDT-PERP", 71_000.0, 1.0, Aggressor::Buy));
+        assert_eq!(agg.cvd("BTCUSDT-PERP"), 0.0);
+        // Close bar 0 -> one rollup. Bar 1 is empty (no ticks): a sweep
+        // that crosses it emits no extra rollup — CVD steps only on bars
+        // that traded.
+        let (_f, cvd) = agg.close_expired_with_cvd(120_001);
+        assert_eq!(cvd.len(), 1);
+        assert_eq!(cvd[0].bucket_ts, 0);
+        assert_eq!(agg.cvd("BTCUSDT-PERP"), 1.0);
+    }
+
+    #[test]
+    fn drain_all_with_cvd_folds_remaining_bars() {
+        let mut agg = Aggregator::new();
+        agg.on_tick(tick(1_000, "BTCUSDT-PERP", 71_000.0, 1.0, Aggressor::Buy));
+        let (frames, cvd) = agg.drain_all_with_cvd();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(cvd.len(), 1);
+        assert_eq!(cvd[0].bar_delta, 1.0);
+        assert_eq!(cvd[0].cvd, 1.0);
+        assert_eq!(agg.cells_open(), 0);
     }
 
     #[test]

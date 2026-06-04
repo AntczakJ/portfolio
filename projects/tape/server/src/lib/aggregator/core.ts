@@ -246,6 +246,17 @@ export class AggregatorCore {
   } {
     // Collect expired keys first so we do not mutate the map while
     // iterating it (mirrors the Rust collect-then-drain pattern).
+    //
+    // **Deterministic close order (Task 1.5e — Rust CVD conformance).**
+    // The expired keys are sorted by `(symbol, bucketTs, priceBucket)`
+    // before draining so the emitted `cell.close` sequence AND the
+    // within-bar `barDelta` fold order are identical regardless of the
+    // map's insertion order. This is the SAME ordering `snapshot()`
+    // already uses, and it is the order the Rust port (`close_expired`,
+    // backed by a `HashMap` that has no insertion order) must reproduce
+    // to stay byte-identical on the conformance fixtures. Without this
+    // sort the two languages would diverge on close order (and, for a
+    // bar with non-dyadic multi-cell volumes, on the last-ULP `barDelta`).
     const expiredKeys: string[] = [];
     for (const key of this.#open.keys()) {
       const bucketTs = this.#bucketTsFromKey(key);
@@ -253,6 +264,13 @@ export class AggregatorCore {
         expiredKeys.push(key);
       }
     }
+    expiredKeys.sort((a, b) => {
+      const ka = this.#decodeKey(a);
+      const kb = this.#decodeKey(b);
+      if (ka.symbol !== kb.symbol) return ka.symbol < kb.symbol ? -1 : 1;
+      if (ka.bucketTs !== kb.bucketTs) return ka.bucketTs - kb.bucketTs;
+      return ka.priceBucketIdx - kb.priceBucketIdx;
+    });
 
     const frames: OutboundFrame[] = [];
     // Accumulate per-bar delta keyed by `(symbol, bucketTs)`. Insertion

@@ -44,6 +44,11 @@
  * snapshot.
  */
 
+import {
+  priceBucket,
+  TIME_BUCKET_MS,
+  timeBucket,
+} from '../aggregator/bucketing';
 import { WS_SNAPSHOT_CELLS_PIN } from '../schemas/ws';
 
 import type { WSConnectionRegistry } from './connections';
@@ -54,9 +59,12 @@ const SYNTH_SYMBOL = 'BTCUSDT-PERP';
 
 /** $71,200 anchor — picked at synthesizer authoring time, arbitrary but stable. */
 const SYNTH_PRICE_ANCHOR = 71_200;
-/** Half-range of per-tick scatter around the moving anchor. ±$200 = 80 buckets. */
+/**
+ * Half-range of per-tick scatter around the moving anchor. ±$200 spans
+ * 80 price buckets at the canonical `$5` grid (the `PRICE_BUCKET_USD`
+ * value imported helpers in `aggregator/bucketing` apply).
+ */
 const SYNTH_PRICE_HALF_RANGE = 200;
-const SYNTH_PRICE_BUCKET_WIDTH = 5;
 /** Per-tick anchor drift (random walk). Keeps the chart visually alive. */
 const SYNTH_ANCHOR_DRIFT_STEP = 3;
 /** Bound for anchor drift from the seed anchor — prevents unbounded walk. */
@@ -67,7 +75,17 @@ const SYNTH_QTY_MAX = 0.5;
 
 export const SYNTH_TICK_INTERVAL_MS = 200;
 export const SYNTH_CELL_DELTA_INTERVAL_MS = 500;
-export const SYNTH_CELL_CLOSE_INTERVAL_MS = 60_000;
+/**
+ * Synthesizer close CADENCE — how often the `cell.close` timer fires.
+ * Bound to `TIME_BUCKET_MS` (not a bare literal) because the demo closes
+ * one bar per real-time bucket width: the cadence equals the grid by
+ * design. This is a timer period, semantically distinct from the
+ * bucketing grid that `timeBucket` / `priceBucket` own — they share the
+ * same numeric value but not the same meaning, so this stays a named
+ * synth constant rather than a third `timeBucket` call site. Aliasing it
+ * keeps ADR-007's "no fifth inline 60_000" rule honest.
+ */
+export const SYNTH_CELL_CLOSE_INTERVAL_MS = TIME_BUCKET_MS;
 
 /**
  * Default LCG seed — change `WS_SYNTHESIZE_SEED` to drive a
@@ -221,8 +239,12 @@ export class WSSynthesizer {
   }
 
   #bucketTsFor(tsMs: number): number {
-    // 1-minute bucket boundaries, UTC-aligned.
-    return tsMs - (tsMs % 60_000);
+    // 1-minute bucket boundaries, UTC-aligned. Delegates to the shared
+    // `timeBucket` helper (ADR-007 single source of truth) — identical
+    // output to the previous `tsMs - (tsMs % 60_000)` for non-negative
+    // epoch-ms (`Math.floor(tsMs / 60_000) * 60_000`), with the signed
+    // branch as defensive parity with the Rust port.
+    return timeBucket(tsMs);
   }
 
   #pickPriceBucket(price: number): number {
@@ -231,7 +253,9 @@ export class WSSynthesizer {
     // a USD-floored price here — that produced a unit mismatch with
     // the chart's `priceToY`, which expects INDEX-based math and
     // pushed every cell ~tens of thousands of pixels off-viewport.
-    return Math.floor(price / SYNTH_PRICE_BUCKET_WIDTH);
+    // Delegates to the shared `priceBucket` helper (ADR-007) — same
+    // `Math.floor(price / 5)` math, one source of truth.
+    return priceBucket(price);
   }
 
   #emitTick(): void {
@@ -393,7 +417,7 @@ export class WSSynthesizer {
     }
     this.#snapshotCache.resetCellsOpen(SYNTH_SYMBOL);
 
-    const nextBarTs = closingBucketTs + 60_000;
+    const nextBarTs = closingBucketTs + TIME_BUCKET_MS;
     this.#openBar = { bucketTs: nextBarTs, byPriceBucket: new Map() };
     this.#snapshotCache.update(SYNTH_SYMBOL, { currentBarTs: nextBarTs });
   }
