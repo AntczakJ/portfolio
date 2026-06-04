@@ -42,6 +42,16 @@ export default tseslint.config(
       // error. They are build-tool config, not authored app source.
       '**/vitest.config.{ts,mts}',
       '**/drizzle.config.{ts,mts}',
+      // tape-web is a self-contained Next.js package with its OWN complete
+      // ESLint toolchain (projects/tape/web/eslint.config.mjs extending
+      // next/core-web-vitals + next/typescript) and its OWN lint-staged entry
+      // (`pnpm -F tape-web lint`). The repo-root strictTypeChecked config CANNOT
+      // correctly lint it — tape-web source carries inline disables for rules
+      // that only exist in the Next config (e.g. react-hooks/exhaustive-deps),
+      // which the root config reports as "rule not found", and the Next config
+      // deliberately does not enforce several strictTypeChecked stylistic rules.
+      // Linting tape-web here is a double-gate bug; its own config is the gate.
+      'projects/tape/web/**',
     ],
   },
   js.configs.recommended,
