@@ -339,6 +339,140 @@ describe('FootprintChartEngine', () => {
     engine.stop();
   });
 
+  it('idles the rAF loop when there is no pending work, re-arms on a store change', () => {
+    // Drive a controllable rAF: capture each scheduled callback so the
+    // test can decide when (and whether) the next frame fires. This is
+    // the real loop behaviour the dirty-flag idle relies on — the global
+    // beforeEach stub returns a constant handle and never invokes the
+    // callback, so we override it locally here.
+    const pending: Array<() => void> = [];
+    rafSpy.mockRestore();
+    const localRaf = vi
+      .spyOn(globalThis, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        pending.push(() => {
+          cb(0);
+        });
+        return pending.length;
+      });
+    const runFrame = (): boolean => {
+      const next = pending.shift();
+      if (next === undefined) return false;
+      next();
+      return true;
+    };
+
+    const bridge = makeThemeBridge();
+    const store = makeStreamStore();
+    const canvas = makeCanvas();
+    const engine = new FootprintChartEngine(canvas, {
+      themeBridge: bridge,
+      streamStore: store,
+      prefersReducedMotion: false,
+    });
+    engine.handleResize(800, 600, 1);
+    engine.start();
+
+    // start() woke the loop: exactly one frame is queued.
+    expect(engine._testGetState().frameScheduled).toBe(true);
+    expect(pending.length).toBe(1);
+
+    // Run the initial paint frame. With nothing dirty and scroll settled,
+    // the loop must NOT re-schedule — it sleeps.
+    expect(runFrame()).toBe(true);
+    expect(engine._testGetState().dirty).toBe(false);
+    expect(engine._testGetState().frameScheduled).toBe(false);
+    expect(pending.length).toBe(0);
+
+    // Draining further does nothing — the loop is asleep.
+    expect(runFrame()).toBe(false);
+
+    // A store change wakes the loop: one frame is queued again.
+    store.setState((state) => ({
+      ...state,
+      recentTicks: [
+        ...state.recentTicks,
+        { tsMs: Date.now(), price: 71_000, qty: 0.1, aggressor: 'buy' },
+      ],
+    }));
+    expect(engine._testGetState().frameScheduled).toBe(true);
+    expect(pending.length).toBe(1);
+
+    // Run it; with no further change the loop idles again.
+    expect(runFrame()).toBe(true);
+    expect(engine._testGetState().frameScheduled).toBe(false);
+    expect(pending.length).toBe(0);
+
+    engine.stop();
+    localRaf.mockRestore();
+    // Re-install the constant stub the afterEach expects to restore.
+    rafSpy = vi
+      .spyOn(globalThis, 'requestAnimationFrame')
+      .mockImplementation(() => 1);
+  });
+
+  it('keeps the loop alive across frames while a scroll animation runs', () => {
+    const pending: Array<() => void> = [];
+    rafSpy.mockRestore();
+    const localRaf = vi
+      .spyOn(globalThis, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        pending.push(() => {
+          cb(0);
+        });
+        return pending.length;
+      });
+    const runFrame = (): boolean => {
+      const next = pending.shift();
+      if (next === undefined) return false;
+      next();
+      return true;
+    };
+
+    const bridge = makeThemeBridge();
+    const store = makeStreamStore();
+    const canvas = makeCanvas();
+    const engine = new FootprintChartEngine(canvas, {
+      themeBridge: bridge,
+      streamStore: store,
+      prefersReducedMotion: false, // smooth scroll => multi-frame animation
+    });
+    engine.handleResize(800, 600, 1);
+
+    // Seed history so a scroll target is reachable.
+    const closedCells = Array.from({ length: 100 }, (_, i) => ({
+      symbol: 'BTCUSDT-PERP',
+      bucketTs: 1_780_000_000_000 - i * 60_000,
+      priceBucket: 71_000,
+      bidVolume: 1,
+      askVolume: 1,
+      trades: 1,
+    }));
+    store.setState((state) => ({ ...state, closedCells }));
+
+    engine.start();
+    runFrame(); // initial paint, settles, idles
+
+    // Kick a scroll: the smooth follow must keep re-scheduling frames
+    // until it settles, NOT idle after one frame.
+    engine._testScrollBy(200);
+    expect(engine._testGetState().frameScheduled).toBe(true);
+    let frames = 0;
+    while (runFrame()) {
+      frames += 1;
+      if (frames > 200) break; // guard against an infinite loop on a bug
+    }
+    // The animation took more than one frame to settle, then idled.
+    expect(frames).toBeGreaterThan(1);
+    expect(engine._testGetState().frameScheduled).toBe(false);
+
+    engine.stop();
+    localRaf.mockRestore();
+    rafSpy = vi
+      .spyOn(globalThis, 'requestAnimationFrame')
+      .mockImplementation(() => 1);
+  });
+
   it('does NOT auto-snap when user has scrolled away from live', () => {
     const bridge = makeThemeBridge();
     const store = makeStreamStore();

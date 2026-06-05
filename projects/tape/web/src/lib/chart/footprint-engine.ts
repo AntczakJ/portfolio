@@ -157,6 +157,12 @@ export class FootprintChartEngine {
   #running = false;
   #dirty = true;
   #rafHandle: number | null = null;
+  // True while a rAF callback is scheduled. The loop idles itself when
+  // there is no pending work (not dirty + scroll settled) so a quiet
+  // market does not burn the main thread at 60 fps. Any input that flips
+  // `#dirty` — a store notification, a theme flip, a cursor/scroll move,
+  // a resize — calls `#wake()` to re-arm the loop. See `#tick`/`#wake`.
+  #frameScheduled = false;
   #viewport: Viewport = { x: 0, y: 0, w: 0, h: 0 };
   #dpr = 1;
 
@@ -252,12 +258,16 @@ export class FootprintChartEngine {
       this.#tokens = snap;
       this.#palette = derivePalette(snap);
       this.#dirty = true;
+      this.#wake();
     });
 
     // Subscribe ONCE to the stream store. Every notification flips
-    // `dirty`; the rAF loop decides whether to actually paint.
+    // `dirty` and wakes the loop; the rAF tick decides whether to
+    // actually paint. The wake is what lets the loop sleep between
+    // bursts — a quiet market produces no notifications, so no frames.
     this.#unsubscribeStore = this.#deps.streamStore.subscribe(() => {
       this.#dirty = true;
+      this.#wake();
     });
 
     // Wheel listener — direct-bind on the canvas to avoid passive
@@ -277,7 +287,7 @@ export class FootprintChartEngine {
     };
     this.#canvas.addEventListener('wheel', this.#onWheel, { passive: false });
 
-    this.#schedule();
+    this.#wake();
   }
 
   stop(): void {
@@ -287,6 +297,7 @@ export class FootprintChartEngine {
       cancelAnimationFrame(this.#rafHandle);
       this.#rafHandle = null;
     }
+    this.#frameScheduled = false;
     if (this.#unsubscribeTheme !== null) {
       this.#unsubscribeTheme();
       this.#unsubscribeTheme = null;
@@ -325,6 +336,7 @@ export class FootprintChartEngine {
     this.#ctx.scale(dpr, dpr);
     this.#viewport = { x: 0, y: 0, w: cssWidth, h: cssHeight };
     this.#dirty = true;
+    this.#wake();
   }
 
   /* -------------------------------------------------------------- *\
@@ -348,6 +360,7 @@ export class FootprintChartEngine {
     this.#cvdCanvas = canvas;
     this.#cvdCtx = ctx;
     this.#dirty = true;
+    this.#wake();
   }
 
   /**
@@ -379,6 +392,7 @@ export class FootprintChartEngine {
     }
     this.#cvdViewport = { x: 0, y: 0, w: cssWidth, h: cssHeight };
     this.#dirty = true;
+    this.#wake();
   }
 
   /* -------------------------------------------------------------- *\
@@ -406,6 +420,7 @@ export class FootprintChartEngine {
     this.#cursorPx = px;
     this.#recomputeCursorCell();
     this.#dirty = true;
+    this.#wake();
     this.#notifyCursorSubscribers();
   }
 
@@ -418,6 +433,7 @@ export class FootprintChartEngine {
     this.#cursorPx = null;
     this.#cursorCell = null;
     this.#dirty = true;
+    this.#wake();
     this.#notifyCursorSubscribers();
   }
 
@@ -464,18 +480,53 @@ export class FootprintChartEngine {
     if (this.#targetScrollX === next) return;
     this.#targetScrollX = next;
     this.#dirty = true;
+    this.#wake();
   }
 
   /* -------------------------------------------------------------- *\
      Render loop
   \* -------------------------------------------------------------- */
 
+  /**
+   * Re-arm the render loop if it is idle. Called by every input that
+   * produces pending work (store/theme notification, cursor or scroll
+   * move, resize). Cheap and idempotent — if a frame is already
+   * scheduled this is a no-op, so the hot path (a burst of store
+   * notifications within one frame) costs one boolean check per call.
+   *
+   * The loop's invariant: a rAF callback is scheduled IFF there is work
+   * to do. When `#tick` finds nothing pending it lets the loop sleep;
+   * the next `#wake()` restarts it. A quiet market — no ticks, no cursor
+   * movement, scroll settled — runs zero frames and spends zero main-
+   * thread time, which is what drops Lighthouse TBT on the live deploy.
+   */
+  #wake(): void {
+    if (!this.#running) return;
+    if (this.#frameScheduled) return;
+    this.#schedule();
+  }
+
+  /** True when the scroll animation has not yet reached its target. */
+  #scrollPending(): boolean {
+    return (
+      Math.abs(this.#targetScrollX - this.#currentScrollX) >= SCROLL_SETTLE_PX
+    );
+  }
+
   #schedule(): void {
     if (!this.#running) return;
+    this.#frameScheduled = true;
     this.#rafHandle = requestAnimationFrame(() => {
       this.#rafHandle = null;
+      this.#frameScheduled = false;
       this.#tick();
-      this.#schedule();
+      // Only keep the loop alive while there is pending work: a dirty
+      // flag still set (a paint that re-marked dirty, or a notification
+      // that landed mid-tick) or an in-flight scroll animation. Otherwise
+      // sleep until the next `#wake()`.
+      if (this.#dirty || this.#scrollPending()) {
+        this.#schedule();
+      }
     });
   }
 
@@ -840,6 +891,7 @@ export class FootprintChartEngine {
     this.#targetScrollX += dx;
     if (this.#targetScrollX < 0) this.#targetScrollX = 0;
     this.#dirty = true;
+    this.#wake();
   }
 
   /* -------------------------------------------------------------- *\
@@ -860,6 +912,8 @@ export class FootprintChartEngine {
       scrollSubscriberCount: this.#scrollSubscribers.size,
       cvdCanvasAttached: this.#cvdCanvas !== null,
       cvdViewport: this.#cvdViewport,
+      frameScheduled: this.#frameScheduled,
+      running: this.#running,
     };
   }
 

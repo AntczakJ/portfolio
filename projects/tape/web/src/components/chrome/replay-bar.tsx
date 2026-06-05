@@ -175,6 +175,14 @@ export function ReplayBar(): ReactNode {
       animate={{ height: isReplay ? BAR_HEIGHT_REPLAY : BAR_HEIGHT_LIVE }}
       initial={false}
       transition={transition}
+      // Reserve the resting height in CSS so the server-rendered box
+      // already occupies its final space. Motion's `animate` only sets
+      // the inline `height` AFTER mount (its effect runs post-paint), so
+      // without this the bar would briefly collapse from `auto` to the
+      // target on hydration and shift the chart above it (CLS). The style
+      // height matches the live resting height; Motion takes over the
+      // inline value identically on its first commit, so there is no jump.
+      style={{ height: BAR_HEIGHT_LIVE }}
       className="relative shrink-0 overflow-hidden border-t border-(--color-border) bg-(--color-surface)"
     >
       {/* Mode-change announcement for screen readers. Polite so it does

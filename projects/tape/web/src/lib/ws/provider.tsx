@@ -21,12 +21,58 @@
  * (rendered server-side initially) reads the store via the same
  * Zustand instance — `useSyncExternalStore` returns the default
  * snapshot on first paint until the provider hydrates the live state.
+ *
+ * **Deferred connect (perf — Task 5.4).** Opening the socket, decoding
+ * the snapshot frame through msgpackr, and seeding the store all run
+ * main-thread work. Doing that DURING the initial load → interactive
+ * window inflates Lighthouse Total Blocking Time for no UX benefit — the
+ * chart has nothing to paint before the first frame arrives anyway. So
+ * the connect is deferred behind `requestIdleCallback` (with a short
+ * `setTimeout` fallback for browsers without it, and a hard cap via the
+ * RIC `timeout` option). This moves the stream's main-thread cost just
+ * past the interactive window while still bringing the chart alive within
+ * ~1 s of load — the wow moment is preserved, it is NOT gated behind a
+ * user gesture. Reduced-motion has no bearing here; this is pure work
+ * scheduling, not animation.
  */
 import { useEffect, useRef, type ReactNode } from 'react';
 
 import { env } from '@/lib/env';
 import { useStreamStore } from '@/lib/stores/stream-store';
 import { WSStreamClient } from '@/lib/ws/client';
+
+/**
+ * Run `cb` once the browser is idle after first paint, capped so the
+ * chart never waits more than ~1 s to come alive. Returns a canceller.
+ * Uses `requestIdleCallback` when available (Chrome / Firefox) and falls
+ * back to a `setTimeout` on Safari, which has not shipped RIC.
+ */
+const CONNECT_IDLE_TIMEOUT_MS = 800;
+const CONNECT_FALLBACK_MS = 400;
+
+interface IdleCapableWindow {
+  requestIdleCallback?: (
+    cb: () => void,
+    opts?: { timeout: number },
+  ) => number;
+  cancelIdleCallback?: (handle: number) => void;
+}
+
+function deferToIdle(cb: () => void): () => void {
+  const w = window as Window & IdleCapableWindow;
+  if (typeof w.requestIdleCallback === 'function') {
+    const handle = w.requestIdleCallback(cb, {
+      timeout: CONNECT_IDLE_TIMEOUT_MS,
+    });
+    return () => {
+      w.cancelIdleCallback?.(handle);
+    };
+  }
+  const timer = window.setTimeout(cb, CONNECT_FALLBACK_MS);
+  return () => {
+    window.clearTimeout(timer);
+  };
+}
 
 interface WSStreamProviderProps {
   children?: ReactNode;
@@ -66,9 +112,18 @@ export function WSStreamProvider({
       },
     });
     clientRef.current = client;
-    client.connect();
+
+    // Defer the actual socket open past the interactive window. The
+    // client is constructed synchronously (so unmount during the idle
+    // wait still has a handle to close), but `connect()` — and the
+    // msgpackr decode work it triggers on the first snapshot — waits for
+    // idle. See the module docblock.
+    const cancelIdle = deferToIdle(() => {
+      client.connect();
+    });
 
     return () => {
+      cancelIdle();
       client.close('unmount');
       clientRef.current = null;
     };

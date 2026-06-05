@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import {
   Activity,
@@ -61,9 +61,26 @@ export function SideRail(): ReactNode {
   }, []);
 
   const width = railCollapsed ? RAIL_COLLAPSED_PX : RAIL_EXPANDED_PX;
-  const transition = reduceMotion
-    ? { duration: 0 }
-    : { duration: 0.22, ease: [0.33, 1, 0.68, 1] as const };
+
+  // First-commit guard. The rail width comes from a Zustand-persisted
+  // store (`tape-ui-v1`) that rehydrates from localStorage AFTER the
+  // first client render, and the tablet auto-collapse effect can flip it
+  // too. If Motion animated those first-frame corrections, the chart to
+  // the right would slide — Lighthouse scores that horizontal slide as
+  // layout shift (CLS). So the very first commit snaps width instantly
+  // (`duration: 0`); every user-driven toggle afterwards animates on the
+  // normal 220 ms curve. The CSS `style.width` below also reserves the
+  // SSR box so there is no `auto`→fixed jump before Motion's first
+  // commit.
+  const firstCommit = useRef(true);
+  useEffect(() => {
+    firstCommit.current = false;
+  }, []);
+
+  const transition =
+    reduceMotion || firstCommit.current
+      ? { duration: 0 }
+      : { duration: 0.22, ease: [0.33, 1, 0.68, 1] as const };
 
   return (
     <motion.aside
@@ -71,6 +88,7 @@ export function SideRail(): ReactNode {
       animate={{ width }}
       initial={false}
       transition={transition}
+      style={{ width }}
       className="hidden shrink-0 flex-col border-r border-(--color-border) bg-(--color-surface) md:flex"
       aria-label="Workspace navigation"
     >

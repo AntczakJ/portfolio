@@ -59,7 +59,12 @@ export function ApiStatus(): ReactNode {
           effective === 'offline' && 'bg-(--color-fg-subtle)',
         )}
       />
-      <span>{label}</span>
+      {/* Fixed min-width so the label swap (Checking API → API online /
+          API offline) does not reflow the top-bar cluster after the
+          health probe resolves — a post-paint width change here would
+          register as layout shift (CLS). The widest label is
+          "Checking API"; 5.5rem covers it at the mono 12px size. */}
+      <span className="inline-block min-w-[5.5rem]">{label}</span>
     </div>
   );
 }
