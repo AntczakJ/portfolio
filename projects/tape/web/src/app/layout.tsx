@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from 'next';
+import { Inter, JetBrains_Mono } from 'next/font/google';
 import type { ReactNode } from 'react';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { FontReadyBridge } from '@/components/font-ready-bridge';
 import { ReplayBar } from '@/components/chrome/replay-bar';
 import { SideRail } from '@/components/chrome/side-rail';
 import { StatusBar } from '@/components/chrome/status-bar';
@@ -10,6 +12,48 @@ import { TopBar } from '@/components/chrome/top-bar';
 import { Providers } from './providers';
 
 import './globals.css';
+
+/* -------------------------------------------------------------------------
+ * Web fonts (Task 5.4 follow-up — actually load Inter + JetBrains Mono).
+ *
+ * `globals.css` NAMES `--font-sans` / `--font-mono` but nothing loaded the
+ * families, so the whole UI — and, after the P0-3 canvas font fix, the
+ * footprint chart's `ctx.font` — ran on the system fallback mono
+ * (Consolas / SF Mono). A footprint chart lives or dies on numeric
+ * legibility, so we load the real families here.
+ *
+ *   - **Inter** drives all chrome / UI text via `--font-sans`.
+ *   - **JetBrains Mono** drives every numeric surface — the tape strip,
+ *     footprint cells, axes, CVD readout — via `--font-mono`.
+ *
+ * `display: 'optional'` (NOT `'swap'`) is deliberate: it gives the font
+ * a tiny block window and then, if it has not loaded, paints the fallback
+ * and NEVER swaps. That is exactly what protects the Task 5.4 CLS = 0 win
+ * — `swap` would reflow when the web font arrives. `preload: true` gives
+ * the font the best chance of being ready before first paint so the
+ * `optional` window catches it; if it misses, the Canvas2D bridge
+ * upgrades the chart digits once `document.fonts.ready` resolves (see
+ * `tokens.ts` + `FontReadyBridge`) without a layout shift.
+ *
+ * Each font binds its CSS variable; the existing system fallback stacks in
+ * `globals.css` `@theme` are the tail of `--font-sans` / `--font-mono`,
+ * and these `next/font` families are prepended to the front of those
+ * stacks below (see the `--font-sans` / `--font-mono` overrides in the
+ * className wiring + globals.css).
+ * --------------------------------------------------------------------- */
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'optional',
+  preload: true,
+  variable: '--font-sans-loaded',
+});
+
+const jetBrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  display: 'optional',
+  preload: true,
+  variable: '--font-mono-loaded',
+});
 
 /* -------------------------------------------------------------------------
  * Responsive breakpoints (per CLAUDE.md § 4 mobile-first 320 px upward).
@@ -91,9 +135,17 @@ interface RootLayoutProps {
 
 export default function RootLayout({ children }: RootLayoutProps): ReactNode {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${inter.variable} ${jetBrainsMono.variable}`}
+    >
       <body className="antialiased">
         <Providers>
+          {/* FontReadyBridge — re-paint the Canvas2D chart with JetBrains
+              Mono once the web font loads (display: 'optional' may miss the
+              first paint). Side-effect only; renders nothing. */}
+          <FontReadyBridge />
           {/* TooltipProvider — required by Tooltip used in SideRail rail entries. */}
           <TooltipProvider delayDuration={150}>
             <div className="flex h-dvh min-h-dvh flex-col bg-(--color-bg) text-(--color-fg)">

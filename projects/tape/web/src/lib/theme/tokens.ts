@@ -265,6 +265,31 @@ export class ThemeTokensBridge {
     this.#refresh();
   }
 
+  /**
+   * Force-notify subscribers with the current snapshot, even when no
+   * token string actually changed (Task 5.4 follow-up — web-font load).
+   *
+   * WHY THIS EXISTS, SEPARATE FROM `refresh()`
+   *   With `display: 'optional'` the JetBrains Mono file may not be
+   *   ready on the very first canvas paint. The computed `--font-mono`
+   *   STRING value does NOT change when the file finishes loading (it is
+   *   the same family-name list the whole time), so `#refresh()` would
+   *   short-circuit on `snapshotsEqual` and never notify — yet the
+   *   Canvas2D `ctx.font` still needs a repaint to actually RENDER with
+   *   the now-loaded glyphs instead of the fallback. This method re-reads
+   *   the snapshot (cheap, keeps the cache fresh) and notifies every
+   *   subscriber unconditionally so the chart engine flips dirty and
+   *   re-paints once `document.fonts.ready` resolves. No layout shift —
+   *   the DOM box geometry is unchanged; only the canvas glyph pixels
+   *   upgrade.
+   */
+  forceNotify(): void {
+    this.#snapshot = readThemeTokens();
+    for (const sub of this.#subscribers) {
+      sub(this.#snapshot);
+    }
+  }
+
   dispose(): void {
     this.#observer?.disconnect();
     this.#observer = null;
@@ -310,6 +335,7 @@ class ThemeTokensBridgeStub {
     return SSR_NOOP_UNSUBSCRIBE;
   }
   refresh(): void {}
+  forceNotify(): void {}
   dispose(): void {}
 }
 

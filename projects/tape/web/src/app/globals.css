@@ -19,11 +19,19 @@
  * --------------------------------------------------------------------- */
 
 @theme {
+  /* `--font-sans-loaded` / `--font-mono-loaded` are the next/font family
+   * variables (Inter / JetBrains Mono) bound on <html> in layout.tsx.
+   * They sit at the HEAD of these stacks so the loaded web font wins when
+   * present and the existing system fallbacks remain the tail when it has
+   * not loaded yet (display: 'optional', so there is no swap reflow). The
+   * `var(... , 'Inter')` fallback covers SSR / the brief pre-hydration
+   * window before the next/font variable is on documentElement. */
   --font-sans:
-    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    var(--font-sans-loaded, 'Inter'), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    sans-serif;
   --font-mono:
-    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Monaco, 'Cascadia Mono',
-    Consolas, 'Courier New', monospace;
+    var(--font-mono-loaded, 'JetBrains Mono'), ui-monospace, 'SF Mono', Menlo, Monaco,
+    'Cascadia Mono', Consolas, 'Courier New', monospace;
 
   --radius-xs: 2px;
   --radius-sm: 4px;

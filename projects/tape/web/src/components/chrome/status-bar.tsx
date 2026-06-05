@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 
+import { WorkerStatus } from '@/components/chrome/worker-status';
 import { useApiHealth } from '@/lib/hooks/use-api-health';
 import {
   useConnectionState,
@@ -59,6 +60,10 @@ export function StatusBar(): ReactNode {
       <WsStatusCell state={wsState} />
       <StatusCell label="Ticks" value={tickLabel} />
       <StatusCell label="Last tick" value={tickLatencyLabel} />
+      {/* Worker-offline indicator (ADR-004). Renders only while the Rust
+          aggregation worker is restarting; sits next to the WS state so
+          the two stream-health signals read together. */}
+      <WorkerStatus />
       <span className="ml-auto text-(--color-fg-subtle)">Jan Antczak / 2026</span>
     </footer>
   );

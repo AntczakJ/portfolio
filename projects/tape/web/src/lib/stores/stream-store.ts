@@ -125,11 +125,47 @@ function openCellKey(bucketTs: number, priceBucket: number): string {
   return `${String(bucketTs)}:${String(priceBucket)}`;
 }
 
+/**
+ * Worker availability, derived from the `control.worker_unavailable` /
+ * `control.worker_ready` frames (ADR-004). This is a STREAM-domain signal,
+ * not a connection signal: the WebSocket stays connected throughout a
+ * worker restart (the tape strip keeps moving on the direct Binance
+ * broadcast), only the footprint cell stream pauses. The status bar
+ * surfaces a calm "Cells paused — worker restarting" indicator off this so
+ * the user understands the footprint froze but the app is fine.
+ *
+ *   - `'available'`   — Worker is up (or has never reported otherwise).
+ *                       The default; the footprint updates normally.
+ *   - `'unavailable'` — Worker dropped (crash / SIGTERM / handshake
+ *                       timeout). Cell deltas/closes have paused; ticks
+ *                       keep flowing. Cleared back to `'available'` on the
+ *                       next `control.worker_ready`.
+ *
+ * Default is `'available'` — absence of a control frame must NOT read as
+ * "offline" (a fresh connect that never sees a worker_unavailable should
+ * show nothing). The indicator only appears after an explicit
+ * `worker_unavailable` and disappears on `worker_ready`.
+ */
+export type WorkerAvailability = 'available' | 'unavailable';
+
 export interface StreamState {
   connectionState: WSConnectionState;
   lastTickTsMs: number | null;
   tickCount: number;
   framesPerSec: number;
+  /**
+   * Worker availability derived from the control frames (ADR-004).
+   * `'unavailable'` means the footprint cell stream has paused while the
+   * Rust aggregation worker restarts; ticks keep flowing.
+   */
+  workerAvailability: WorkerAvailability;
+  /**
+   * Server clock (ms since epoch) at which the worker went unavailable,
+   * from `control.worker_unavailable.serverTsMs`. `null` while available.
+   * Retained so a future indicator can show a "paused for Ns" duration;
+   * cleared on `worker_ready`.
+   */
+  workerUnavailableSinceMs: number | null;
   /** Last N ticks for the future tape strip (Phase 3.3). Oldest at index 0. */
   recentTicks: WSTickPayload[];
   /** Open-bar cell map. Keyed by `${bucketTs}:${priceBucket}`. */
@@ -350,6 +386,8 @@ export const useStreamStore = create<StreamState>()((set) => ({
   lastTickTsMs: null,
   tickCount: 0,
   framesPerSec: 0,
+  workerAvailability: 'available',
+  workerUnavailableSinceMs: null,
   recentTicks: [],
   openCells: new Map(),
   closedCells: [],
@@ -463,18 +501,41 @@ export const useStreamStore = create<StreamState>()((set) => ({
         });
         return;
       }
-      case 'control.heartbeat':
-      case 'control.overrun':
-      case 'control.worker_ready':
       case 'control.worker_unavailable': {
-        // Control frames are observed but do not mutate domain state in
-        // v1. The provider may surface them via separate side channels
-        // (toast, banner) — schema validation has already happened.
-        // `control.worker_ready` / `control.worker_unavailable` (P1-1,
-        // ADR-004) are on the wire and validated; wiring them to a
-        // "worker offline" indicator is a separate frontend follow-up,
-        // so for now they fall through to the same observe-only path
-        // and keep the discriminated-union switch exhaustive.
+        // The Rust aggregation worker dropped (crash / SIGTERM / handshake
+        // timeout, ADR-004). Footprint cell deltas/closes have paused;
+        // ticks keep flowing on the direct Binance broadcast. Flip the
+        // store's worker-availability so the status bar surfaces a calm
+        // "Cells paused — worker restarting" indicator. `serverTsMs` is
+        // the "went offline at" marker the indicator can show a duration
+        // from.
+        set({
+          workerAvailability: 'unavailable',
+          workerUnavailableSinceMs: frame.payload.serverTsMs,
+          framesPerSec,
+        });
+        return;
+      }
+      case 'control.worker_ready': {
+        // Worker completed its bridge handshake and is producing cells
+        // again (ADR-004). Clear the paused state so the indicator
+        // disappears. Idempotent — a `worker_ready` with no preceding
+        // `worker_unavailable` (fresh boot, or a duplicate) just confirms
+        // the default available state.
+        set({
+          workerAvailability: 'available',
+          workerUnavailableSinceMs: null,
+          framesPerSec,
+        });
+        return;
+      }
+      case 'control.heartbeat':
+      case 'control.overrun': {
+        // Other control frames are observed but do not mutate domain state
+        // in v1. The provider may surface them via separate side channels
+        // (toast, banner) — schema validation has already happened. They
+        // fall through to the same observe-only path and keep the
+        // discriminated-union switch exhaustive.
         set({ framesPerSec });
         return;
       }
@@ -522,6 +583,11 @@ export const useStreamStore = create<StreamState>()((set) => ({
       lastTickTsMs: null,
       tickCount: 0,
       framesPerSec: 0,
+      // A reconnect/fresh session resets worker availability to the
+      // default — the next snapshot is the authoritative baseline and a
+      // stale "unavailable" must not persist across a reconnect.
+      workerAvailability: 'available',
+      workerUnavailableSinceMs: null,
       recentTicks: [],
       openCells: new Map(),
       closedCells: [],
@@ -565,6 +631,16 @@ export function useTickCount(): number {
 
 export function useFramesPerSec(): number {
   return useStreamStore((state) => state.framesPerSec);
+}
+
+/**
+ * Worker availability (ADR-004). `'unavailable'` while the Rust
+ * aggregation worker is restarting — the footprint cell stream has paused
+ * but ticks keep flowing. The status bar's "Cells paused" indicator
+ * consumes this. Default `'available'`.
+ */
+export function useWorkerAvailability(): WorkerAvailability {
+  return useStreamStore((state) => state.workerAvailability);
 }
 
 export function useRecentTicks(n?: number): WSTickPayload[] {

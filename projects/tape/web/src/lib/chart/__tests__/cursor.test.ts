@@ -59,6 +59,8 @@ function makeStreamStore() {
         lastTickTsMs: null,
         tickCount: 0,
         framesPerSec: 0,
+        workerAvailability: 'available',
+        workerUnavailableSinceMs: null,
         recentTicks: [],
         openCells: new Map(),
         closedCells: [],

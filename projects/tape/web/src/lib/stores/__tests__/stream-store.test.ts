@@ -69,6 +69,28 @@ function replayBarFrame(payload: WSReplayBarPayload): WSFrame {
   return { topic: 'cells.btc', kind: 'replay.bar', payload };
 }
 
+function workerUnavailableFrame(
+  reason = 'crash',
+  serverTsMs = 1_780_000_000_000,
+): WSFrame {
+  return {
+    topic: 'control',
+    kind: 'control.worker_unavailable',
+    payload: { reason, serverTsMs },
+  };
+}
+
+function workerReadyFrame(
+  generation = 1,
+  serverTsMs = 1_780_000_000_500,
+): WSFrame {
+  return {
+    topic: 'control',
+    kind: 'control.worker_ready',
+    payload: { generation, serverTsMs },
+  };
+}
+
 function makeSnapshot(
   overrides: Partial<WSSnapshotPayload> = {},
 ): WSSnapshotPayload {
@@ -521,6 +543,68 @@ describe('useStreamStore', () => {
     expect(state.cvd).toBe(0);
     expect(state.openCells.size).toBe(0);
     expect(state.recentTicks).toEqual([]);
+  });
+
+  it('defaults workerAvailability to available with no marker', () => {
+    const state = useStreamStore.getState();
+    expect(state.workerAvailability).toBe('available');
+    expect(state.workerUnavailableSinceMs).toBeNull();
+  });
+
+  it('control.worker_unavailable flips workerAvailability to unavailable (ADR-004)', () => {
+    const store = useStreamStore.getState();
+    store.ingestFrame(workerUnavailableFrame('sigterm', 1_780_000_111_000));
+    const state = useStreamStore.getState();
+    expect(state.workerAvailability).toBe('unavailable');
+    expect(state.workerUnavailableSinceMs).toBe(1_780_000_111_000);
+  });
+
+  it('control.worker_ready clears the unavailable state (ADR-004)', () => {
+    const store = useStreamStore.getState();
+    store.ingestFrame(workerUnavailableFrame());
+    expect(useStreamStore.getState().workerAvailability).toBe('unavailable');
+    store.ingestFrame(workerReadyFrame());
+    const state = useStreamStore.getState();
+    expect(state.workerAvailability).toBe('available');
+    expect(state.workerUnavailableSinceMs).toBeNull();
+  });
+
+  it('worker control frames toggle availability without touching tick/cell state', () => {
+    const store = useStreamStore.getState();
+    store.ingestFrame(tickFrame(makeTick({ tsMs: 10 })));
+    store.ingestFrame(
+      closeFrame(makeClose({ bucketTs: 1, bidVolume: 0, askVolume: 4 })),
+    );
+    const before = useStreamStore.getState();
+    const tickCount = before.tickCount;
+    const closedLen = before.closedCells.length;
+    const cvd = before.cvd;
+
+    store.ingestFrame(workerUnavailableFrame());
+    store.ingestFrame(workerReadyFrame());
+
+    const after = useStreamStore.getState();
+    expect(after.tickCount).toBe(tickCount);
+    expect(after.closedCells).toHaveLength(closedLen);
+    expect(after.cvd).toBe(cvd);
+  });
+
+  it('worker_ready before any worker_unavailable is an idempotent no-op', () => {
+    const store = useStreamStore.getState();
+    store.ingestFrame(workerReadyFrame());
+    const state = useStreamStore.getState();
+    expect(state.workerAvailability).toBe('available');
+    expect(state.workerUnavailableSinceMs).toBeNull();
+  });
+
+  it('resetSession clears a stale unavailable state', () => {
+    const store = useStreamStore.getState();
+    store.ingestFrame(workerUnavailableFrame());
+    expect(useStreamStore.getState().workerAvailability).toBe('unavailable');
+    store.resetSession();
+    const state = useStreamStore.getState();
+    expect(state.workerAvailability).toBe('available');
+    expect(state.workerUnavailableSinceMs).toBeNull();
   });
 
   it('setConnectionState updates connectionState', () => {
