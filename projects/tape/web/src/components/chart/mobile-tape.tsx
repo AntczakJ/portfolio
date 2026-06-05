@@ -39,6 +39,17 @@ import { useRecentTicks } from '@/lib/stores/stream-store';
 /** Window of recent ticks shown in the mobile feed. */
 const MOBILE_TICK_WINDOW = 30;
 
+/**
+ * Fixed row height (px). The feed is positioned by `transform: translateY` on a
+ * fixed-height grid (NOT normal flow) so that prepending the freshest trade at
+ * row 0 re-assigns transforms WITHOUT a layout reflow. A flow list reflowed
+ * every visible row down ~31 px on every incoming tick (~6-8/sec), which is the
+ * single largest Cumulative Layout Shift source on the deployed demo (CLS ~0.3+
+ * at the Lighthouse mobile width, where this component renders). Transform
+ * changes are composited, not layout — zero CLS while the feed streams.
+ */
+const MOBILE_ROW_H = 30;
+
 const PRICE_USD_FORMAT = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
@@ -81,7 +92,11 @@ export function MobileTape(): ReactNode {
     >
       <header className="flex shrink-0 items-baseline justify-between border-b border-(--color-border) bg-(--color-surface) px-3 py-2 font-mono text-[11px] text-(--color-fg-muted)">
         <span className="uppercase tracking-wider">Tape · BTC-PERP</span>
-        <span className="text-(--color-fg-subtle)">{reversed.length} recent</span>
+        {/* Reserve the count box so "0 recent" -> "30 recent" does not
+            reflow the header when ticks arrive. */}
+        <span className="inline-block min-w-[9ch] text-right tabular-nums text-(--color-fg-subtle)">
+          {reversed.length} recent
+        </span>
       </header>
 
       {reversed.length === 0 ? (
@@ -89,11 +104,17 @@ export function MobileTape(): ReactNode {
           Streaming BTC-PERP — first trades arrive in a few seconds.
         </div>
       ) : (
+        // Transform-positioned feed (NOT a flow list) so prepending the newest
+        // trade never reflows the rows below it — the deploy's largest CLS source.
+        // Each row is absolutely placed at `translateY(index * MOBILE_ROW_H)`; a
+        // new tick at index 0 shifts every row's transform by one row, which the
+        // browser composites without a layout shift.
         <ol
-          className="flex-1 divide-y divide-(--color-border) overflow-y-auto font-mono text-[12px] tabular-nums"
+          className="relative flex-1 overflow-hidden font-mono text-[12px] tabular-nums"
           data-numeric
+          style={{ contain: 'strict' }}
         >
-          {reversed.map((tick) => {
+          {reversed.map((tick, index) => {
             // Aggressor color convention (matches the canvas strip):
             //   'sell' → bid green (taker sold into the maker bid).
             //   'buy'  → ask red   (taker bought from the maker ask).
@@ -107,7 +128,11 @@ export function MobileTape(): ReactNode {
             return (
               <li
                 key={rowKey}
-                className="grid grid-cols-[auto_1fr_auto] items-baseline gap-3 px-3 py-1.5"
+                className="absolute inset-x-0 top-0 grid grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-(--color-border) px-3"
+                style={{
+                  height: MOBILE_ROW_H,
+                  transform: `translateY(${String(index * MOBILE_ROW_H)}px)`,
+                }}
               >
                 <span className="text-(--color-fg-subtle)">
                   {formatUtcTime(tick.tsMs)}
