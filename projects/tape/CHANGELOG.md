@@ -2,6 +2,73 @@
 
 All notable changes to **tape** are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- README rewritten for the shipped, deployed v1: live demo link, the architecture as headline (Rust worker + MessagePack bridge + supervisor + single-image multi-process deploy), a Mermaid data-flow diagram, accurate run instructions (offline pipeline recipe, dev ports, `cargo build`), the screenshot set, the ADR-001..009 summary, and an honest testing / Lighthouse story.
+- `docs/screenshots/` — full footprint board (dark / light), a fresh live-deploy capture from `tape-demo.fly.dev`, replay mode, and the mobile tape-only fallback embedded in the README.
+- `e2e/capture-live.mjs` — Playwright script that captures a fresh screenshot from the live deploy headlessly.
+
+## [0.1.0] — 2026-06-05
+
+The wow-moment feature set landed, the review defects were cleared, the test suites filled out across all three runtimes, and the project deployed to [https://tape-demo.fly.dev](https://tape-demo.fly.dev). Three more ADRs ratified (ADR-007 bucketing, ADR-008 CVD placement, ADR-009 the Lighthouse trade-off). The footprint chart now renders the intra-cell bid/ask histogram, the CVD sub-pane, the live tape ticker, and a wired replay mode — the gaps the v0.0.1 designer-critic pass flagged.
+
+### Added
+
+**Architecture (ADR-007 to ADR-009).**
+
+- **ADR-007** — Footprint bucketing grid: 1-minute time buckets + $5 BTC-PERP price buckets. Single source of truth via a documented "these files must match" conformance assertion (Rust `bucketing.rs` canonical, TS `bucketing.ts` mirror) rather than codegen — the constants are two scalars that do not change in v1. Synthesizer + ingestor stop hard-coding `60_000` / `5` inline. The v2 per-symbol path swaps a flat constant for a per-symbol lookup with no schema or protocol bump.
+- **ADR-008** — CVD lives in the pure aggregator on **both** sides: ported to the Rust worker as a `1.5` follow-on (it emitted `Delta` / `Close` only before), and covered by the Rust <-> TS conformance suite. CVD stays **off** the WS wire in v1 — the live CVD line derives client-side by folding `askVolume − bidVolume` per `cell.close` (data the browser already parses) into a running per-symbol CVD. The Rust/server CVD is the conformance reference, the replay source of truth, and a reserved additive v2 wire promotion.
+- **ADR-009** — Accept Lighthouse Performance < 95 on tape's live orderflow route as a deliberate, scoped trade-off. A continuously rendering real-time chart cannot satisfy Lighthouse's idle-page Total Blocking Time model without gating the chart behind a click or throttling below 60 fps — both of which destroy the wow moment. CLS, Accessibility, Best Practices, and SEO stay hard-gated at >= 95 (and are met: CLS 0 / A11y 96 / BP 96 / SEO 100); Performance lands at 77.
+
+**Frontend — the wow moment (Phase 3).**
+
+- Task 3.2c — Intra-cell bid/ask histogram + per-bar delta print (closing the D-03 designer-critic gap); the literal footprint signal is no longer collapsed to a heatmap.
+- Task 3.2c — CVD line sub-pane on a second canvas driven by the same engine rAF pass and X-scale as the footprint (axes locked), with a baseline-zero line and a numeric value label as the non-colour channel. A bounded per-bar CVD time-series ring backs it.
+- Task 3.3 — Live tape ticker: transform-positioned virtualized rows (last ~100 trades), bid/ask colour coding, per-tick arrival motion.
+- Task 3.4 — `WSStreamClient` + `useStreamStore` (ring-bounded recent ticks + closed cells) + client-side CVD derivation; reconnect-from-snapshot proven by bouncing the server mid-stream.
+- Task 3.5 — Cursor crosshair + per-cell readout (aggregated bid / ask / delta / imbalance%), mirrored to an `aria-live="polite"` region throttled to one announcement per cell change; the visual tooltip is `aria-hidden` so screen readers get a single channel.
+- Task 3.6 — Replay mode: switches the data source from the live WebSocket to the `GET /api/replay/:symbol/:date` NDJSON endpoint and drives the rAF loop from a virtual clock at 1x / 5x / 30x, proven against a seeded historic day.
+- Worker-offline indicator: the store derives worker availability from `control.worker_unavailable` / `control.worker_ready` and renders a calm "cells paused — worker restarting" state (warning tone, never danger red).
+- Fonts: Inter + JetBrains Mono loaded and self-hosted via `next/font` (`display: 'optional'`, no swap reflow), with a canvas re-paint on `document.fonts.ready` so the chart numerics resolve to JetBrains Mono.
+
+**Backend — replay wired (Phase 1 completion).**
+
+- Task 1.7 — Historic replay routes: `GET /api/replay/:symbol/:date` streams the day's closed `footprint_cells` as NDJSON from a server-side cursor (never buffered), `/ticks` streams the raw tick archive for a window. Replay reads from Postgres only (the offline-safe half of the ADR-005 live/replay read split).
+- Task 1.4 / 1.5e — TypeScript footprint-aggregator reference impl + shared conformance fixtures; CVD ported into the Rust aggregator so the Rust core owns all the aggregation math.
+- Task 1.4c — Bucketing constants de-duplicated per ADR-007 (4 call sites collapsed to 2 irreducible per-language literals + the assertion test).
+
+**Tests (Phase 5).**
+
+- `bun test` server suites (~314) — WS frame schemas, tick batch writer, partition lifecycle, bridge transport + framing, supervisor backoff, Binance client against recorded frames, replay query + NDJSON serialization.
+- Vitest web suites (195, 18 files) — footprint / CVD engine, painters, theme-token bridge, stream store + rings, reserved-dimension CLS guards, worker-offline indicator.
+- `cargo test` Rust suites (~49) — aggregator + CVD invariants and the Rust <-> TypeScript bridge conformance against committed MessagePack byte oracles.
+- Playwright E2E (`tape-e2e`, 15) — live-footprint render, replay control wiring, theme toggle, keyboard a11y, and a client-side ~200 ticks/sec frame-budget load test; deterministic in CI via a dev-only store-injection hook + mocked WebSocket, with one `@live` spec behind a flag.
+
+**Performance hardening (Phase 5.4).**
+
+- CLS 0.337 -> 0: the mobile tape feed's normal-flow row prepend (every tick pushed the list down ~31 px) rewritten to transform-positioned rows; status-bar numerics reserved with `tabular-nums` + `min-w`; SideRail / ReplayBar / ApiStatus chrome boxes reserved.
+- TBT ~930 ms -> ~260–630 ms: WebSocket connect + snapshot decode deferred behind `requestIdleCallback` (past the interactive window); the rAF render loop made self-idling (zero frames on a quiet market) — without gating the chart behind a gesture.
+
+**Deploy (Phase 6).**
+
+- Four-stage `Dockerfile` (rust-builder, web-builder, server-builder, slim runtime) producing one image; `entrypoint.sh` runs the migration, starts the Bun server, waits for `/health`, then launches Next and forwards SIGTERM to both children.
+- `fly.toml` — single Machine in `fra`, all external HTTPS terminating at the Elysia server on 3001 with a catch-all reverse proxy to Next on 3000 (one external port, no dual-service collision); machine kept warm (`auto_stop_machines = 'off'`, `min_machines_running = 1`) so the WS stream is live on load.
+- `DEPLOY.md` production runbook: one-time Fly + Postgres setup, deploy, verify, rollback, troubleshooting, cost.
+- Deployed to [https://tape-demo.fly.dev](https://tape-demo.fly.dev); `/health` returns `status: ok` with `db.connected: true` and `worker.state: connected` (`cellsOpen` / `ticksProcessed` climbing, WS frames flowing).
+
+### Changed
+
+- The v0.0.1 review-pass gaps (D-03 intra-cell histogram, D-04 CVD sub-pane) are closed; the chart now carries the full footprint identity rather than a heatmap.
+
+### Known boundaries (v1)
+
+- **Synth tick source on the demo.** Binance's public WebSocket is geo-restricted from the Fly deploy region, so the demo runs a deterministic in-process synthesizer feeding the Rust worker over the same bridge the real feed would. The worker produces real cells, CVD, tape, and persisted history without the exchange. The Binance client is built, unit-tested, and env-flagged off (`BINANCE_WS_ENABLED=0`).
+- **No accounts / auth in v1.** `better-auth` is named as the v2 identity path (saved layouts, alerts) but is not present — no dependency, no active code.
+- **Single symbol.** BTC-PERP only; ETH-PERP / SOL-PERP defer to v2 (the `topic` dimension already carries the symbol, so no protocol bump is needed).
+- **Lighthouse Performance 77 on the live route** — accepted and documented in ADR-009; CLS / A11y / BP / SEO are >= 95.
+
 ## [0.0.1] — 2026-05-31
 
 First publishable cut. Backend is feature-complete for v1.0, frontend ships the chart core + cursor + tooltip + mobile collapse, six ADRs ratified, designer-critic and reviewer passes landed with three fixes shipped. Deploy is the next step.
@@ -92,4 +159,6 @@ Surfaced honestly from `CRITIQUE-2026-05-31.md` — 18 defects from the designer
 
 ---
 
+[Unreleased]: https://github.com/AntczakJ/portfolio/compare/tape-v0.1.0...HEAD
+[0.1.0]: https://github.com/AntczakJ/portfolio/compare/tape-v0.0.1...tape-v0.1.0
 [0.0.1]: https://github.com/AntczakJ/portfolio/releases/tag/tape-v0.0.1

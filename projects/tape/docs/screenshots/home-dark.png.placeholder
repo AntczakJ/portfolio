@@ -1,1 +1,0 @@
-Placeholder — replace with the captured PNG at this exact path: `projects/tape/docs/screenshots/home-dark.png`. Capture from `pnpm -F tape-web dev` running with the dev stack up (see ../CAPTURE.md). Canonical chart view, dark theme, 1440 x 900 viewport. Delete this `.placeholder` file once the real PNG is committed.
