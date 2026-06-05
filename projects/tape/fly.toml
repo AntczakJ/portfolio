@@ -22,7 +22,12 @@ primary_region = 'fra'
   NODE_ENV = 'production'
   PORT = '3001'
   WEB_PORT = '3000'
-  WORKER_PIPELINE_ENABLED = '0'
+  # Run the Rust worker pipeline so the board produces footprint CELLS (not just
+  # ticks). With WS_SYNTHESIZE=1 + BINANCE_WS_ENABLED=0 the synth ticks feed the
+  # worker over the bridge and the worker is the single cell authority — real
+  # footprint cells without a reachable Binance feed (the offline fallback), and
+  # the cells persist to Postgres so replay has data.
+  WORKER_PIPELINE_ENABLED = '1'
   WS_MAX_CONNECTIONS_PER_IP = '5'
   WS_SYNTHESIZE = '1'
 
@@ -54,7 +59,7 @@ primary_region = 'fra'
     type = 'http'
     interval = '15s'
     timeout = '5s'
-    grace_period = '30s'
+    grace_period = '60s'
     method = 'get'
     path = '/health'
     protocol = 'http'
@@ -62,4 +67,11 @@ primary_region = 'fra'
 [[vm]]
   cpu_kind = 'shared'
   cpus = 1
-  memory_mb = 512
+  # 1024 MB: the runtime machine runs THREE processes at once — the Bun/Elysia
+  # server (DI + WS broadcast + the dedicated bridge connection + the per-scope
+  # ring buffer), the Rust worker (probe/aggregate, concurrency-bound buffers),
+  # and the Next standalone server (which the Elysia catch-all reverse-proxies
+  # the whole frontend through). The razors-edge/pulse lesson (Next OOM'd at 256)
+  # plus two extra runtimes here put the safe floor at 1024; 512 risks an OOM on
+  # the first asset-optimization + WS burst. Drop to 512 only if metrics prove headroom.
+  memory_mb = 1024
