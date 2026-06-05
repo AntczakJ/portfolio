@@ -187,7 +187,12 @@ export function TapeTicker(): ReactNode {
     >
       <header className="flex shrink-0 items-baseline justify-between border-b border-(--color-border) bg-(--color-surface) px-3 py-2 font-mono text-[11px] text-(--color-fg-muted)">
         <span className="uppercase tracking-wider">Tape · BTC-PERP</span>
-        <span className="text-(--color-fg-subtle)">{rows.length}</span>
+        {/* Reserve the count box (min-w + tabular + right-align) so the
+            row total climbing 0 -> 100 as ticks arrive does not reflow the
+            header. */}
+        <span className="inline-block min-w-[3ch] text-right tabular-nums text-(--color-fg-subtle)">
+          {rows.length}
+        </span>
       </header>
 
       {pinned !== null ? <PinnedRow tick={pinned} onUnpin={handleUnpin} /> : null}

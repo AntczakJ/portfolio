@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 
 import { WorkerStatus } from '@/components/chrome/worker-status';
 import { useApiHealth } from '@/lib/hooks/use-api-health';
+import { reservedMinWidth } from '@/lib/layout/reserved';
 import {
   useConnectionState,
   useLastTick,
@@ -32,6 +33,16 @@ import {
  *
  * Typography is fixed-width so live values do not reflow the bar.
  *
+ * **Reserved dimensions (CLS fix).** Each value cell reserves its FINAL
+ * box width up front via `reservedMinWidth(...)` (a `min-w-[…ch]` sized
+ * to the widest realistic value — see `lib/layout/reserved.ts`), so when
+ * the late WebSocket snapshot lands ~1 s after first paint and the values
+ * populate ("Ticks 0" -> "Ticks 1,234,567", "API —" -> "API 123 ms",
+ * "Last tick —" -> "Last tick 0.0 s"), the cell box does NOT grow and the
+ * neighbouring cells do NOT shift. The whole footer carries `data-numeric`
+ * (globals.css applies `tabular-nums` to it), and the values are
+ * right-aligned so digits grow into the reserved space toward the label.
+ *
  * Wraps to two rows below 480 px so the smallest viewport stays
  * legible.
  */
@@ -56,10 +67,14 @@ export function StatusBar(): ReactNode {
       className="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-1 border-t border-(--color-border) bg-(--color-surface) px-3 py-2 font-mono text-[11px] text-(--color-fg-muted) md:px-4"
       data-numeric
     >
-      <StatusCell label="API" value={latencyLabel} />
+      <StatusCell label="API" value={latencyLabel} region="apiLatency" />
       <WsStatusCell state={wsState} />
-      <StatusCell label="Ticks" value={tickLabel} />
-      <StatusCell label="Last tick" value={tickLatencyLabel} />
+      <StatusCell label="Ticks" value={tickLabel} region="tickCount" />
+      <StatusCell
+        label="Last tick"
+        value={tickLatencyLabel}
+        region="lastTick"
+      />
       {/* Worker-offline indicator (ADR-004). Renders only while the Rust
           aggregation worker is restarting; sits next to the WS state so
           the two stream-health signals read together. */}
@@ -72,13 +87,22 @@ export function StatusBar(): ReactNode {
 interface StatusCellProps {
   label: string;
   value: string;
+  region: Parameters<typeof reservedMinWidth>[0];
 }
 
-function StatusCell({ label, value }: StatusCellProps): ReactNode {
+function StatusCell({ label, value, region }: StatusCellProps): ReactNode {
   return (
     <dl className="inline-flex items-baseline gap-1.5">
       <dt className="text-(--color-fg-subtle)">{label}</dt>
-      <dd className="min-w-[3rem] text-(--color-fg)">{value}</dd>
+      {/* Reserve the cell's final box (min-w sized to the widest value)
+          so the late-data populate does not grow it and shift the bar.
+          Right-aligned + tabular so digits grow into the reserved space
+          toward the label rather than pushing the next cell. */}
+      <dd
+        className={`inline-block text-right tabular-nums text-(--color-fg) ${reservedMinWidth(region)}`}
+      >
+        {value}
+      </dd>
     </dl>
   );
 }
@@ -106,7 +130,7 @@ function WsStatusCell({ state }: WsStatusCellProps): ReactNode {
     <dl className="inline-flex items-baseline gap-1.5">
       <dt className="text-(--color-fg-subtle)">WS</dt>
       <dd
-        className="inline-flex min-w-[6rem] items-center gap-1.5 text-(--color-fg)"
+        className={`inline-flex items-center gap-1.5 text-(--color-fg) ${reservedMinWidth('wsState')}`}
         aria-live="polite"
       >
         <span
