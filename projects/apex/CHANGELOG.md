@@ -6,6 +6,17 @@ All notable changes to **apex** are documented here. The format follows [Keep a 
 
 Initial build of apex: a premium-modern, EV-positioned car-**rental** marketing site fronted by a genuine WebGL 3D configurator and a complete, mocked multi-step reservation flow. Feature-complete for v1, reviewed (designer-critic and reviewer passes landed, all defects cleared), tested, performance-fixed, deploy-prepared, and royalty-clear (the 3D blocker P0-1 is resolved — the whole fleet runs on CC0 models). Web-only, no backend. v1 is deployed and public at https://apex-rentals.fly.dev (Fly.io, region `fra`, 2026-06-05). The final shipped CSP is `script-src 'self' 'unsafe-inline'` — the `'wasm-unsafe-eval'` from the original ADR-002 posture was dropped once the CC0 models removed the need for a WASM mesh decoder.
 
+### Changed (designer-critic close-out polish)
+
+- **Real dark-glass on every paint.** The optimized body mesh is now split at author time into a paint group and a dark-glass group (classified by the Kenney `colormap` atlas swatch each triangle lands on); the runtime assigns the glass group its own dark `MeshPhysicalMaterial`. The greenhouse/windows no longer take the body colour, so every paint — including Glacier White and Voltaic Green — reads as a real car with glass, not a toy. Applied to the flagship and all four fleet bodies. This is the highest-craft win of the pass.
+- **Default paint changed to Graphite** (from Glacier White) across the configurator default, the hero render, the blur placeholders, the confirmation payoff, and the white gallery frame, so every default state shows the strong premium register. Glacier White stays fully selectable.
+- **Wheel finishes re-tinted** to match the copy: the raw Kenney atlas baked a tan tyre (read as orange/copper) and an orange aero rim; the atlas is now re-tinted at author time to neutral dark rubber + the promised finish (aero = polished silver, turbine = graphite, forged = voltaic), with warm swatches neutralised so no orange bleeds into the rim.
+- **Consistent fleet line-up.** The four non-flagship fleet renders are length-normalised under the fixed rig so all five fleet cards read as one studio shoot with equal footprint.
+- **Glacier White swatch visibility** — an inset hairline + inner shadow so a near-white chip reads as selectable on the white panel.
+- **Configurator stage framing** — the rig camera was pulled back slightly so the whole car keeps margin on the narrowest (portrait mobile) stage aspect.
+- **Mobile hero LCP** — the mobile hero crop was resized to a phone-appropriate, aggressively-compressed AVIF (~7 KB optimized), keeping the LCP byte-weight off the mobile critical path.
+- **Honest mobile-performance docs** — the README/PROGRESS/CHANGELOG no longer overstate mobile as "real-CPU = 100" universally; they state the measured story (desktop 97–99; synthetic mobile low-to-high-60s = a 4x-CPU-throttle artifact with TBT collapsing to ~31 ms un-throttled; real-CPU local mobile `/` = 100 / LCP ~1.0 s; the deployed network-bound run is authoritative).
+
 ### Added
 
 **Architecture (ADR-001 to ADR-005).**

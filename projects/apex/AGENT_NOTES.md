@@ -1107,6 +1107,65 @@ the commit gate and will pass on code the gate rejects.**
   that migration happens, the standing rule is: **run the root `npx eslint`
   before committing apex.**
 
+## Frontend-engineer designer-critic CLOSE-OUT polish (2026-06-05)
+
+The close-out list landed; the PROGRESS "latest" entry has the full record. The
+points downstream agents (designer-critic re-confirm, reviewer) should re-examine:
+
+- **THE GLASS SPLIT IS REAL — it is the single highest-craft win and it landed,
+  not the documented v2 fallback.** Mechanism (worth understanding before touching
+  the model pipeline): the Kenney `colormap` is a PALETTE atlas of flat vertical
+  swatches. The `body` mesh is ONE primitive in the raw GLB, but its triangles
+  land on DIFFERENT swatches — the painted body on a green swatch, the windows on
+  a blue-grey swatch. `optimize-model.mjs > splitBodyGlass()` samples the atlas at
+  each triangle's UV centroid and partitions the index buffer into a body group
+  (`apex-body`/`apex-fleet-body`) + a glass group (`apex-glass`), each its own
+  textureless material. `lumen-model.tsx` matches `/glass/i` on the material name
+  and assigns the glass group a dark `MeshPhysicalMaterial`. There are TWO glass
+  swatch families: DARK blue-grey (the SUV `suv-luxury`) and LIGHT blue-grey /
+  lavender (the saloons `sedan`/`sedan-sports`) — `isGlassColor()` detects both
+  (blue at/above r&g, r≈g, not green-dominant; dark OR bright). If you add a new
+  Kenney body and the split logs "skipped", run the one-off analysis pattern (UV-
+  centroid colour histogram of the body mesh, split into upper/lower Y bands) to
+  find its window swatch and widen `isGlassColor`.
+- **Wheel orange was a TEXTURE-BLEED problem, not just the tyre.** The forged rim
+  showed an orange ring even after the tyre was darkened, because an adjacent
+  orange atlas swatch bled into the rim via bilinear/mipmap filtering at the
+  swatch boundary. The fix neutralises the WHOLE warm family (`isWarm`) in the
+  wheel atlas, not just the used swatch. If a future wheel shows a stray colour
+  ring, suspect atlas-neighbour bleed first.
+- **The offline fleet override needs a FRESH PAGE per car, NOT a post-mount
+  window-global change.** `lumen-model.tsx` reads the overrides via `useMemo([])`
+  at mount, so setting `__APEX_BODY_URL` after mount does nothing (this silently
+  produced four identical flagship renders on the first attempt). `render-from-
+scene.mjs` now opens a fresh Playwright page per fleet car with the globals set
+  via `addInitScript` BEFORE the page scripts run. Do NOT "optimise" this back to
+  a single page + radio-toggle.
+- **`__APEX_MODEL_SCALE`** is a NEW offline-only override (alongside
+  `__APEX_BODY_URL`/`__APEX_PAINT`/`__APEX_OWN_WHEELS`/`__APEX_YAW`) that length-
+  normalises each fleet silhouette under the fixed rig (P1-A). Undefined in normal
+  app use (the flagship is scale 1).
+- **Default paint is GRAPHITE now** (`defaultColorId: 'col-graphite'`,
+  `defaultWheelId: 'whl-aero'` in `bake-mocks.mjs` → `seed-data.ts`). The hero,
+  configurator landing, confirmation payoff, and the `rear-3q` gallery frame all
+  default graphite/midnight. White is selectable, not default. If you re-bake
+  mocks, KEEP these defaults.
+- **A REDEPLOY is required** — every change here is in the static AVIF renders +
+  the model GLBs + source; the live Fly site still shows the old white/no-glass
+  state until the orchestrator redeploys.
+- **Mobile perf is honestly stated now.** The README/PROGRESS/CHANGELOG no longer
+  claim "real-CPU = 100" universally. Measured: desktop 97–99; synthetic mobile
+  low-60s = the 4×-CPU artifact (TBT 881→31ms un-throttled, LCP 4.66s→1.04s
+  un-throttled). The deployed network-bound run is authoritative. Reviewer: do
+  NOT "tidy" this back into a single rosy number.
+- **Capture/CSP scripts are flaky on canvas-arm timing.** `verify-csp.mjs` got a
+  belt-and-braces hover-to-arm + longer timeout; the capture scripts use
+  `evaluate(scrollIntoView)` not Playwright `scrollIntoViewIfNeeded` (which stalls
+  on the animated configurator). The gallery viewport screenshot needs the
+  parallax inner-scale transforms neutralised (`[data-frame-img]{transform:none}`)
+  or Chromium rejects the snapshot. If a verify run flakes on "canvas never
+  mounted", re-run — the CSP result itself (0 violations) is stable.
+
 ## References
 
 - **PLAN.md** — pitch, audience, the reconciled wow spine, four-tier degradation, web-only justification, R3F+GSAP/no-Motion animation pick, WebGL performance strategy, sovereign light-canonical design direction, IA/section list, reservation-flow spec, mock-data shape, success criteria, phased tasks (Phases 0–8), out-of-scope.

@@ -168,13 +168,15 @@ const configuratorOptions = {
   vehicleId: 'veh-lumen-gt',
   colors,
   wheels,
-  defaultColorId: 'col-glacier',
-  // PASS-B caveat fix: default to the DARK turbine rim, not the bright aero
-  // silver. On the default Glacier-white body the polished-silver aero wheel is
-  // near-invisible (low contrast); the dark turbine rim reads as a distinct
-  // wheel against the white paint, so the hero LCP + default configurator state
-  // both show a legible wheel. (Aero/forged remain selectable.)
-  defaultWheelId: 'whl-turbine',
+  // Default to GRAPHITE, not Glacier White (designer-critic close-out): the same
+  // model + rig reads premium in graphite everywhere; white reads as a
+  // featureless grey block AND (pre-P0-2) exposed the no-glass tell. White stays
+  // SELECTABLE — only the default / hero presentation changes. Determinism kept.
+  defaultColorId: 'col-graphite',
+  // On the graphite body the polished-silver AERO rim reads with strong contrast
+  // (a premium machined finish against dark paint), so it is the default. The
+  // wheel atlas was re-tinted (P1-C) so every finish matches its copy.
+  defaultWheelId: 'whl-aero',
   renderMatrix,
 };
 

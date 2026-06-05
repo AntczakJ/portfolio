@@ -63,10 +63,58 @@ import {
   flatten,
   textureCompress,
 } from '@gltf-transform/functions';
+import sharp from 'sharp';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC_DIR = join(HERE, '.model-src', 'car-kit', 'Models', 'GLB format');
 const OUT_DIR = join(HERE, '..', 'public', 'models');
+
+/**
+ * Decode the Kenney `colormap` atlas to a raw RGBA buffer + a UV sampler, so we
+ * can classify each body triangle by the atlas swatch it lands on. The kit bakes
+ * every part colour as a vertical swatch on ONE shared 512×512 atlas:
+ *   - the GREEN swatch (~75,180,128)        = the painted body region;
+ *   - the dark BLUE-GREY swatch (~73,76,90) = the glasshouse / windows;
+ *   - the TAN swatch (~252,225,194)         = the wheel tyre rubber;
+ *   - a per-wheel accent swatch (orange / green / blue-grey) = the rim face.
+ * We sample at the triangle's UV centroid (the kit's swatches are large flat
+ * blocks, so the centroid is an unambiguous, robust classifier — see the
+ * one-off analysis recorded in AGENT_NOTES).
+ */
+async function loadAtlas(doc) {
+  const tex = doc.getRoot().listTextures()[0];
+  if (!tex) return null;
+  const { data, info } = await sharp(Buffer.from(tex.getImage()))
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const sample = (u, v) => {
+    const x = Math.min(info.width - 1, Math.max(0, Math.round(u * (info.width - 1))));
+    const y = Math.min(info.height - 1, Math.max(0, Math.round((1 - v) * (info.height - 1))));
+    const o = (y * info.width + x) * info.channels;
+    return [data[o], data[o + 1], data[o + 2]];
+  };
+  return { sample };
+}
+
+/**
+ * True for a glass swatch (windows), false for body paint. The kit uses two
+ * glass-swatch families across the models: a DARK blue-grey (~73,76,90 — the SUV)
+ * and a LIGHT blue-grey/lavender (~216,216,230 — the saloons). Both share the
+ * structure "blue is the dominant or co-dominant channel, the swatch is neutral
+ * (r≈g), and it is NOT the green body-paint swatch". The light family is also
+ * highly neutral with a faint blue lift. We classify either as glass.
+ */
+function isGlassColor(r, g, b) {
+  const greenDominant = g > r + 25 && g > b + 25; // the body-paint swatch
+  if (greenDominant) return false;
+  const blueLift = b >= r && b >= g; // blue at or above the other channels
+  const neutralRG = Math.abs(r - g) <= 12; // r≈g (both glass families)
+  // Dark glass: all channels low. Light glass: bright, near-neutral, blue lift.
+  const darkGlass = r < 120 && g < 120 && b < 135 && blueLift;
+  const lightGlass = r > 150 && neutralRG && b >= r && b - r >= 6 && b - r <= 40;
+  return darkGlass || lightGlass;
+}
 
 /**
  * Strip ALL textures (we override materials at runtime) + their
@@ -99,12 +147,88 @@ async function stripTexturesAndClean(doc) {
   return doc;
 }
 
-/** Build the body-only SUV: drop the four in-body wheel meshes. */
+/**
+ * Split a single textured `body` primitive into TWO primitives by atlas colour —
+ * a BODY group and a GLASS group — so the runtime can paint the body while
+ * giving the greenhouse/windows a separate dark-glass material (P0-2: kills the
+ * "no glass" tell on light/bold paint). Both groups get a fresh, textureless
+ * material (`apex-body` / `apex-glass`); the atlas is then orphaned and pruned.
+ *
+ * The classification is by the swatch the triangle's UV centroid lands on (the
+ * Kenney atlas swatches are large flat blocks → unambiguous). If a model has no
+ * detectable glass swatch (every tri classifies as body) we leave a single body
+ * primitive — the runtime treats a missing `apex-glass` material as "no glass to
+ * tint", so the fallback is safe.
+ */
+function splitBodyGlass(doc, mesh, atlas) {
+  if (!atlas) return false;
+  const prim = mesh.listPrimitives()[0];
+  if (!prim) return false;
+  const uv = prim.getAttribute('TEXCOORD_0');
+  const idx = prim.getIndices();
+  if (!uv || !idx) return false;
+
+  const n = idx.getCount();
+  const bodyIdx = [];
+  const glassIdx = [];
+  const tmp = [0, 0];
+  for (let t = 0; t < n; t += 3) {
+    let cu = 0;
+    let cv = 0;
+    const tri = [idx.getScalar(t), idx.getScalar(t + 1), idx.getScalar(t + 2)];
+    for (const vi of tri) {
+      uv.getElement(vi, tmp);
+      cu += tmp[0];
+      cv += tmp[1];
+    }
+    const [r, g, b] = atlas.sample(cu / 3, cv / 3);
+    const target = isGlassColor(r, g, b) ? glassIdx : bodyIdx;
+    target.push(...tri);
+  }
+
+  if (glassIdx.length === 0) return false; // no glass swatch — keep single prim
+
+  const bodyMat = doc.createMaterial('apex-body');
+  bodyMat.setBaseColorFactor([0.9, 0.92, 0.94, 1]);
+  bodyMat.setMetallicFactor(0.5);
+  bodyMat.setRoughnessFactor(0.3);
+  const glassMat = doc.createMaterial('apex-glass');
+  glassMat.setBaseColorFactor([0.07, 0.09, 0.12, 1]);
+  glassMat.setMetallicFactor(0);
+  glassMat.setRoughnessFactor(0.1);
+
+  // Rebuild: keep the original (body) primitive's geometry but re-point its
+  // indices to the body subset, then add a second primitive sharing the same
+  // vertex attributes but indexing the glass subset.
+  const buffer = doc.getRoot().listBuffers()[0];
+  const mkIndices = (arr) =>
+    doc
+      .createAccessor()
+      .setType('SCALAR')
+      .setArray(new Uint16Array(arr))
+      .setBuffer(buffer);
+
+  prim.setIndices(mkIndices(bodyIdx));
+  prim.setMaterial(bodyMat);
+
+  const glassPrim = doc.createPrimitive();
+  for (const semantic of prim.listSemantics()) {
+    glassPrim.setAttribute(semantic, prim.getAttribute(semantic));
+  }
+  glassPrim.setIndices(mkIndices(glassIdx));
+  glassPrim.setMaterial(glassMat);
+  mesh.addPrimitive(glassPrim);
+
+  return true;
+}
+
+/** Build the body-only SUV: drop the four in-body wheel meshes + split glass. */
 async function buildBody(io) {
   const src = join(SRC_DIR, 'suv-luxury.glb');
   const out = join(OUT_DIR, 'apex-suv.glb');
   const doc = await io.read(src);
   const root = doc.getRoot();
+  const atlas = await loadAtlas(doc);
 
   // Detach the in-body wheel nodes — the live scene instances the separate
   // wheel GLBs at these positions, so the bundled wheels are removed to avoid
@@ -118,23 +242,112 @@ async function buildBody(io) {
   }
   console.log(`  apex-suv: detached ${dropped} in-body wheel nodes`);
 
+  // P0-2: split the body mesh into a paint group + a dark-glass group BEFORE
+  // stripping textures (the split needs the atlas to classify the windows).
+  const bodyMesh = root.listMeshes().find((m) => m.getName() === 'body');
+  const split = bodyMesh ? splitBodyGlass(doc, bodyMesh, atlas) : false;
+  console.log(`  apex-suv: glass split ${split ? 'OK (apex-body + apex-glass)' : 'skipped'}`);
+
   await stripTexturesAndClean(doc);
 
-  // Name the single remaining body material so the runtime can find it robustly
-  // even after join/dedup renames the others.
-  for (const mat of root.listMaterials()) {
-    mat.setName('apex-body');
+  // If the split did NOT run (no glass swatch), name the single material so the
+  // runtime still finds the body. When the split DID run the two materials are
+  // already named apex-body / apex-glass.
+  if (!split) {
+    for (const mat of root.listMaterials()) mat.setName('apex-body');
   }
 
   await io.write(out, doc);
   return out;
 }
 
-/** Build one wheel GLB: KEEP the colormap atlas (tire/rim distinction), clean. */
-async function buildWheel(io, srcName, outName) {
+/**
+ * Re-tint the wheel `colormap` atlas in place (P1-C). The raw Kenney atlas bakes
+ * the tyre as a light TAN swatch (~252,225,194) that reads as orange/copper in
+ * the studio render (the "rusted toy wheel"), and a per-wheel accent swatch for
+ * the rim. We recolour BOTH so every wheel matches the copy:
+ *   - the tan tyre swatch → a neutral dark rubber for ALL wheels;
+ *   - the per-wheel accent → the finish the copy promises:
+ *       aero    = polished machined silver,
+ *       turbine = dark graphite,
+ *       forged  = a voltaic-tinted machined finish (the one accent wheel).
+ * Pixels are matched by nearness to a known swatch RGB; everything else (the
+ * neutral greys of the rim body) is left alone, so the spoke geometry still
+ * reads. Returns the recoloured PNG buffer.
+ */
+async function retintWheelAtlas(pngBuffer, finish) {
+  const { data, info } = await sharp(pngBuffer)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const near = (r, g, b, t, tol) =>
+    Math.abs(r - t[0]) <= tol && Math.abs(g - t[1]) <= tol && Math.abs(b - t[2]) <= tol;
+  // The tyre swatch is a WARM TAN family (~252,225,194) with gradient edges that
+  // dip to ~244,205,157 — a fixed ±tol around one swatch leaves the darker rim-
+  // edge pixels (which read as an orange ring). Match the whole warm-tan family:
+  // bright, red≥green≥blue, with a clear warm spread (r−b large). This catches
+  // the tyre + its gradient lip without touching the neutral grey rim body.
+  const isTyre = (r, g, b) =>
+    r > 200 && r >= g - 4 && g >= b - 4 && r - b >= 25 && r - b <= 90;
+  const RUBBER = [34, 36, 40];
+  // The per-wheel accent swatch in the raw atlas (from the analysis).
+  const ACCENT_SRC = {
+    aero: [250, 107, 65], // orange
+    turbine: [89, 195, 135], // green
+    forged: [82, 85, 100], // blue-grey
+  }[finish];
+  const RIM = {
+    aero: [216, 222, 228], // polished machined silver
+    turbine: [56, 60, 66], // dark graphite
+    forged: [31, 158, 120], // voltaic machined
+  }[finish];
+  // A warm swatch (orange / amber / red / yellow) the wheel does NOT legitimately
+  // use, but whose pixels BLEED into the rim via bilinear/mipmap filtering at the
+  // atlas swatch boundary (the orange ring on the forged rim). Neutralise the
+  // whole warm family to the rim finish so no warm pixel can bleed in.
+  const isWarm = (r, g, b) => r > 150 && r > b + 40 && r >= g && g > b - 10;
+  for (let i = 0; i < data.length; i += info.channels) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    if (isTyre(r, g, b)) {
+      data[i] = RUBBER[0];
+      data[i + 1] = RUBBER[1];
+      data[i + 2] = RUBBER[2];
+    } else if (ACCENT_SRC && near(r, g, b, ACCENT_SRC, 40)) {
+      data[i] = RIM[0];
+      data[i + 1] = RIM[1];
+      data[i + 2] = RIM[2];
+    } else if (isWarm(r, g, b)) {
+      data[i] = RIM[0];
+      data[i + 1] = RIM[1];
+      data[i + 2] = RIM[2];
+    }
+  }
+  return sharp(data, {
+    raw: { width: info.width, height: info.height, channels: info.channels },
+  })
+    .png()
+    .toBuffer();
+}
+
+/**
+ * Build one wheel GLB: re-tint the colormap atlas (P1-C — neutral rubber + a
+ * finish-correct rim), KEEP it (tire/rim distinction), clean.
+ */
+async function buildWheel(io, srcName, outName, finish) {
   const src = join(SRC_DIR, srcName);
   const out = join(OUT_DIR, outName);
   const doc = await io.read(src);
+
+  // Re-tint the shared atlas in place before cleaning.
+  const tex = doc.getRoot().listTextures()[0];
+  if (tex) {
+    const png = await sharp(Buffer.from(tex.getImage())).png().toBuffer();
+    const retinted = await retintWheelAtlas(png, finish);
+    tex.setImage(retinted).setMimeType('image/png');
+  }
+
   // Keep textures; just flatten + clean the graph. No simplify (332 tris).
   await doc.transform(
     flatten(),
@@ -162,25 +375,76 @@ async function buildFleetCar(io, srcName, outName) {
   const out = join(OUT_DIR, 'fleet', outName);
   const doc = await io.read(src);
   const root = doc.getRoot();
+  const atlas = await loadAtlas(doc);
+
+  // P1-C (fleet): the fleet cars keep their bundled wheels, whose tyre is the
+  // same tan swatch that reads orange/copper. Re-tint the atlas tyre region to
+  // neutral rubber (the rim accent stays — fleet wheels are not configurable).
+  const fleetTex = doc.getRoot().listTextures()[0];
+  if (fleetTex) {
+    const png = await sharp(Buffer.from(fleetTex.getImage())).png().toBuffer();
+    const { data, info } = await sharp(png)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    for (let i = 0; i < data.length; i += info.channels) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      // Same warm-tan tyre family as the configurator wheels (incl. gradient lip)
+      // AND any warm orange/amber/red swatch (it bleeds into the rim) → a neutral
+      // dark machined finish so fleet wheels read clean (P1-C).
+      const isTyre =
+        r > 200 && r >= g - 4 && g >= b - 4 && r - b >= 25 && r - b <= 90;
+      const isWarm = r > 150 && r > b + 40 && r >= g && g > b - 10;
+      if (isTyre) {
+        data[i] = 34;
+        data[i + 1] = 36;
+        data[i + 2] = 40;
+      } else if (isWarm) {
+        data[i] = 70;
+        data[i + 1] = 74;
+        data[i + 2] = 80;
+      }
+    }
+    const retinted = await sharp(data, {
+      raw: { width: info.width, height: info.height, channels: info.channels },
+    })
+      .png()
+      .toBuffer();
+    fleetTex.setImage(retinted).setMimeType('image/png');
+  }
 
   // The single shared `colormap` material is used by BOTH the body and the
-  // wheels. Split it: give the body a brand-new textureless material (so the
-  // runtime owns its paint), and leave the wheels on the (kept) textured atlas.
-  const wheelMat = root.listMaterials().find((m) => m.getName() === 'colormap');
-  const bodyMat = doc.createMaterial('apex-fleet-body');
-  bodyMat.setBaseColorFactor([0.9, 0.92, 0.94, 1]);
-  bodyMat.setMetallicFactor(0.5);
-  bodyMat.setRoughnessFactor(0.3);
-  // Strip the body material's texture reference by reassigning the body mesh's
-  // primitives to the new textureless material.
-  for (const mesh of root.listMeshes()) {
-    const isBody = mesh.getName() === 'body';
-    for (const prim of mesh.listPrimitives()) {
-      if (isBody) prim.setMaterial(bodyMat);
+  // wheels. Split the BODY mesh into a paint group (`apex-fleet-body`) + a dark
+  // glass group (`apex-fleet-glass`) by atlas colour (P0-2), and leave the
+  // wheels on the (kept) textured atlas.
+  const bodyMesh = root.listMeshes().find((m) => m.getName() === 'body');
+  let split = false;
+  if (bodyMesh && atlas) {
+    split = splitBodyGlass(doc, bodyMesh, atlas);
+    if (split) {
+      // Rename so the runtime distinguishes a fleet body (offline paint) from
+      // the flagship body, but the GLASS material name is shared so one runtime
+      // rule (`/glass/`) tints both.
+      for (const prim of bodyMesh.listPrimitives()) {
+        const m = prim.getMaterial();
+        if (m && m.getName() === 'apex-body') m.setName('apex-fleet-body');
+      }
     }
   }
+  if (!split) {
+    // Fallback: no detectable glass swatch — give the whole body one textureless
+    // paint material (the pre-P0-2 behaviour).
+    const bodyMat = doc.createMaterial('apex-fleet-body');
+    bodyMat.setBaseColorFactor([0.9, 0.92, 0.94, 1]);
+    bodyMat.setMetallicFactor(0.5);
+    bodyMat.setRoughnessFactor(0.3);
+    for (const prim of bodyMesh?.listPrimitives() ?? []) prim.setMaterial(bodyMat);
+  }
+  console.log(`  fleet/${outName}: glass split ${split ? 'OK' : 'skipped'}`);
+
   // Keep the wheel atlas; just clean the graph (no simplify — already low-poly).
-  void wheelMat;
   await doc.transform(
     flatten(),
     dedup(),
@@ -219,12 +483,12 @@ async function main() {
   await report('apex-suv.glb', bodyOut, (await io.read(bodyOut)).getRoot());
 
   const wheels = [
-    ['wheel-default.glb', 'wheel-default.glb'],
-    ['wheel-dark.glb', 'wheel-dark.glb'],
-    ['wheel-racing.glb', 'wheel-racing.glb'],
+    ['wheel-default.glb', 'wheel-default.glb', 'aero'],
+    ['wheel-dark.glb', 'wheel-dark.glb', 'turbine'],
+    ['wheel-racing.glb', 'wheel-racing.glb', 'forged'],
   ];
-  for (const [srcName, outName] of wheels) {
-    const out = await buildWheel(io, srcName, outName);
+  for (const [srcName, outName, finish] of wheels) {
+    const out = await buildWheel(io, srcName, outName, finish);
     await report(outName, out, (await io.read(out)).getRoot());
   }
 

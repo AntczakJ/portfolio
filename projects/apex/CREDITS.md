@@ -50,11 +50,13 @@ the previous branded-Maybach BLOCKING flag is RESOLVED for the configurator
 - **Preparation (`web/scripts/optimize-model.mjs`, `pnpm -F apex-web
 model:optimize`):** the source is already tiny, so there is **NO meshopt/draco
   compression and NO WASM decoder** — the GLBs ship UNCOMPRESSED.
-  - `apex-suv.glb` = the `suv-luxury` BODY ONLY (one `body` mesh, **textures
-    dropped**) — the four in-body wheels are removed; **27 KB / 758 tris**.
-  - `wheel-{default,dark,racing}.glb` = the three wheel sets, **textures KEPT**
-    (the Kenney `colormap` atlas bakes the tire black + the per-set rim colour) —
-    **~29–31 KB / 332 tris each**.
+  - `apex-suv.glb` = the `suv-luxury` BODY ONLY (the `body` mesh **split into a
+    paint group + a dark-GLASS group** by atlas colour, **textures dropped**) —
+    the four in-body wheels are removed; **~28 KB / 758 tris / 2 materials**.
+  - `wheel-{default,dark,racing}.glb` = the three wheel sets, **textures KEPT but
+    RE-TINTED** at author time (tyre → neutral rubber; rim → the finish the copy
+    promises; warm-orange swatches neutralised so none bleeds into the rim) —
+    **~31–32 KB / 332 tris each**.
   - Total shipped model weight: **~119 KB** (was 1.82 MB for the old branded GLB).
 - **Decoder / WASM:** **NONE.** The GLBs are uncompressed, so there is no
   meshopt/draco decoder and no WebAssembly at load. This is the change that let
@@ -66,12 +68,19 @@ model:optimize`):** the source is already tiny, so there is **NO meshopt/draco
   flat-shaded forms, `color` driven by the configurator paint swatch). The four
   colour swatches (`col-glacier/graphite/voltaic/midnight`) rewrite that
   material's colour + finish live.
+- **Glass mechanism (P0-2):** the `body` mesh is split at author time into a
+  paint group and a `apex-glass` group by sampling the Kenney `colormap` atlas at
+  each triangle's UV centroid (the windows use a distinct blue-grey swatch). The
+  runtime assigns the glass group its own dark `MeshPhysicalMaterial`, so the
+  greenhouse never takes the body paint colour. Same split on the four fleet
+  bodies.
 - **Wheel mechanism (a genuine GEOMETRY swap):** the chosen wheel GLB is
   instanced at the four `WHEEL_NODES` captured from the source (front/back ×
   left/right; right side yawed π so the face points outboard). The three wheel
-  sets differ in BOTH rim geometry AND baked rim colour, so the swatch is a real
-  wheel-SET swap (no longer just a finish recolour). The wheels keep their
-  authored atlas material so the tire/rim distinction survives.
+  sets differ in BOTH rim geometry AND (re-tinted) baked rim colour, so the
+  swatch is a real wheel-SET swap. The wheels keep their authored — now re-tinted
+  — atlas material so the tyre/rim distinction survives (tyre = neutral rubber,
+  rim = the finish the copy promises).
 - **Studio environment:** generated on the GPU from drei `<Lightformer>` panels
   (NOT a fetched HDRI — drei's `preset`/`files` pull from a CDN, forbidden by
   ADR-002 §5), re-tuned for the flat-shaded low-poly forms (a crisp key so
@@ -88,23 +97,41 @@ Achieved via excellent studio lighting on the flat forms, a tasteful clearcoat
 on the body paint, a crisp contact shadow + studio sweep, and ONE restrained
 voltaic accent graze on the lower body.
 
-### Known limitations + PASS-B caveat fixes
+### Close-out polish (designer-critic) — glass, wheels, default paint
 
-- **Wheel contrast on white paint (FIXED in PASS B):** the polished-silver `aero`
-  rim near-disappears on the default Glacier-white body. The configurator default
-  wheel is now the DARK `turbine` rim (`defaultWheelId: 'whl-turbine'`), so the
-  hero LCP + default state show a legible wheel. Aero/forged stay selectable.
-- **Wheel-swatch thumbs (FIXED in PASS B):** the three thumbs read too similar.
-  They are now shot against GRAPHITE paint (not white) with a tight crop centred
-  on the front wheel, so the rim geometry difference (aero disc / turbine spokes /
-  voltaic-tinted forged) is clear at 48 px.
-- **Glasshouse takes the body paint (DOCUMENTED, left):** the optimized body GLB
-  is a SINGLE mesh, so the greenhouse/windows take the body paint colour rather
-  than a dark glass tint. Splitting a glass submesh would mean re-architecting the
-  body optimization (the Kenney `body` mesh bakes the glass into one primitive) —
-  not trivial, so it is left for the v2 swap-for-real higher-fidelity GLB (which
-  would carry a separate glass material). It reads acceptably as stylized
-  product-viz.
+- **Real dark-glass split (FIXED — the headline close-out win, P0-2):** the
+  optimized body is no longer one paint material. `optimize-model.mjs` splits the
+  `body` mesh into a paint group (`apex-body` / `apex-fleet-body`) + a GLASS group
+  (`apex-glass`) by classifying each triangle on the Kenney `colormap` atlas
+  swatch its UV centroid lands on (the greenhouse/windows use a distinct blue-grey
+  swatch — dark on the SUV, light blue-grey on the saloons; both are detected).
+  The runtime (`lumen-model.tsx`) assigns the glass group a separate dark
+  `MeshPhysicalMaterial` (low roughness, slight transmission, dark tint), so the
+  windows NEVER take the body colour. This makes EVERY paint — incl. Glacier White
+  and Voltaic Green — read as a real car with glass, not a toy. Applies to the
+  flagship AND all four fleet bodies.
+- **Wheel re-tint (FIXED, P1-C):** the raw Kenney atlas baked the tyre as a warm
+  TAN swatch (read as orange/copper — the "rusted toy wheel") and the `aero` rim
+  as orange. `optimize-model.mjs` now re-tints each wheel atlas at author time:
+  the whole warm-tan tyre family → neutral dark rubber, and each rim accent →
+  the finish the copy promises (aero = polished machined silver, turbine = dark
+  graphite, forged = a voltaic-tinted machined finish). Warm swatches adjacent to
+  used regions are also neutralised so no orange bleeds into the rim via texture
+  filtering. The fleet wheels get the same tyre/warm neutralisation.
+- **Default paint = GRAPHITE (changed):** `defaultColorId: 'col-graphite'` (was
+  `col-glacier`) in the baked configurator options + the hero/blur renders, so the
+  hero, the configurator landing, the confirmation payoff, and the white gallery
+  frame all default to the strong premium register. Glacier White stays fully
+  selectable; only the default presentation changed. The default wheel is now the
+  polished `whl-aero` (it reads with strong contrast on the graphite body).
+- **Glacier White swatch visibility (FIXED, P2-A):** the swatch chip carries an
+  inset hairline + spherical inner shadow (via `box-shadow`, so it never fights
+  the selected accent ring), so a near-white chip reads as a distinct, selectable
+  swatch on the white panel.
+- **Consistent fleet crops (FIXED, P1-A):** the four non-flagship fleet renders
+  are length-normalised (a per-car uniform scale to ~2.7 m apparent length under
+  the fixed rig, via the offline `__APEX_MODEL_SCALE` override) so all five fleet
+  cards read as ONE studio line-up with equal footprint.
 
 ### Naming
 

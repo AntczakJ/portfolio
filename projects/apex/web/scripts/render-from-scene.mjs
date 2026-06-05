@@ -183,12 +183,18 @@ async function main() {
       }
     }
 
-    // Hero crops from the DEFAULT config (Glacier + Aero) — the LCP frame.
-    await setConfig(page, 'col-glacier', 'whl-aero');
+    // Hero crops from a PREMIUM DARK paint (Graphite + Aero) — the LCP frame.
+    // (designer-critic P0-1: graphite reads premium; Glacier White read as a
+    // featureless grey block. White stays selectable; only the hero default
+    // presentation changed — it now matches the graphite configurator default.)
+    await setConfig(page, 'col-graphite', 'whl-aero');
     const heroPng = await shootCanvas(page);
     await avif(heroPng, join(RENDERS_DIR, `hero${suffix}.avif`), 1600, 900, 'cover');
     await avif(heroPng, join(RENDERS_DIR, `hero-desktop${suffix}.avif`), 1920, 1080, 'cover');
-    await avif(heroPng, join(RENDERS_DIR, `hero-mobile${suffix}.avif`), 900, 1100, 'cover');
+    // The mobile crop is sized for a phone viewport (≤ ~440 CSS px at DPR 2-3):
+    // 760×940 keeps it crisp on a 3× phone while shrinking the LCP payload vs the
+    // old 900×1100 (mobile-perf B: smaller LCP byte-weight on the critical path).
+    await avif(heroPng, join(RENDERS_DIR, `hero-mobile${suffix}.avif`), 760, 940, 'cover');
     console.log(`  ${theme}  hero crops`);
   }
 
@@ -276,9 +282,11 @@ async function main() {
     await avif(png, join(GALLERY_DIR, `profile${suffix}.avif`), 2000, 1250, 'cover');
     console.log(`  ${theme}  gallery profile`);
 
-    // rear-3q — yaw the car to a rear 3/4.
+    // rear-3q — yaw the car to a rear 3/4. P1-D: shot in MIDNIGHT (was Glacier
+    // White, which showed a featureless white block under premium copy — the one
+    // off-register gallery frame). Now all four gallery frames are dark/premium.
     await setYaw(page, Math.PI * 1.04);
-    await setConfig(page, 'col-glacier', 'whl-turbine');
+    await setConfig(page, 'col-midnight', 'whl-turbine');
     png = await shootCanvas(page);
     await avif(png, join(GALLERY_DIR, `rear-3q${suffix}.avif`), 2000, 1125, 'cover');
     console.log(`  ${theme}  gallery rear-3q`);
@@ -296,82 +304,95 @@ async function main() {
   // variety, and shoot the card AVIF (light + dark). This REPLACES the old
   // procedural-SVG jellybean fleet silhouettes (closes designer-critic N-1).
   const FLEET = [
-    // slug, fleet body GLB, paint params (premium clearcoat, per-car colour).
+    // slug, fleet body GLB, paint, scale. P1-A: `scale` length-normalises each
+    // silhouette to ~2.7 m apparent length under the fixed rig so all five fleet
+    // cards (flagship + four) read as ONE studio line-up with equal footprint
+    // (scale = 2.7 / body-length; lengths from the GLB bounds: stratos 2.55,
+    // terra 2.70, vella 2.55, mira 2.85). Grounded uniform scale (wheels stay on
+    // the floor). Premium dark/voltaic per-car paint for colour variety.
     {
       slug: 'stratos',
       url: '/models/fleet/stratos.glb',
       paint: { color: '#16243f', metalness: 0.72, roughness: 0.26, clearcoat: 1, clearcoatRoughness: 0.16 }, // midnight
+      scale: 1.06,
     },
     {
       slug: 'terra',
       url: '/models/fleet/terra.glb',
       paint: { color: '#2b313a', metalness: 0.66, roughness: 0.34, clearcoat: 1, clearcoatRoughness: 0.22 }, // graphite
+      scale: 1.0,
     },
     {
       slug: 'vella',
       url: '/models/fleet/vella.glb',
       paint: { color: '#5b6470', metalness: 0.6, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.2 }, // gunmetal silver
+      scale: 1.06,
     },
     {
       slug: 'mira',
       url: '/models/fleet/mira.glb',
       paint: { color: '#18c08a', metalness: 0.4, roughness: 0.26, clearcoat: 1, clearcoatRoughness: 0.14 }, // voltaic
+      scale: 0.95,
     },
   ];
 
-  async function setFleetBody(url, paint) {
-    await page.evaluate(
-      ({ url, paint }) => {
-        const w = window;
-        w.__APEX_BODY_URL = url;
-        w.__APEX_PAINT = paint;
-        w.__APEX_OWN_WHEELS = true;
-        delete w.__APEX_YAW;
+  // The offline overrides are read ONCE in `LumenModel` via a `useMemo([])` at
+  // mount, so a post-mount `window.__APEX_BODY_URL` change does NOT swap the
+  // body. To render a fleet body we open a FRESH page per car with the globals
+  // set via `addInitScript` BEFORE any page script runs (so the override is
+  // captured at the fresh mount). A fresh page per car avoids init-script
+  // accumulation + reload slowdown (which timed the dark pass out).
+  const harnessCss = `
+    #configurator p[aria-hidden="true"]{display:none !important;}
+    [data-configurator-stage] .absolute.right-4.bottom-4{display:none !important;}
+    [data-configurator-stage] *{transition:none !important;}
+    [data-configurator-stage] > div > div.absolute.inset-0:first-child{opacity:1 !important;}
+    [data-configurator-stage] > div > div.absolute.inset-0:nth-child(2){opacity:0 !important;}
+  `;
+  async function shootFleetCar(car, theme, suffix) {
+    const fp = await browser.newPage({
+      viewport: { width: 1600, height: 1100 },
+      deviceScaleFactor: 2,
+      hasTouch: false,
+      isMobile: false,
+      reducedMotion: 'reduce',
+    });
+    await fp.addInitScript(
+      ({ url, paint, scale }) => {
+        window.__APEX_BODY_URL = url;
+        window.__APEX_PAINT = paint;
+        window.__APEX_OWN_WHEELS = true;
+        window.__APEX_MODEL_SCALE = scale;
       },
-      { url, paint },
+      { url: car.url, paint: car.paint, scale: car.scale },
     );
-    // Force LumenModel to re-render so it reads the new overrides + suspends on
-    // the new body GLB. Toggling a config radio drives the same Zustand store the
-    // scene reads, which re-renders the subtree. Give the new GLB time to load.
-    await page.evaluate(() => {
-      document.querySelector('input[name="apex-wheel"][value="whl-turbine"]')?.click();
-      document.querySelector('input[name="apex-wheel"][value="whl-aero"]')?.click();
-    });
-    await page.waitForTimeout(1200);
-  }
-
-  async function clearFleetBody() {
-    await page.evaluate(() => {
-      const w = window;
-      delete w.__APEX_BODY_URL;
-      delete w.__APEX_PAINT;
-      delete w.__APEX_OWN_WHEELS;
-    });
+    await fp.goto(BASE, { waitUntil: 'load', timeout: 60000 });
+    await fp.addStyleTag({ content: harnessCss });
+    await setTheme(fp, theme);
+    await fp.locator('#configurator').scrollIntoViewIfNeeded();
+    await fp.waitForSelector('#configurator canvas', { state: 'attached', timeout: 45000 });
+    await fp.waitForTimeout(2400); // let the new body GLB load + paint
+    const png = await shootCanvas(fp);
+    await avif(png, join(RENDERS_DIR, '..', car.slug, `hero${suffix}.avif`), 1280, 800, 'cover');
+    console.log(`  ${theme}  fleet ${car.slug}`);
+    await fp.close();
   }
 
   for (const theme of ['light', 'dark']) {
-    await setTheme(page, theme);
     const suffix = theme === 'dark' ? '-dark' : '';
     for (const car of FLEET) {
-      await setFleetBody(car.url, car.paint);
-      const png = await shootCanvas(page);
-      await avif(png, join(RENDERS_DIR, '..', car.slug, `hero${suffix}.avif`), 1280, 800, 'cover');
-      console.log(`  ${theme}  fleet ${car.slug}`);
+      await shootFleetCar(car, theme, suffix);
     }
   }
-  await clearFleetBody();
-  // Restore the flagship body for the blur pass below.
-  await page.evaluate(() => {
-    document.querySelector('input[name="apex-wheel"][value="whl-turbine"]')?.click();
-    document.querySelector('input[name="apex-wheel"][value="whl-aero"]')?.click();
-  });
-  await page.waitForTimeout(1000);
+  // The original `page` was never given fleet overrides, so it still shows the
+  // flagship — reuse it for the blur pass (re-assert the still-hidden harness).
 
   // Blur placeholders — one per theme (D-16: the dark stage/hero must not flash
   // the light blur). Paste both into src/components/hero/hero-assets.ts.
   for (const theme of ['light', 'dark']) {
     await setTheme(page, theme);
-    await setConfig(page, 'col-glacier', 'whl-aero');
+    // Blur matches the new graphite hero default (no light flash before decode).
+    await setConfig(page, 'col-graphite', 'whl-aero');
     const blurPng = await shootCanvas(page);
     const blur = await sharp(blurPng)
       .resize(16, 9, { fit: 'cover' })

@@ -98,7 +98,13 @@ export function ConfiguratorControls(): ReactNode {
                 <span
                   aria-hidden="true"
                   className={cn(
+                    // P2-A: an inset hairline + spherical inner shadow (via
+                    // box-shadow, NOT `ring-*`, so it never fights the selected
+                    // accent ring) so a near-white chip (Glacier White) reads as a
+                    // distinct, selectable swatch on the white panel instead of
+                    // vanishing. The selected accent ring sits OUTSIDE (offset).
                     'size-9 rounded-full border outline-none transition-[box-shadow,transform]',
+                    'shadow-[inset_0_0_0_1px_rgba(16,21,28,0.22),inset_0_1px_2px_rgba(0,0,0,0.20),inset_0_-2px_5px_rgba(0,0,0,0.10)]',
                     'peer-focus-visible:outline-[3px] peer-focus-visible:outline-offset-[5px] peer-focus-visible:outline-[var(--color-foreground)]',
                     checked
                       ? 'border-accent ring-accent ring-2 ring-offset-2 ring-offset-[var(--color-surface)]'

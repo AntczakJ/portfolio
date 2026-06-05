@@ -61,13 +61,22 @@ const servedCsp = response?.headers()?.['content-security-policy'] ?? '(none)';
 console.log('\nServed Content-Security-Policy:\n  ' + servedCsp + '\n');
 
 // Scroll the configurator section into view so the capability gate runs and the
-// dynamic three.js chunk loads.
+// dynamic three.js chunk loads, then nudge the stage with a pointer hover so the
+// "arm on intent" path fires too (belt-and-braces: the IntersectionObserver +
+// the pointerenter both arm the canvas; on a busy CI host either alone can be
+// slow). A short settle lets the dynamic three.js chunk + GLB fetch start.
 await page.locator('#configurator').scrollIntoViewIfNeeded();
+await page.waitForTimeout(500);
+try {
+  await page.locator('[data-configurator-stage]').first().hover({ timeout: 5000 });
+} catch {
+  // hover is a best-effort arm; the observer also arms on approach.
+}
 await page.waitForTimeout(800);
 
 let canvasMounted = false;
 try {
-  await page.waitForSelector('#configurator canvas', { timeout: 20000 });
+  await page.waitForSelector('#configurator canvas', { timeout: 30000 });
   canvasMounted = true;
   console.log('R3F <canvas> mounted in the configurator stage (three.js hydrated under CSP).');
 } catch {

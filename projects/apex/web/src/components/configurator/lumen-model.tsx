@@ -71,19 +71,26 @@ function getOfflineOverrides(): {
   bodyUrl: string;
   paint: PaintParams | undefined;
   ownWheels: boolean;
+  modelScale: number | undefined;
 } {
   if (typeof window === 'undefined') {
-    return { bodyUrl: BODY_URL, paint: undefined, ownWheels: false };
+    return { bodyUrl: BODY_URL, paint: undefined, ownWheels: false, modelScale: undefined };
   }
   const w = window as unknown as {
     __APEX_BODY_URL?: string;
     __APEX_PAINT?: PaintParams;
     __APEX_OWN_WHEELS?: boolean;
+    __APEX_MODEL_SCALE?: number;
   };
   return {
     bodyUrl: typeof w.__APEX_BODY_URL === 'string' ? w.__APEX_BODY_URL : BODY_URL,
     paint: w.__APEX_PAINT,
     ownWheels: w.__APEX_OWN_WHEELS === true,
+    // P1-A: a per-fleet-car uniform scale so every fleet silhouette reads at the
+    // same apparent length under the fixed rig (one coherent line-up). Offline
+    // render harness only — undefined in normal app use (the flagship is 1).
+    modelScale:
+      typeof w.__APEX_MODEL_SCALE === 'number' ? w.__APEX_MODEL_SCALE : undefined,
   };
 }
 
@@ -111,10 +118,12 @@ export function LumenModel({ colorId, wheelId }: LumenModelProps): React.ReactNo
   const invalidate = useThree((s) => s.invalidate);
 
   // --- Body --------------------------------------------------------------
-  // Clone the body scene once per mount; assign the single `body` mesh a custom
-  // clearcoat MeshPhysicalMaterial we own (the atlas texture is already dropped
-  // at author time, so there is nothing to fight).
-  const { bodyScene, bodyMaterial } = useMemo(() => {
+  // Clone the body scene once per mount; assign the painted body group a custom
+  // clearcoat MeshPhysicalMaterial we own, and the GLASS group (the greenhouse /
+  // windows, split out at author time by `optimize-model.mjs`) a separate dark-
+  // glass material (P0-2: so the windows never take the body paint colour and the
+  // "no glass" tell is gone on light / bold paint).
+  const { bodyScene, bodyMaterial, glassMaterial } = useMemo(() => {
     const scene = gltf.scene.clone(true);
     const material = new THREE.MeshPhysicalMaterial({
       color: '#e9edf1',
@@ -124,23 +133,45 @@ export function LumenModel({ colorId, wheelId }: LumenModelProps): React.ReactNo
       clearcoatRoughness: 0.16,
       envMapIntensity: 1.1,
     });
+    // Dark, low-roughness tinted glass — a real automotive greenhouse. Slight
+    // transmission for depth without the cost of true refraction; ramped
+    // reflectivity so the studio softbox catches the screen as a highlight.
+    const glass = new THREE.MeshPhysicalMaterial({
+      color: '#0c1016',
+      metalness: 0,
+      roughness: 0.08,
+      clearcoat: 1,
+      clearcoatRoughness: 0.06,
+      transmission: 0.12,
+      ior: 1.45,
+      reflectivity: 0.6,
+      envMapIntensity: 1.4,
+    });
     scene.traverse((obj) => {
       if (obj instanceof THREE.Mesh) {
         obj.castShadow = true;
         obj.receiveShadow = true;
-        // In offline FLEET mode the body GLB is a WHOLE car (body + bundled
-        // wheels): paint ONLY the `body` mesh and leave the wheel meshes on
-        // their authored atlas (tire/rim distinction). The flagship body GLB has
-        // only the body mesh, so painting everything there is equivalent.
+        const objMaterial = obj.material as THREE.Material | THREE.Material[];
+        const matName = Array.isArray(objMaterial)
+          ? (objMaterial[0]?.name ?? '')
+          : objMaterial.name;
         const isWheel = /^wheel/i.test(obj.name);
-        if (!overrides.ownWheels || !isWheel) {
+        const isGlass = /glass/i.test(matName);
+        if (isGlass) {
+          // The greenhouse / windows: dark glass, NEVER the body paint.
+          obj.material = glass;
+        } else if (overrides.ownWheels && isWheel) {
+          // FLEET mode keeps the authored wheel atlas (tire/rim distinction).
+          if (obj.material instanceof THREE.MeshStandardMaterial) {
+            obj.material.envMapIntensity = 1.1;
+          }
+        } else {
+          // The painted body group.
           obj.material = material;
-        } else if (obj.material instanceof THREE.MeshStandardMaterial) {
-          obj.material.envMapIntensity = 1.1;
         }
       }
     });
-    return { bodyScene: scene, bodyMaterial: material };
+    return { bodyScene: scene, bodyMaterial: material, glassMaterial: glass };
   }, [gltf.scene, overrides.ownWheels]);
 
   // --- Wheels ------------------------------------------------------------
@@ -207,6 +238,7 @@ export function LumenModel({ colorId, wheelId }: LumenModelProps): React.ReactNo
     }
     return () => {
       bodyMaterial.dispose();
+      glassMaterial.dispose();
       const disposeUnique = (root: THREE.Object3D) => {
         root.traverse((obj) => {
           if (obj instanceof THREE.Mesh) {
@@ -220,7 +252,7 @@ export function LumenModel({ colorId, wheelId }: LumenModelProps): React.ReactNo
       disposeUnique(bodyScene);
       for (const { inst } of wheelInstances) disposeUnique(inst);
     };
-  }, [gltf.scene, wheelGltf.scene, bodyScene, wheelInstances, bodyMaterial]);
+  }, [gltf.scene, wheelGltf.scene, bodyScene, wheelInstances, bodyMaterial, glassMaterial]);
 
   const ref = useRef<THREE.Group>(null);
 
@@ -236,12 +268,14 @@ export function LumenModel({ colorId, wheelId }: LumenModelProps): React.ReactNo
       ? [MODEL_TRANSFORM.rotation[0], yawOverride, MODEL_TRANSFORM.rotation[2]]
       : [...MODEL_TRANSFORM.rotation];
 
+  const scale = overrides.modelScale ?? MODEL_TRANSFORM.scale;
+
   return (
     <group
       ref={ref}
       position={MODEL_TRANSFORM.position}
       rotation={rotation}
-      scale={MODEL_TRANSFORM.scale}
+      scale={scale}
     >
       <primitive object={bodyScene} />
       {/* Swapped wheel-GLB instances: the flagship configurator path only. In

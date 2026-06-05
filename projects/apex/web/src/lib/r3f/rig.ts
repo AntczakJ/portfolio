@@ -37,13 +37,18 @@ export const RIG_CAMERA = {
    * the model is yawed a touch below so the grille swings toward camera). Fit to
    * the small (~2.85 m long, ~1.5 m wide) model — a ~4.7-unit eye distance.
    */
-  position: [3.0, 1.85, 3.4] as const,
+  position: [3.25, 2.0, 3.68] as const,
   /**
    * Look at the beltline (~0.6 of the 1.17 m height) so the roofline keeps
    * vertical headroom and never tucks under the sticky header at any scroll
-   * offset.
+   * offset. P1-E: the eye distance was pulled back (~4.7 → ~5.1) so the whole
+   * car sits with margin on the LIVE stage too — the live `<Canvas>` adapts the
+   * camera's vertical fov to the container, and on the narrowest stage aspect
+   * (portrait mobile `5/6`) the previous distance let the roofline graze the top
+   * edge. The hero/matrix offline crops shoot from this SAME rig (one rig, three
+   * outputs), so the reveal-when-ready crossfade still pose-matches.
    */
-  target: [0, 0.62, 0] as const,
+  target: [0, 0.6, 0] as const,
   fov: 32,
   near: 0.1,
   far: 100,
@@ -164,16 +169,20 @@ export function resolvePaint(colorId: string): PaintParams {
 }
 
 /**
- * Wheel resolver. PASS A swaps real wheel GEOMETRY: each wheel id maps to a
- * separate CC0 wheel GLB (instanced at the four `WHEEL_NODES`) PLUS a rim-finish
- * material so the three sets read distinctly in value + character even on the
- * flat-shaded forms:
- *   - Aero    (wheel-default) = bright polished/mirror machined silver.
- *   - Turbine (wheel-dark)    = true dark graphite, matte-ish.
- *   - Forged  (wheel-racing)  = a voltaic-tinted brushed metal — the signature
- *     accent on the wheel.
- * The geometry differs per set (the swatch is a genuine mesh swap, no longer
- * just a finish), and the finish reinforces the choice at a glance.
+ * Wheel resolver. Each wheel id maps to a separate CC0 wheel GLB (instanced at
+ * the four `WHEEL_NODES`) — a genuine wheel-GEOMETRY swap. The finish is carried
+ * by the wheel's AUTHORED atlas, which `optimize-model.mjs` RE-TINTS at author
+ * time (P1-C) so each set matches its copy and the tyre reads as dark rubber
+ * (the raw kit baked a tan tyre + an orange aero rim that read as a "rusted toy
+ * wheel"):
+ *   - Aero    (wheel-default) = polished machined silver.
+ *   - Turbine (wheel-dark)    = dark graphite.
+ *   - Forged  (wheel-racing)  = a voltaic-tinted machined finish — the one
+ *     signature accent wheel.
+ * The `color`/`metalness`/`roughness` fields below are documentation of the
+ * INTENDED finish (mirrored by the atlas re-tint); the runtime keeps the
+ * authored, re-tinted atlas material rather than overriding it, so the tyre/rim
+ * distinction survives.
  */
 export interface WheelSpec {
   /** Public URL of the wheel GLB instanced at the four wheel nodes. */

@@ -138,8 +138,8 @@ export const SEED_CONFIGURATOR_OPTIONS = {
       "previewSrc": "/renders/lumen-gt/wheels/forged.avif"
     }
   ],
-  "defaultColorId": "col-glacier",
-  "defaultWheelId": "whl-turbine",
+  "defaultColorId": "col-graphite",
+  "defaultWheelId": "whl-aero",
   "renderMatrix": {
     "col-glacier:whl-aero": "/renders/lumen-gt/matrix/col-glacier__whl-aero.avif",
     "col-glacier:whl-turbine": "/renders/lumen-gt/matrix/col-glacier__whl-turbine.avif",
