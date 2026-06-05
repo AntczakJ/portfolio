@@ -4,7 +4,7 @@
 
 ## State
 
-- **Projects:** 4 (`tape` — implement phase Phase 3.2 landed; `meld` — v1 shipped, demo live at https://meld-demo.fly.dev; `razors-edge` — built 2026-06-03, web-only dark-luxe barbershop showcase, reviewer GREEN, 53 unit + 18 E2E pass, not yet deployed; `pulse` — v1 shipped + deployed 2026-06-04, api-heavy NestJS uptime monitor, slot 4, demo live at https://pulse-demo-web.fly.dev)
+- **Projects:** 5 (`tape` — implement phase Phase 3.2 landed; `meld` — v1 shipped, demo live at https://meld-demo.fly.dev; `razors-edge` — built 2026-06-03, web-only dark-luxe barbershop showcase, reviewer GREEN, 53 unit + 18 E2E pass, not yet deployed; `pulse` — v1 shipped + deployed 2026-06-04, api-heavy NestJS uptime monitor, slot 4, demo live at https://pulse-demo-web.fly.dev; `apex` — built 2026-06-05, web-only premium EV-positioned car-rental showcase with a real R3F + drei 3D configurator (four-tier WebGL degradation) and a fully mocked multi-step reservation flow, slot 5, 151 unit + 22 E2E pass, desktop Lighthouse ≥95, deploy-prepared (Fly, ADR-005), public deploy gated on the unbadged-model swap (P0-1), not yet deployed)
 - **Scaffold:** done (2026-05-28)
 - **CI:** green on empty repo (placeholder workflows)
 - **First commit:** pending owner ACK
@@ -46,9 +46,9 @@ Per `docs/conventions.md` § 12 — minimum 2–3 `api-heavy` projects with back
 | 2    | meld        | api-heavy           | Hono (Node)  |
 | 3    | razors-edge | web-only (creative) | — (mocked)   |
 | 4    | pulse       | api-heavy           | NestJS       |
-| 5    | —           | —                   | —            |
+| 5    | apex        | web-only (creative) | — (mocked)   |
 
-Composition status: 4 projects, 3 api-heavy across **three distinct backends** (tape Elysia/Bun + meld Hono/Node + pulse NestJS/Node). The § 12 constraint (2–3 api-heavy, ≥ 2 backends — ideally three: Hono + Fastify + one of NestJS / Elysia) is now **satisfied with margin** — three api-heavy projects, three distinct cutting-edge backends. Pulse claims the previously-reserved **open NestJS slot** and completes the portfolio's backend-variance story (thin-and-fast Elysia/Bun · multi-runtime-edge Hono · opinionated-enterprise NestJS). **Planner note:** the api-heavy / backend-variance target is met; slot 5 is unconstrained on this axis and free to be web-only or to revisit Fastify if a brief genuinely needs it.
+Composition status: 5 projects, 3 api-heavy across **three distinct backends** (tape Elysia/Bun + meld Hono/Node + pulse NestJS/Node). The § 12 constraint (2–3 api-heavy, ≥ 2 backends — ideally three: Hono + Fastify + one of NestJS / Elysia) is now **satisfied with margin** — three api-heavy projects, three distinct cutting-edge backends. Pulse claims the previously-reserved **open NestJS slot** and completes the portfolio's backend-variance story (thin-and-fast Elysia/Bun · multi-runtime-edge Hono · opinionated-enterprise NestJS). **Planner note:** the api-heavy / backend-variance target is met. Slot 5 (`apex`) is the owner's deliberate second web-only/creative pick (a 3D-configurator + mocked-reservation showcase) — § 12 stays satisfied with margin (3 api-heavy of 5, three distinct backends). Fastify remains the one § 11 backend not yet exercised — the natural choice for any future api-heavy brief.
 
 Planned (pre-allocated, not yet ratified):
 

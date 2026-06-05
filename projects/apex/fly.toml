@@ -1,0 +1,102 @@
+# fly.toml app configuration file for apex-rentals
+#
+# NOTE: `apex-rentals` is a PLACEHOLDER app name. If it is taken on Fly,
+# pick another (e.g. `apex-rentals-eu`, `apex-demo`) and update BOTH the
+# `app =` line below AND every `NEXT_PUBLIC_SITE_URL` (the Dockerfile ARG
+# default + the `[env]` mirror here) to match — every absolute URL
+# (canonical, OG, JSON-LD) is built from it. See DEPLOY.md.
+#
+# See https://fly.io/docs/reference/configuration/ for the schema. The
+# `[http_service]` block (NOT the legacy `[[services]]` array) is the
+# current Fly recommendation for single-service apps — the razors-edge /
+# meld posture carried forward.
+#
+# apex's deploy posture (ADR-005):
+#   - WEB-ONLY: a single Fly Machine running ONE process, the Next.js 15
+#     standalone Node server. No backend, no Postgres, no migrations, no
+#     secrets (the reservation flow is mocked in-memory — ADR-001 /
+#     ADR-003; the 3D configurator is client-side WebGL — ADR-002).
+#   - Single external port (443) → Fly edge TLS terminator → container
+#     internal port 3000 (the conventional Next standalone PORT).
+#   - Region `fra` (EU — owner is in Poznań), matching razors-edge / meld
+#     / tape.
+#   - `auto_stop_machines = 'stop'` + `min_machines_running = 1`: the app
+#     is stateless and could safely scale to zero, but this is a
+#     PORTFOLIO SHOWCASE — a recruiter clicking the demo URL must not hit
+#     a 5-10 s cold-start before the "five-second wow" (the scroll-hero
+#     into the live 3D configurator). min 1 keeps one Machine warm;
+#     `auto_stop` still lets Fly reap any extra Machines a burst spun up.
+#
+# PUBLIC-DEPLOY PRECONDITION (ADR-005 / review-6.3 P0-1): going PUBLIC
+# requires the branded-model swap first — the shipped GLB is a branded
+# Maybach GLS (trademarks + `gls_`/`maybach` material names), which is
+# NOT royalty-clear per ADR-001/002. The infra here is ready and a
+# PRIVATE/STAGING build can run, but a public demo URL must wait for the
+# unbadged CC0 GLB swap. Do not point a public canonical at this until
+# P0-1 is cleared.
+
+app = 'apex-rentals'
+primary_region = 'fra'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[deploy]
+  strategy = 'rolling'
+
+[env]
+  NODE_ENV = 'production'
+  # Next standalone listens on 3000 inside the container; Fly's edge
+  # forwards 443 → 3000 per `internal_port` below.
+  PORT = '3000'
+  # NEXT_PUBLIC_SITE_URL is baked at BUILD time in the Dockerfile (Next
+  # inlines NEXT_PUBLIC_* into the client bundle at build). Mirroring it
+  # here is defence-in-depth + an audit signal during `flyctl status`:
+  # server-side reads (metadataBase, OG, JSON-LD) honour this runtime
+  # value, and it documents the canonical origin. Keep in sync with the
+  # Dockerfile ARG.
+  NEXT_PUBLIC_SITE_URL = 'https://apex-rentals.fly.dev'
+
+[http_service]
+  # All external HTTPS traffic terminates at the Next standalone server
+  # on 3000. There is exactly one process and one surface — the whole
+  # site (the marketing `/` route tree, `/reserve`, the static assets,
+  # the OG image) is served from it.
+  internal_port = 3000
+  force_https = true
+  # Keep one Machine warm so the showcase loads instantly. `auto_stop`
+  # reaps extras; `min_machines_running = 1` guarantees no cold start on
+  # the canonical demo URL.
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+  [http_service.concurrency]
+    type = 'requests'
+    hard_limit = 250
+    soft_limit = 200
+
+  # HTTP health check on `/` — a 200 means the Next server is up and
+  # serving the marketing page (the app has no separate /health route;
+  # it is web-only, so the root document IS the liveness signal).
+  [[http_service.checks]]
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '20s'
+    method = 'get'
+    path = '/'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  # 512 MB. The Next server itself is light (apex is static-render + a
+  # client-side WebGL configurator — the heavy three.js + the 1.9 MB GLB
+  # run in the BROWSER, never on the server). The memory pressure on the
+  # server is the on-demand `next/image` AVIF optimization of the hero +
+  # gallery renders (sharp decoding/re-encoding), which is exactly what
+  # OOM-killed razors-edge at 256 MB on its first cinematic image
+  # optimization. We start at 512 MB to serve the image-optimization
+  # path cleanly. Bump to 1024 MB (no ADR needed) only if a burst
+  # pressures it.
+  memory_mb = 512

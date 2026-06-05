@@ -1,0 +1,342 @@
+@import 'tailwindcss';
+
+/* Tailwind v4 class-strategy dark variant. next-themes is configured with
+ * `attribute="class"` + `defaultTheme="light"`, so it writes `class="light"`
+ * (or `class="dark"`) on <html>. This custom variant makes the `dark:`
+ * utilities resolve against that class. Light is also the :root default
+ * below, so `dark:` utilities and the :root tokens agree on first paint. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* =========================================================================
+ * APEX — sovereign design tokens (Task 2.1).
+ *
+ * Premium-modern / EV register: a precise, technological LIGHT field — cool,
+ * near-white grounds with a faint blue cast (a studio / spec-sheet light),
+ * a near-black cool ink for type and structure, fine hairlines, ONE saturated
+ * "EV" accent (an electric voltaic green-cyan), and the recurring "track-line"
+ * motif token. The dark theme is the intentional "night drive / charging-bay"
+ * register — a deep cool-charcoal stage, NOT an inversion: the accent is
+ * re-keyed to GLOW on dark, the ink softens, surfaces lift toward the light.
+ *
+ * SOVEREIGN — built from scratch. NO token value is reused from tape, meld,
+ * razors-edge, or pulse (docs/conventions.md § 14, ADR-001). Tailwind v4 is
+ * CSS-first: theme tokens are CSS custom properties in @theme; there is NO
+ * tailwind.config.js.
+ *
+ * Contrast (WCAG 2.2 AA, verified — see AGENT_NOTES.md Task 2.1):
+ *   LIGHT  ink/bg        #10151c on #f4f6f8  → 14.9:1  (AAA)
+ *          muted/bg      #4d5765 on #f4f6f8  →  6.9:1  (AA / AAA small)
+ *          accent-ink/bg #0a7a5e on #f4f6f8  →  4.6:1  (AA)
+ *          ink-on-accent #06231b on #18c08a  →  9.1:1  (AAA)  [accent buttons]
+ *   DARK   ink/bg        #e8edf2 on #0a0e14  → 15.6:1  (AAA)
+ *          muted/bg      #9aa6b5 on #0a0e14  →  7.6:1  (AA / AAA small)
+ *          accent/bg     #2ee6a6 on #0a0e14  → 11.7:1  (AAA)
+ *          ink-on-accent #04150f on #2ee6a6  → 11.4:1  (AAA)  [accent buttons]
+ * ===================================================================== */
+
+@theme {
+  /* --- Type --------------------------------------------------------------
+   * Phase 2.2 loads the real variable faces via next/font and binds their
+   * CSS variables on <html>; these reference them with a system fallback so
+   * the page is legible before the web fonts resolve (no FOUT layout shift —
+   * the fallback metrics are close and next/font adds size-adjust). */
+  --font-sans:
+    var(--font-apex-sans), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-display:
+    var(--font-apex-display), var(--font-apex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+
+  /* --- Type scale (fluid, clamp-based) -----------------------------------
+   * A confident hierarchy (Linear / Stripe / Klim register). Steps are fluid
+   * between a 360 px floor and a 1440 px ceiling. Body sits at 1rem. The
+   * display steps drive the APEX wordmark + section heads. */
+  --text-2xs: 0.6875rem; /* 11px — micro-labels, legal */
+  --text-xs: 0.78125rem; /* 12.5px — eyebrows, captions */
+  --text-sm: 0.875rem; /* 14px — secondary UI */
+  --text-base: 1rem; /* 16px — body */
+  --text-lg: clamp(1.0625rem, 1rem + 0.3vw, 1.1875rem); /* lead body */
+  --text-xl: clamp(1.25rem, 1.1rem + 0.7vw, 1.5rem); /* sub-heads */
+  --text-2xl: clamp(1.6rem, 1.35rem + 1.1vw, 2.1rem); /* h3 */
+  --text-3xl: clamp(2.1rem, 1.7rem + 1.9vw, 3rem); /* h2 */
+  --text-4xl: clamp(2.8rem, 2.1rem + 3.2vw, 4.5rem); /* h1 / section heads */
+  --text-5xl: clamp(3.6rem, 2.4rem + 5.6vw, 7rem); /* hero display */
+  --text-6xl: clamp(4.6rem, 2.6rem + 9vw, 11rem); /* APEX wordmark */
+
+  /* --- Type rhythm -------------------------------------------------------- */
+  --leading-tight: 1.04; /* display */
+  --leading-snug: 1.18; /* sub-heads */
+  --leading-normal: 1.55; /* body */
+  --tracking-tight: -0.02em;
+  --tracking-snug: -0.01em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.04em; /* eyebrows */
+  --tracking-wider: 0.18em; /* spaced micro-labels / wordmark lockups */
+  --weight-light: 320;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 580;
+  --weight-bold: 680;
+
+  /* --- Colour: LIGHT (canonical default) ---------------------------------
+   * Cool near-white grounds (faint blue cast), near-black cool ink, ONE EV
+   * accent. Surfaces step UP toward pure white; the page ground is the
+   * dimmest. Hairlines are cool greys. */
+  --color-background: #f4f6f8; /* page ground — cool near-white */
+  --color-surface: #ffffff; /* raised cards / sticky header */
+  --color-surface-2: #eef1f4; /* recessed wells / inputs / track */
+  --color-surface-3: #e5e9ed; /* deeper recess / hover well */
+  --color-foreground: #10151c; /* near-black cool ink */
+  --color-fg-muted: #4d5765; /* secondary text — 6.9:1 */
+  --color-fg-subtle: #6c7785; /* tertiary / placeholder — 4.6:1 */
+
+  /* The single EV accent: an electric voltaic green-cyan. `accent` is the
+   * vivid fill (for solid buttons, the track-line glow, focus); `accent-ink`
+   * is the DARKENED variant for accent-coloured TEXT/icons on the light
+   * ground (the vivid fill is too light for 4.5:1 as text). `accent-contrast`
+   * is the ink to place ON the vivid fill. */
+  --color-accent: #18c08a; /* vivid EV fill */
+  --color-accent-ink: #0a7a5e; /* accent as text on light — 4.6:1 */
+  --color-accent-contrast: #06231b; /* ink on the vivid fill — 9.1:1 */
+  --color-accent-soft: #d8f4ea; /* tinted accent wash (badges, hovers) */
+
+  /* Structure */
+  --color-border: #d7dde3; /* default hairline */
+  --color-border-strong: #c2cad2; /* emphasised divider */
+  --color-ring: #18c08a; /* focus ring = accent */
+
+  /* Feedback (kept inside the cool/technological register) */
+  --color-success: #0a7a5e;
+  --color-danger: #c2304a;
+  --color-danger-ink: #a4172f;
+  --color-warning: #9a6b00;
+
+  /* --- The "track-line" motif --------------------------------------------
+   * The brand's recurring thin accent line (hero, dividers, reveals, the
+   * configurator studio floor). `track` is the hairline colour; `track-glow`
+   * is the accent-tinted variant for the lit segment; the gradient is the
+   * signature sweep used on dividers and the scroll affordance. */
+  --color-track: #c2cad2;
+  --color-track-glow: #18c08a;
+  --track-line-width: 1px;
+  --gradient-track: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--color-border-strong) 18%,
+    var(--color-accent) 50%,
+    var(--color-border-strong) 82%,
+    transparent 100%
+  );
+
+  /* Soft studio shadow under the car / raised cards (precision, not grain). */
+  --shadow-studio: 0 1px 2px -1px rgb(16 21 28 / 0.08), 0 12px 32px -12px rgb(16 21 28 / 0.18);
+  --shadow-card: 0 1px 2px -1px rgb(16 21 28 / 0.06), 0 4px 16px -8px rgb(16 21 28 / 0.1);
+
+  /* --- Radius ------------------------------------------------------------- */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1.125rem;
+  --radius-2xl: 1.75rem;
+  --radius-full: 9999px;
+
+  /* --- Spacing scale (8px base, with a 4px half-step) ---------------------
+   * Tailwind v4 keeps its default numeric spacing; these are named anchors
+   * for section rhythm and the configurator stage. */
+  --space-section: clamp(4rem, 2rem + 8vw, 9rem); /* between page sections */
+  --space-gutter: clamp(1.25rem, 0.5rem + 3vw, 3rem); /* page edge gutter */
+
+  /* --- Motion tokens (consumed by GSAP/CSS; honour reduced-motion) -------- */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1); /* the Linear-grade glide */
+  --ease-in-out-quint: cubic-bezier(0.83, 0, 0.17, 1);
+  --duration-fast: 180ms;
+  --duration-base: 320ms;
+  --duration-slow: 600ms;
+
+  /* --- Layout ------------------------------------------------------------- */
+  /* The max content column grows gently on ultra-wide so the spine is centred
+   * with balanced gutters and the key imagery breathes instead of being
+   * stranded left-of-centre in dead space at 2560px (A-10). It rests at 1280px
+   * up to ~1600px viewports, then scales toward 1440px on very large screens —
+   * still a controlled measure, never edge-to-edge. Every `mx-auto`
+   * max-w-[var(--width-content)] container (hero render cap, sections,
+   * configurator stage) inherits this, so the whole spine stays centred. */
+  --width-content: clamp(1280px, 60vw, 1440px); /* max content column */
+  --width-prose: 68ch; /* readable measure for long copy */
+  --header-height: 4rem;
+}
+
+/* Light is the canonical default (ADR-001): the :root token set above is
+ * LIGHT, so the server renders the light theme and there is no dark flash
+ * before next-themes hydrates. */
+:root {
+  color-scheme: light;
+}
+
+/* =========================================================================
+ * DARK — the intentional "night drive / charging-bay" register.
+ *
+ * NOT an inversion. A deep, cool charcoal stage (a faint blue-black, like a
+ * lit garage at night), the ink softened off pure white, surfaces LIFTED
+ * toward the light (a charging bay glows from within), and the EV accent
+ * re-keyed BRIGHTER + more luminous so it reads as a charge indicator on the
+ * dark stage. The track-line glows. Only the tokens that need re-keying are
+ * overridden; the scale/radius/type/motion tokens are theme-agnostic.
+ * ===================================================================== */
+.dark {
+  color-scheme: dark;
+
+  --color-background: #0a0e14; /* deep cool charcoal stage */
+  --color-surface: #121822; /* lifted panel (charging-bay glow) */
+  --color-surface-2: #19212d; /* raised control / input */
+  --color-surface-3: #222c3a; /* hover / deeper lift */
+  --color-foreground: #e8edf2; /* softened ink — 15.6:1 */
+  --color-fg-muted: #9aa6b5; /* secondary — 7.6:1 */
+  --color-fg-subtle: #76828f; /* tertiary — 4.6:1 */
+
+  /* On dark the vivid accent IS legible as text (11.7:1), so accent-ink can
+   * track the fill; the contrast ink on the fill stays the dark green-black. */
+  --color-accent: #2ee6a6; /* re-keyed brighter — charge glow */
+  --color-accent-ink: #2ee6a6; /* accent as text on dark — 11.7:1 */
+  --color-accent-contrast: #04150f; /* ink on the vivid fill — 11.4:1 */
+  --color-accent-soft: #0f2c24; /* tinted accent wash on dark */
+
+  --color-border: #283241; /* hairline on the dark stage */
+  --color-border-strong: #3a4656;
+  --color-ring: #2ee6a6;
+
+  --color-success: #2ee6a6;
+  --color-danger: #ff6378;
+  --color-danger-ink: #ff8d9c;
+  --color-warning: #f0c14b;
+
+  --color-track: #3a4656;
+  --color-track-glow: #2ee6a6;
+  --gradient-track: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--color-border-strong) 18%,
+    var(--color-accent) 50%,
+    var(--color-border-strong) 82%,
+    transparent 100%
+  );
+
+  /* The studio shadow goes to an accent-tinted glow on the dark stage rather
+   * than a black drop (a black shadow is invisible on near-black). */
+  --shadow-studio:
+    0 0 0 1px rgb(46 230 166 / 0.06), 0 24px 64px -24px rgb(0 0 0 / 0.7),
+    0 8px 32px -16px rgb(46 230 166 / 0.12);
+  --shadow-card: 0 1px 2px -1px rgb(0 0 0 / 0.5), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+}
+
+/* -------------------------------------------------------------------------
+ * Base element defaults bound to the tokens.
+ * --------------------------------------------------------------------- */
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  font-synthesis-weight: none; /* variable font supplies real weights */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* The variable display face wants slightly tighter optical settings; the
+ * `.font-display` utility is exposed for the wordmark + section heads. */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: var(--tracking-tight);
+  font-variation-settings: 'opsz' 96;
+}
+
+/* Brand-styled visible focus (a11y, CLAUDE.md § 4): never remove the outline
+ * without a replacement. The ring is the EV accent in both themes. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* Selection picks up the accent wash. */
+::selection {
+  background-color: var(--color-accent-soft);
+  color: var(--color-foreground);
+}
+
+/* -------------------------------------------------------------------------
+ * Mobile-menu drawer transitions (Task 4.1).
+ *
+ * The header's Radix Dialog drawer + overlay animate via `data-state`
+ * (no tailwindcss-animate dependency — plain CSS transitions on transform +
+ * opacity only, ADR-002 micro-interactions = CSS). The global reduced-motion
+ * floor below shortens these to ~instant, so the drawer still opens/closes,
+ * just without travel.
+ * --------------------------------------------------------------------- */
+.apex-overlay {
+  opacity: 0;
+  transition: opacity var(--duration-base) var(--ease-out-expo);
+}
+.apex-overlay[data-state='open'] {
+  opacity: 1;
+}
+
+.apex-drawer {
+  transform: translateX(100%);
+  transition: transform var(--duration-base) var(--ease-out-expo);
+  will-change: transform;
+}
+.apex-drawer[data-state='open'] {
+  transform: translateX(0);
+}
+
+/* -------------------------------------------------------------------------
+ * Hero scroll-cue charge (Task 6.2 PASS B / D-19).
+ *
+ * An accent "charge" descends the vertical track-line thread on a gentle loop —
+ * the track-line motif as a living scroll affordance (the eye follows the
+ * charge down into the configurator). Transform/opacity only. Under
+ * reduced-motion the charge rests as a static accent tick at the top of the
+ * thread (the keyframe is neutralised by the floor below AND we keep it legible
+ * via `motion-reduce` sizing on the element).
+ * --------------------------------------------------------------------- */
+@keyframes apex-scroll-charge {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  82% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(360%);
+    opacity: 0;
+  }
+}
+.apex-scroll-charge {
+  animation: apex-scroll-charge 2.4s var(--ease-out-expo) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .apex-scroll-charge {
+    animation: none;
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* Respect reduced-motion globally as the floor (animated surfaces gate their
+ * own choreography via gsap.matchMedia / useReducedMotion too — ADR-002/004,
+ * AGENT_NOTES cross-cutting). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,117 @@
+# Excludes from the Docker build context shipped to the daemon.
+# Anything matched here is NOT visible inside the build, regardless of
+# whether the Dockerfile would have COPY'd it. Trimming the context
+# keeps the per-build upload small and stops a stray .env from
+# accidentally landing in an image layer.
+#
+# Build context: `projects/apex/` (NOT the repo root). The Dockerfile
+# re-installs and re-builds inside the image, so every install artifact
+# below is rebuilt and must be excluded so a stale host `.next` /
+# `node_modules` never shadows the in-image build.
+#
+# P1-3 RESOLUTION CONTEXT: the Windows host's `.next/standalone` is
+# emitted with EPERM symlink warnings (no admin / Developer Mode). By
+# excluding `**/.next` here, the host's broken standalone trace can never
+# leak into the image — the Linux build stage produces a clean standalone
+# from scratch (where symlink tracing works). See DECISIONS.md ADR-005.
+
+# Workspace install + build artifacts — rebuilt inside the image.
+**/node_modules
+**/.next
+**/.turbo
+**/coverage
+**/dist
+**/out
+**/.cache
+**/tsconfig.tsbuildinfo
+**/.eslintcache
+**/playwright/.cache
+
+# Local environment files — secrets. apex needs NO runtime secrets
+# (web-only, in-memory mock — ADR-001 / ADR-003); the only config is the
+# build-time `NEXT_PUBLIC_SITE_URL` ARG, set in the Dockerfile, not from
+# a checked-in env file.
+**/.env
+**/.env.*
+!**/.env.example
+
+# Editor / OS noise.
+.vscode/
+.idea/
+**/.DS_Store
+**/Thumbs.db
+
+# Logs.
+**/*.log
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+
+# Test + review surfaces — never executed at runtime.
+**/__tests__
+**/__fixtures__
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+**/e2e
+**/playwright.config.ts
+**/playwright-report
+**/test-results
+**/.lighthouseci
+lighthouserc.json
+lighthouserc.mobile.json
+web/lighthouserc.json
+web/lighthouserc.mobile.json
+
+# The RAW source GLB is NOT in the repo and NOT under public/ — it lives
+# only on the owner's machine (`Downloads/source/...`, ~31 MB, branded
+# Maybach — P0-1). The OPTIMIZED 1.9 MB `web/public/models/apex-suv.glb`
+# IS required at runtime (the live R3F configurator + the Tier-3 stills
+# are rendered from it) and is intentionally NOT excluded here so it
+# ships in the image. When the P0-1 unbadged-GLB swap lands, the same
+# `public/models/apex-suv.glb` path is replaced — no .dockerignore change.
+# Defensive: never let a raw multi-MB source GLB into the context if one
+# is ever dropped under the project tree.
+**/source/*.glb
+**/*-raw.glb
+
+# Fleet body GLBs (model-swap PASS B) are RENDER-ONLY inputs — the offline
+# `render-from-scene.mjs` harness loads them over HTTP from a local
+# `next start` to bake the static fleet card AVIFs (`public/renders/<slug>/`).
+# The four non-flagship fleet cards are STATIC images at runtime (they are not
+# configurable, no live canvas), so these GLBs are never requested by the
+# browser in production — exclude them from the image to keep it lean.
+web/public/models/fleet
+
+# Dev-time asset/render/screenshot scripts (sharp render pipeline,
+# gltf-transform optimizer, capture + verify scripts). Their OUTPUTS are
+# committed under `web/public/{models,renders,gallery,maps,og}` and ship;
+# the scripts that produced them do not run at runtime.
+web/scripts
+
+# Per-project docs — readable on GitHub, not needed in the runtime image.
+**/README.md
+**/CHANGELOG.md
+**/PLAN.md
+**/PROGRESS.md
+**/DECISIONS.md
+**/AGENT_NOTES.md
+**/CREDITS.md
+**/TASKS.md
+**/CRITIQUE-*.md
+**/REVIEW-*.md
+**/DEPLOY.md
+docs
+
+# The build / deploy descriptors themselves — they tell the build what
+# to do; they do not belong inside the resulting image.
+fly.toml
+Dockerfile
+.dockerignore
+
+# Git metadata — not needed at runtime, and a stray fragment of the
+# repo's history in a layer is a leak surface.
+.git
+.gitignore
+.gitattributes

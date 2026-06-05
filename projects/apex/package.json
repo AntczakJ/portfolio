@@ -1,0 +1,15 @@
+{
+  "name": "apex",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "APEX — premium-modern / EV car-rental marketing site with an interactive 3D (R3F) configurator and a fully mocked multi-step reservation flow. Web-only Next.js 15 showcase (slot 5). Animation: R3F + drei (configurator) + GSAP + ScrollTrigger (scroll choreography); Motion excluded by default. See DECISIONS.md ADR-001..ADR-004.",
+  "scripts": {
+    "dev": "pnpm -F apex-web dev",
+    "build": "pnpm -F apex-web build",
+    "start": "pnpm -F apex-web start",
+    "lint": "pnpm -F apex-web lint",
+    "typecheck": "pnpm -F apex-web typecheck",
+    "test": "pnpm -F apex-web test"
+  }
+}

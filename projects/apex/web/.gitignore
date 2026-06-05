@@ -1,0 +1,21 @@
+# Build / deps
+.next/
+node_modules/
+*.tsbuildinfo
+next-env.d.ts
+
+# Local env
+.env
+.env.local
+.env*.local
+
+# Test / Lighthouse outputs (Phase 7)
+test-results/
+playwright-report/
+.lighthouseci/
+scripts/.screenshots/
+
+# Raw 3D model sources (model-swap PASS A) — the Kenney Car Kit (CC0) raw kit +
+# the downloaded zip. ONLY the optimized artifacts under public/models/ ship;
+# the raw kit (and its zip) must NEVER be committed.
+scripts/.model-src/
