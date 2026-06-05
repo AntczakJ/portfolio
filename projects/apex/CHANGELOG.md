@@ -4,7 +4,7 @@ All notable changes to **apex** are documented here. The format follows [Keep a 
 
 ## [Unreleased]
 
-Initial build of apex: a premium-modern, EV-positioned car-**rental** marketing site fronted by a genuine WebGL 3D configurator and a complete, mocked multi-step reservation flow. Feature-complete for v1, reviewed (designer-critic and reviewer passes landed, all defects cleared), tested, performance-fixed, deploy-prepared, and royalty-clear (the 3D blocker P0-1 is resolved — the whole fleet runs on CC0 models). Web-only, no backend. The public deploy now needs only the owner to run it.
+Initial build of apex: a premium-modern, EV-positioned car-**rental** marketing site fronted by a genuine WebGL 3D configurator and a complete, mocked multi-step reservation flow. Feature-complete for v1, reviewed (designer-critic and reviewer passes landed, all defects cleared), tested, performance-fixed, deploy-prepared, and royalty-clear (the 3D blocker P0-1 is resolved — the whole fleet runs on CC0 models). Web-only, no backend. v1 is deployed and public at https://apex-rentals.fly.dev (Fly.io, region `fra`, 2026-06-05). The final shipped CSP is `script-src 'self' 'unsafe-inline'` — the `'wasm-unsafe-eval'` from the original ADR-002 posture was dropped once the CC0 models removed the need for a WASM mesh decoder.
 
 ### Added
 

@@ -8,24 +8,24 @@ No emojis. English only.
 
 ---
 
-## STOP — public-deploy precondition (P0-1, BLOCKING)
+## Public-deploy preconditions — ALL CLEARED (v1 is live)
 
-> **The shipped 3D model is a branded Mercedes-Benz Maybach GLS 600
-> GLB** (trademarks + `gls_` / `maybach` material names). It is NOT
-> royalty-clear (violates ADR-001 / ADR-002). **A PUBLIC demo URL must
-> not go live until the unbadged, royalty-clear CC0 GLB swap (P0-1) is
-> done:** swap `web/public/models/apex-suv.glb`, re-run
+> **P0-1 (model licensing) is RESOLVED.** The whole fleet — the
+> configurator flagship and every fleet card — now runs on the
+> royalty-clear **CC0 [Kenney Car Kit](https://kenney.nl/assets/car-kit)**
+> (unbadged, public domain). The branded Maybach placeholder is gone from
+> the repo and the image. Dropping the meshopt WASM decoder along with it
+> also let us tighten the CSP to `script-src 'self' 'unsafe-inline'` (no
+> `unsafe-eval`, no `wasm-unsafe-eval`). There is no longer any licensing
+> precondition on a public deploy.
+>
+> **v1 is deployed and public: https://apex-rentals.fly.dev** (Fly.io,
+> region `fra`, 2026-06-05). To swap in different unbadged models later,
+> drop the GLB(s) under `web/public/models/`, re-run
 > `pnpm -F apex-web model:optimize` + `pnpm -F apex-web renders:scene`,
 > re-verify CSP, and update `CREDITS.md`.
->
-> Everything below (the infra, the Docker build, a PRIVATE / STAGING
-> deploy) is ready and may be exercised now. **Do not point a public
-> canonical at this build, and do not share the URL, until P0-1 is
-> cleared.** This is a licensing precondition, not a technical one — the
-> image builds and runs fine; it simply must not be published with a
-> branded car.
 
-The two other deploy-gate items from review-6.3 are already resolved:
+The other deploy-gate items from review-6.3 are also resolved:
 
 - **P1-1 (OG image)** — done (`public/og/opengraph.png`, wired in
   `layout.tsx`).

@@ -10,7 +10,7 @@ Built to be judged on two fronts in the same five seconds: a recruiter or peer w
 
 ## Demo
 
-**Demo: coming soon.** The deploy is fully prepared (Fly.io single Machine, Next.js 15 standalone, region `fra`, no backend, no secrets) but not yet public. The public URL is gated on one owner-side step — swapping the placeholder branded 3D model for a royalty-clear unbadged one (see [Credits and honesty](#credits-and-honesty) and [`DEPLOY.md`](./DEPLOY.md)). The canonical origin is wired through `NEXT_PUBLIC_SITE_URL`, baked at build time, and backs the sitemap, canonical tags, the Open Graph image, and the `AutoRental` JSON-LD. You can run the whole thing locally per [Run locally](#run-locally); the screenshots below are captured from the production build.
+**Demo: [apex-rentals.fly.dev](https://apex-rentals.fly.dev)** — live on Fly.io (single Machine, Next.js 15 standalone, region `fra`, no backend, no secrets, warm floor so there is no cold start). The whole fleet runs on royalty-clear CC0 models ([Kenney Car Kit](https://kenney.nl/assets/car-kit)). The canonical origin is wired through `NEXT_PUBLIC_SITE_URL`, baked at build time, and backs the sitemap, canonical tags, the Open Graph image, and the `AutoRental` JSON-LD. You can also run the whole thing locally per [Run locally](#run-locally); the screenshots below are captured from the production build.
 
 ## Screenshots
 

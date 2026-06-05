@@ -4,7 +4,7 @@
 
 ## State
 
-- **Projects:** 5 (`tape` — implement phase Phase 3.2 landed; `meld` — v1 shipped, demo live at https://meld-demo.fly.dev; `razors-edge` — built 2026-06-03, web-only dark-luxe barbershop showcase, reviewer GREEN, 53 unit + 18 E2E pass, not yet deployed; `pulse` — v1 shipped + deployed 2026-06-04, api-heavy NestJS uptime monitor, slot 4, demo live at https://pulse-demo-web.fly.dev; `apex` — built 2026-06-05, web-only premium EV-positioned car-rental showcase with a real R3F + drei 3D configurator (four-tier WebGL degradation) and a fully mocked multi-step reservation flow, slot 5, 151 unit + 22 E2E pass, desktop Lighthouse ≥95, deploy-prepared (Fly, ADR-005), public deploy gated on the unbadged-model swap (P0-1), not yet deployed)
+- **Projects:** 5 (`tape` — implement phase Phase 3.2 landed; `meld` — v1 shipped, demo live at https://meld-demo.fly.dev; `razors-edge` — built 2026-06-03, web-only dark-luxe barbershop showcase, reviewer GREEN, 53 unit + 18 E2E pass, not yet deployed; `pulse` — v1 shipped + deployed 2026-06-04, api-heavy NestJS uptime monitor, slot 4, demo live at https://pulse-demo-web.fly.dev; `apex` — built 2026-06-05, web-only premium EV-positioned car-rental showcase with a real R3F + drei 3D configurator (four-tier WebGL degradation) and a fully mocked multi-step reservation flow, slot 5, 151 unit + 22 E2E pass, desktop Lighthouse ≥95, P0-1 resolved (whole fleet on CC0 Kenney models; CSP tightened — no wasm-unsafe-eval), v1 shipped + deployed 2026-06-05, demo live at https://apex-rentals.fly.dev)
 - **Scaffold:** done (2026-05-28)
 - **CI:** green on empty repo (placeholder workflows)
 - **First commit:** pending owner ACK
