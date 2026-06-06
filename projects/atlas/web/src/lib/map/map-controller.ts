@@ -280,12 +280,27 @@ export class AtlasMapController {
     this.setVehiclesGeoJSON(buildVehiclesGeoJSON(snapshot));
   }
 
-  /** Focus a vehicle: fly (or cut, under reduced-motion) the camera to it. */
+  /** Focus a vehicle: fly (or cut, under reduced-motion) the camera to it.
+   * Uses the last snapshot position — `focusVehicleAt` is preferred when the
+   * caller (a panel reading the 1 Hz telemetry store) has a fresher position. */
   focusVehicle(vehicleId: string): void {
     if (this.destroyed) return;
     const vehicle = this.snapshot.vehicles.find((v) => v.id === vehicleId);
     if (!vehicle) return;
-    const target = { center: vehicle.position as LngLatLike, zoom: 15.5 };
+    this.flyOrCut(vehicle.position);
+  }
+
+  /** Focus a vehicle at an explicit live position. The fleet panel / detail
+   * panel read the 1 Hz telemetry store, which is fresher than the controller's
+   * last full snapshot, so they fly the camera to the current authoritative
+   * position rather than where the vehicle was on the last snapshot. */
+  focusVehicleAt(position: [number, number]): void {
+    if (this.destroyed) return;
+    this.flyOrCut(position);
+  }
+
+  private flyOrCut(position: [number, number]): void {
+    const target = { center: position as LngLatLike, zoom: 15.5 };
     if (this.reducedMotion) {
       this.map.jumpTo(target);
     } else {

@@ -7,6 +7,7 @@ import { getStaticFleetSnapshot } from '@/mocks/static-fleet';
 import { useLiveTelemetry } from '@/lib/interp/use-live-telemetry';
 import { resolveBasemapTheme } from '@/lib/map/basemap-style';
 import { AtlasMapController } from '@/lib/map/map-controller';
+import { useControllerStore } from '@/lib/store/controller-store';
 import { useOpsStore } from '@/lib/store/ops-store';
 
 /**
@@ -35,6 +36,7 @@ export function MapCanvas(): ReactNode {
   const snapshotRef = useRef(getStaticFleetSnapshot());
   const { resolvedTheme } = useTheme();
   const selectVehicle = useOpsStore((s) => s.selectVehicle);
+  const publishController = useControllerStore((s) => s.setController);
   const [ready, setReady] = useState(false);
   // The controller exposed as STATE (not just the ref) so the live-telemetry
   // hook re-runs once the map is mounted. The ref still owns the lifecycle.
@@ -53,6 +55,8 @@ export function MapCanvas(): ReactNode {
   resolvedThemeRef.current = resolvedTheme;
   const selectVehicleRef = useRef(selectVehicle);
   selectVehicleRef.current = selectVehicle;
+  const publishControllerRef = useRef(publishController);
+  publishControllerRef.current = publishController;
 
   // Mount the controller exactly once.
   useEffect(() => {
@@ -79,6 +83,9 @@ export function MapCanvas(): ReactNode {
     });
     controllerRef.current = controller;
     setController(controller);
+    // Publish the controller so sibling panels (fleet/detail) can drive the
+    // camera (focusVehicleAt) without owning the map instance.
+    publishControllerRef.current(controller);
 
     // Bridge reduced-motion changes to the controller (camera fly vs cut) AND to
     // the interpolation loop (snap vs tween) via the state the hook reads.
@@ -101,6 +108,7 @@ export function MapCanvas(): ReactNode {
       controller.destroy();
       controllerRef.current = null;
       setController(null);
+      publishControllerRef.current(null);
     };
   }, []);
 

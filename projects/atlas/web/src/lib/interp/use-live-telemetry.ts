@@ -7,6 +7,9 @@ import { InterpStore } from '@/lib/interp/interp-store';
 import { RafLoop } from '@/lib/interp/raf-loop';
 import { buildStopSIndex, type StopSIndex } from '@/lib/interp/stop-index';
 import { useConnectionStore } from '@/lib/store/connection-store';
+import { useEventsStore } from '@/lib/store/events-store';
+import { useSimControlStore } from '@/lib/store/sim-control-store';
+import { useTelemetryStore } from '@/lib/store/telemetry-store';
 import { snapshotFrameToFleet } from '@/lib/ws/snapshot-adapter';
 import { TelemetryWsClient } from '@/lib/ws/ws-client';
 import { resolveWsUrl } from '@/lib/ws/ws-url';
@@ -78,6 +81,12 @@ export function useLiveTelemetry(
     };
 
     const connection = useConnectionStore.getState();
+    // The LOW-frequency React stores the panels read (Task 5). They are fed from
+    // the SAME socket — never a second connection. 1 Hz is fine for React; the
+    // per-frame motion stays in the off-render InterpStore + the rAF loop above.
+    const telemetryStore = useTelemetryStore.getState();
+    const eventsStore = useEventsStore.getState();
+    const simControl = useSimControlStore.getState();
 
     const client = new TelemetryWsClient({
       url: resolveWsUrl(),
@@ -94,6 +103,14 @@ export function useLiveTelemetry(
           stopSIndex = buildStopSIndex(frame.routes, frame.stops);
           for (const t of frame.telemetry) setNextStopFor(t.vehicleId, t.nextStopId);
           interp.setFrozen(false);
+          // Seed the low-frequency panel store (static defs + first telemetry).
+          telemetryStore.applySnapshot({
+            vehicles: frame.vehicles,
+            routes: frame.routes,
+            stops: frame.stops,
+            zones: frame.zones,
+            telemetry: frame.telemetry,
+          });
           connection.setServerTick(frame.serverTick);
         },
         onTick: (frame) => {
@@ -102,12 +119,13 @@ export function useLiveTelemetry(
             interp.applyTick(t, now);
             setNextStopFor(t.vehicleId, t.nextStopId);
           }
+          // 1 Hz React update for the panels — replaces the changed vehicles.
+          telemetryStore.applyTick(frame.telemetry);
           connection.setServerTick(frame.serverTick);
         },
         onEvent: (frame) => {
           // Zone pulse on a geofence enter/exit (a low-frequency paint call,
-          // reduced-motion-safe inside the controller). The events feed (Phase 5)
-          // also consumes this; here we only drive the map beat.
+          // reduced-motion-safe inside the controller).
           const event = frame.event;
           if (
             (event.type === 'geofence.enter' || event.type === 'geofence.exit') &&
@@ -115,6 +133,11 @@ export function useLiveTelemetry(
           ) {
             controller.pulseZone(event.zoneId);
           }
+          // The events feed + the detail panel's recent-events read this store.
+          // The geofence beat is now wired three ways: zone pulse (above) + the
+          // event row (here) + the status flip (folded into the next tick's
+          // telemetry, already applied to the telemetry store).
+          eventsStore.pushEvent(event);
           connection.setServerTick(frame.serverTick);
         },
         onHeartbeat: (frame) => {
@@ -126,6 +149,9 @@ export function useLiveTelemetry(
           // positions (the loop freezes them at t==1) — never stale-as-live. A
           // fresh snapshot on reconnect reseeds cleanly.
           interp.setFrozen(status !== 'live');
+          // Publish/clear the sim-control bridge so the demo affordance can only
+          // send over a live socket (no queueing into the void).
+          simControl.setSend(status === 'live' ? (frame) => { client.send(frame); } : null);
         },
       },
     });
@@ -139,6 +165,7 @@ export function useLiveTelemetry(
       loop.stop();
       interp.clear();
       interpRef.current = null;
+      simControl.setSend(null);
     };
   }, [controller, ready]);
 }

@@ -48,13 +48,3 @@ export function PanelShell({
     </section>
   );
 }
-
-/**
- * A neutral empty-state used by the Phase 2 placeholder panels — honest about
- * what lands later, in the control-room voice.
- */
-export function PanelEmpty({ children }: { children: ReactNode }): ReactNode {
-  return (
-    <p className="text-fg-subtle text-sm leading-normal">{children}</p>
-  );
-}

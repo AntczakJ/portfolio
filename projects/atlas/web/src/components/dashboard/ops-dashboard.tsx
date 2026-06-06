@@ -2,11 +2,10 @@ import type { ReactNode } from 'react';
 
 import { TopBar } from '@/components/chrome/top-bar';
 import { MapRegion } from '@/components/map/map-region';
-import {
-  DetailPanel,
-  EventsPanel,
-  FleetPanel,
-} from '@/components/panels/fleet-panel';
+import { DemoControl } from '@/components/panels/demo-control';
+import { DetailPanel } from '@/components/panels/detail-panel';
+import { EventsPanel } from '@/components/panels/events-panel';
+import { FleetPanel } from '@/components/panels/fleet-panel';
 
 /**
  * OpsDashboard — the control-room app shell (Task 2.1).
@@ -43,9 +42,16 @@ export function OpsDashboard(): ReactNode {
         </div>
 
         {/* Map centerpiece — always the lead surface, full height of the grid
-            row. On small screens it takes a fixed tall block at the top. */}
-        <div className="min-h-[24rem] lg:min-h-0">
+            row. On small screens it takes a fixed tall block at the top. The
+            demo affordance floats over the bottom-left of the map so a recruiter
+            can drive the geofence beat without hunting for a control. */}
+        <div className="relative min-h-[24rem] lg:min-h-0">
           <MapRegion />
+          <div className="pointer-events-none absolute bottom-3 left-3 z-10">
+            <div className="pointer-events-auto">
+              <DemoControl />
+            </div>
+          </div>
         </div>
 
         {/* Right rail (detail + events). Hidden on lg-down; the reflow block
