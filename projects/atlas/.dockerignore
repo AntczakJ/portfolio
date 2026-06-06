@@ -41,12 +41,13 @@ docker-compose.yml
 **/*.sqlite3
 
 # --- the keyless basemap extract is a LARGE BINARY, gitignored + generated at
-#     deploy time and dropped into web/public/map/porto.pmtiles. It is NOT in
-#     the repo; exclude it defensively so a locally-generated copy is not
-#     uploaded in the context (the web image serves it from the same path once
-#     placed there at deploy — see DEPLOY.md). The committed keyless graticule
-#     fallback renders WITHOUT it.
+#     deploy time and dropped into web/public/map/porto.pmtiles (see DEPLOY.md).
+#     It SHIPS in the atlas-ops image so the deployed map renders real vector
+#     streets/water/buildings (served same-origin at /map/porto.pmtiles). Other
+#     stray .pmtiles are excluded; porto.pmtiles is the one deliberate extract.
+#     The committed keyless graticule fallback still renders WITHOUT it.
 web/public/map/*.pmtiles
+!web/public/map/porto.pmtiles
 
 # --- tests, smoke scripts, review artifacts, coverage (not needed at runtime) ---
 e2e

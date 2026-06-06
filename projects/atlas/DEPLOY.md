@@ -314,48 +314,55 @@ surface with a client-only live-data first paint; its budget is the 60 fps frame
 budget, not Lighthouse-SEO). On the deployed Fly real-CPU machine the mobile
 profile is the authoritative perf measurement.
 
-## The keyless basemap — the Porto `.pmtiles` extract (OPTIONAL enhancement)
+## The keyless basemap — the Porto `.pmtiles` extract (SHIPPED in the live demo)
 
 **The committed default renders keyless WITHOUT this.** The map's `style.load`
 path tolerates a missing source: with no `.pmtiles` it falls back to a painted
 background + a coordinate graticule, and the fleet / routes / zones render on top
-(the fleet is the wow, keyless either way — verified under a prod build in the
-Phase-2 close-out). The extract is a richer vector basemap, NOT a deploy gate.
+(the fleet is the wow, keyless either way). The extract adds the real vector
+basemap (roads, water, landuse, buildings) beneath the fleet — it is NOT a deploy
+gate, but the live demo ships it (verified live, both dark + light themes).
 
-### Why it is not committed
+### Why it is not committed (but DOES ship in the image)
 
-The `.pmtiles` extract is a multi-MB binary. The repo never commits large
-binaries (`web/public/map/*.pmtiles` is gitignored and `.dockerignore`'d). It is
-generated at deploy time and dropped into `web/public/map/porto.pmtiles` BEFORE
-the atlas-ops image build, so it ships inside that image and serves same-origin.
+The `.pmtiles` extract is a multi-MB binary, so the repo never commits it
+(`web/public/map/*.pmtiles` is gitignored). It IS generated at deploy time, dropped
+into `web/public/map/porto.pmtiles` BEFORE the atlas-ops image build, and ships
+inside that image (served same-origin at `/map/porto.pmtiles`). `.dockerignore`
+excludes stray `*.pmtiles` but has an explicit exception
+(`!web/public/map/porto.pmtiles`) so this one deliberate extract enters the build
+context. NOTE: because it is gitignored, a deploy from a FRESH checkout must
+re-run the extract below first, or the map degrades to the graticule fallback.
 
-### Producing the extract
+### Producing the extract (verified 2026-06-06 — go-pmtiles v1.30.3)
 
 The extract covers the demo-city bbox `DEMO_CITY_BBOX` (Porto downtown core,
-`web/src/lib/fleet/demo-city.ts`): `minLng,minLat,maxLng,maxLat =
--8.645,41.135,-8.585,41.165`. Use the Protomaps `pmtiles` CLI to extract that
-bbox from a Protomaps global basemap build (`pmtiles` is available via
-`go install github.com/protomaps/go-pmtiles@latest`, or download a release
-binary):
+`web/src/lib/fleet/demo-city.ts`): `-8.645,41.135,-8.585,41.165`. Download the
+`pmtiles` CLI from the [go-pmtiles releases](https://github.com/protomaps/go-pmtiles/releases)
+(a single static binary; or `go install github.com/protomaps/go-pmtiles@latest`),
+then extract the bbox from a recent Protomaps daily planet build. `pmtiles extract`
+pulls ONLY the bbox via HTTP range requests (~4 MB transferred, not the planet):
 
 ```sh
-# Extract the Porto bbox from a global Protomaps basemap into a small local file.
-# The source can be a Protomaps-hosted build URL or a downloaded global .pmtiles.
+# Pick a recent dated build (https://build.protomaps.com/YYYYMMDD.pmtiles).
 pmtiles extract \
-  https://build.protomaps.com/20240101.pmtiles \
+  https://build.protomaps.com/20260606.pmtiles \
   projects/atlas/web/public/map/porto.pmtiles \
   --bbox=-8.645,41.135,-8.585,41.165 \
-  --maxzoom=15
+  --maxzoom=16
 ```
 
-(Use the latest dated build from `build.protomaps.com`; a small downtown bbox at
-maxzoom 15 is typically a few MB — small enough to ship in the image, NOT large
-enough to commit.) Then deploy atlas-ops as usual — the file is picked up by the
-`COPY web/public` step. Verify with the `curl` in Verify step 4 (expect `200` +
-`accept-ranges: bytes`).
+The 2026-06-06 run produced a **3.8 MB** `porto.pmtiles` (61 tiles; the planet
+build's own max zoom is 15, so it caps there). The Protomaps basemap vector layers
+(`earth`, `water`, `landuse`, `roads`, `buildings`, `boundaries`) match the
+`source-layer` names in `web/src/lib/map/basemap-style.ts` — no style change is
+needed. Then deploy atlas-ops as usual (with the `--build-arg`s); the file is
+picked up by the `COPY web ./web` step. Verify with the `curl` in Verify step 4
+(expect `200` + `accept-ranges: bytes`) and a browser load (real streets render
+under the fleet, both themes).
 
-If `pmtiles extract` is unavailable or the extract is too large for comfort,
-**skip it** — the graticule fallback is the committed, working keyless default.
+If `pmtiles extract` is unavailable, **skip it** — the graticule fallback is the
+committed, working keyless default.
 
 ### Optional richer KEYED style (still no committed secret)
 
