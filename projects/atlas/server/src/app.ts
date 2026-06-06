@@ -9,6 +9,8 @@ import {
 
 import type { Env } from './config/env.schema.js';
 import { createDbHandle, type AtlasDbHandle } from './db/drizzle.js';
+import { EngineService } from './engine/engine-service.js';
+import { registerWsGateway } from './gateway/ws-gateway.js';
 import { registerHealthRoute } from './routes/health.js';
 
 /**
@@ -21,15 +23,28 @@ import { registerHealthRoute } from './routes/health.js';
  * (per-route + WS limits tighten in their phases). Returns the app plus the DB
  * handle so the caller owns the pool lifetime and drains it on shutdown.
  *
- * The simulation engine, the `@fastify/websocket` gateway, and the REST read
- * routes register here in later phases; Phase 1 is config + health + DB wiring.
+ * The simulation engine (the composition root {@link EngineService}) and the
+ * `@fastify/websocket` gateway (ADR-003) register here (Phase 4); the REST read
+ * routes follow in their phase. The caller owns the lifecycle: `engineService`
+ * is returned so `main.ts` calls `start()` at boot and `await stop()` on
+ * shutdown (the sink flush). The DB pool lifetime stays with the caller too.
  */
 export interface BuiltApp {
   app: FastifyInstance;
   dbHandle: AtlasDbHandle;
+  engineService: EngineService;
 }
 
-export async function buildApp(env: Env): Promise<BuiltApp> {
+/**
+ * Optional overrides for the build — test/smoke seams only (the production boot
+ * passes nothing, so the contract defaults stand: the 20 s heartbeat, etc.).
+ */
+export interface BuildAppOptions {
+  /** Override the WS heartbeat cadence (ms). Smoke/tests shorten it. */
+  readonly heartbeatIntervalMs?: number;
+}
+
+export async function buildApp(env: Env, options: BuildAppOptions = {}): Promise<BuiltApp> {
   const app = Fastify({
     logger: {
       level: env.NODE_ENV === 'production' ? 'info' : 'debug',
@@ -75,5 +90,22 @@ export async function buildApp(env: Env): Promise<BuiltApp> {
 
   registerHealthRoute(app);
 
-  return { app, dbHandle };
+  // The in-process simulation engine (ADR-002/ADR-007): one engine, one source
+  // of truth. The persistence sink writes off the tick hot path and NEVER
+  // propagates a DB failure into the loop (so the live WS channel works even
+  // without a reachable Postgres — the sink logs and drops). `app.log` satisfies
+  // the sink's logger contract.
+  const engineService = new EngineService(dbHandle.db, app.log);
+
+  // The `@fastify/websocket` telemetry gateway (ADR-003): snapshot-on-connect,
+  // per-tick coalesced broadcast, event frames, 20 s heartbeat, Zod-validated +
+  // rate-limited control frames, server-side scoping, backpressure.
+  await registerWsGateway(app, {
+    engineService,
+    ...(options.heartbeatIntervalMs !== undefined
+      ? { heartbeatIntervalMs: options.heartbeatIntervalMs }
+      : {}),
+  });
+
+  return { app, dbHandle, engineService };
 }

@@ -18,12 +18,16 @@ import { COMMIT_SHA } from './lib/commit.js';
  */
 async function main(): Promise<void> {
   const env = loadEnv();
-  const { app, dbHandle } = await buildApp(env);
+  const { app, dbHandle, engineService } = await buildApp(env);
 
   const shutdown = (signal: string): void => {
     app.log.info(`received ${signal}, shutting down`);
     void (async () => {
       try {
+        // Stop the engine first so the loop halts and the sink flushes its last
+        // queued events/snapshot; then close Fastify (the gateway's onClose hook
+        // drains live sockets); then end the DB pool.
+        await engineService.stop();
         await app.close();
         await dbHandle.sql.end({ timeout: 5 });
       } catch (err) {
@@ -46,8 +50,14 @@ async function main(): Promise<void> {
   // and 0.0.0.0 is what the brief pins for the dev server.
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
 
+  // Start the simulation loop AFTER the server is listening so the warm-floor
+  // fleet is already moving on first paint (ADR-007). The engine boots from the
+  // frozen Porto baseline directly (no DB dependency — ADR-005), so the live WS
+  // channel works even before the seed runs / without Postgres.
+  engineService.start();
+
   app.log.info(
-    `atlas-server (commit ${COMMIT_SHA}) listening on http://0.0.0.0:${String(env.PORT)} [env=${env.NODE_ENV}]`,
+    `atlas-server (commit ${COMMIT_SHA}) listening on http://0.0.0.0:${String(env.PORT)} [env=${env.NODE_ENV}] — engine running, ws at /ws`,
   );
 }
 
