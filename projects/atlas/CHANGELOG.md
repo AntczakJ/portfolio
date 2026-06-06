@@ -4,7 +4,9 @@ All notable changes to **atlas** are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
-A complete, working live geospatial fleet-tracking console — feature-complete for v1, tested, and awaiting deploy. A server-side deterministic simulation engine moves eighteen vehicles along hand-authored Porto routes on a fixed 1 Hz tick; telemetry streams over one `@fastify/websocket` connection; a MapLibre control-room map interpolates the fleet at 60 fps between authoritative ticks (the wow), with route trails, live ETAs, and live geofence enter / exit events. Four graceful-degradation arms, a first-class accessible non-map fleet table, a Lighthouse-100 SEO landing, seven ratified ADRs, designer-critic and reviewer passes applied, and Vitest + Playwright + Lighthouse CI in place. Not yet deployed — the demo URL is filled in by Phase 9.2.
+## [0.1.0] — 2026-06-06
+
+A complete, working live geospatial fleet-tracking console — feature-complete for v1, tested, and deployed to https://atlas-ops.fly.dev (Fly.io, region `fra`). A server-side deterministic simulation engine moves eighteen vehicles along hand-authored Porto routes on a fixed 1 Hz tick; telemetry streams over one `@fastify/websocket` connection; a MapLibre control-room map interpolates the fleet at 60 fps between authoritative ticks (the wow), with route trails, live ETAs, and live geofence enter / exit events. Four graceful-degradation arms, a first-class accessible non-map fleet table, a Lighthouse-100 SEO landing, seven ratified ADRs, designer-critic and reviewer passes applied, and Vitest + Playwright + Lighthouse CI in place. Deployed with a keyless Porto `.pmtiles` vector basemap served same-origin.
 
 ### Added
 
@@ -56,12 +58,16 @@ A complete, working live geospatial fleet-tracking console — feature-complete 
 - `docs/capture-screenshots.mjs` — a Playwright capture script driving a local prod stack (the same-origin-proxy recipe) and waiting on the real Live state and a real geofence event row before shooting.
 - `docs/screenshots/` — dashboard (dark / light / mobile), the geofence beat (vehicle detail + zone pulse + events feed), and the no-WebGL fleet table PNGs, captured against the local prod stack with the keyless graticule basemap.
 
+**Deploy** (Phase 9.2).
+
+- Deployed to https://atlas-ops.fly.dev (Fly.io, region `fra`): `atlas-fleet-eu` (the warm Fastify server + in-process engine + WS gateway, single source of truth), `atlas-ops` (the Next standalone web, proxying `/ws` + `/health` same-origin so the prod CSP stays `connect-src 'self'`), and `atlas-db-eu` (Fly Postgres, attached). The keyless Porto `.pmtiles` vector basemap ships in the web image and renders real streets / water / buildings under the fleet in both themes. Live-verified: `/health` ok, the fleet moving at 1 Hz, the production WebSocket on `wss://atlas-ops.fly.dev/ws` streaming snapshot + tick + event frames, and the strict CSP with no `unsafe-eval`.
+
 ### Honest boundaries
 
 - **Server-authoritative sim, client-interpolated motion.** Positions, headings, speeds, ETAs, route progress, and geofence transitions are computed server-side by the seeded engine. The on-screen smoothness is interpolation between authoritative 1 Hz ticks, never faked client motion. This is the credibility line and is documented.
 - **Seed vs live.** The `faker.seed` baseline (the fleet, the hand-authored Porto routes, the zones) is the deterministic world definition; the motion is live forward ticks, seekable back via the reducer fold. Postgres stores the definitions, a bounded snapshot, and the events history — it is not the engine's source of truth, which is why the live channel runs DB-less.
 - **Keyless map.** The committed repo renders the map with no paid secret (the painted control-room graticule basemap). The self-hosted Porto `.pmtiles` vector basemap is an optional deploy artifact; the optional tile key only enriches the basemap when supplied at deploy.
-- **The DB seed against Postgres has not been run end-to-end in CI.** The live WS channel and the public read endpoints run DB-less by design; the persisted events history + reconnect-from-persisted-snapshot want the seed, which is a Phase 9.2 deploy step.
+- **The DB seed runs at deploy, not in CI.** The live WS channel and the public read endpoints run DB-less by design; the persisted events history + reconnect-from-persisted-snapshot want the seed, which ran as part of the Fly deploy.
 
 ### Not shipped in v1 (deferred)
 
@@ -75,4 +81,5 @@ A complete, working live geospatial fleet-tracking console — feature-complete 
 
 ---
 
-[Unreleased]: https://github.com/AntczakJ/portfolio/tree/main/projects/atlas
+[Unreleased]: https://github.com/AntczakJ/portfolio/compare/atlas-v0.1.0...HEAD
+[0.1.0]: https://github.com/AntczakJ/portfolio/releases/tag/atlas-v0.1.0

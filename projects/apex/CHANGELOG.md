@@ -4,7 +4,9 @@ All notable changes to **apex** are documented here. The format follows [Keep a 
 
 ## [Unreleased]
 
-Initial build of apex: a premium-modern, EV-positioned car-**rental** marketing site fronted by a genuine WebGL 3D configurator and a complete, mocked multi-step reservation flow. Feature-complete for v1, reviewed (designer-critic and reviewer passes landed, all defects cleared), tested, performance-fixed, deploy-prepared, and royalty-clear (the 3D blocker P0-1 is resolved — the whole fleet runs on CC0 models). Web-only, no backend. v1 is deployed and public at https://apex-rentals.fly.dev (Fly.io, region `fra`, 2026-06-05). The final shipped CSP is `script-src 'self' 'unsafe-inline'` — the `'wasm-unsafe-eval'` from the original ADR-002 posture was dropped once the CC0 models removed the need for a WASM mesh decoder.
+## [0.1.0] — 2026-06-05
+
+Initial build of apex: a premium-modern, EV-positioned car-**rental** marketing site fronted by a genuine WebGL 3D configurator and a complete, mocked multi-step reservation flow. Feature-complete for v1, reviewed (designer-critic and reviewer passes landed, all defects cleared), tested, performance-fixed, and royalty-clear (the 3D blocker P0-1 is resolved — the whole fleet runs on CC0 models). Web-only, no backend. v1 is deployed and public at https://apex-rentals.fly.dev (Fly.io, region `fra`, 2026-06-05). The final shipped CSP is `script-src 'self' 'unsafe-inline'` — the `'wasm-unsafe-eval'` from the original ADR-002 posture was dropped once the CC0 models removed the need for a WASM mesh decoder.
 
 ### Changed (designer-critic close-out polish)
 
@@ -73,14 +75,14 @@ Initial build of apex: a premium-modern, EV-positioned car-**rental** marketing 
 
 ### Not shipped in v1 (deferred)
 
-- **Any real backend, database, or persistence.** The reservation is mocked end to end; a reload starts fresh. Wiring a real rental API (the unused Fastify slot, or NestJS) is the explicit v2 path.
+- **Any real backend, database, or persistence.** The reservation is mocked end to end; a reload starts fresh. Wiring a real rental API is the explicit v2 path.
 - **A higher-fidelity 3D model.** v1 ships the CC0 Kenney low-poly fleet (royalty-clear, unbadged — the P0-1 blocker is resolved). A higher-fidelity unbadged CC0 EV GLB (with a separate glass material) is a documented v2 swap; the swap-for-real path is unchanged.
 - **Real authentication, payments, or email / SMS confirmations.** None in v1; the price is displayed but nothing is charged, the licence is format-validated only, and the confirmation is on-screen plus an `.ics` download.
 - **A configurable fleet.** v1 ships one configurable hero vehicle; the rest use static renders. Per-vehicle configurators are a v2 path.
 - **A live interactive map embed.** v1 uses styled static-map treatments plus a maps click-through; a lazy live embed is a v2 candidate.
 - **CMS-managed content and internationalisation.** Seeded mock data, English only.
-- **Deploy.** Prepared but not yet public — now gated ONLY on the owner running the Fly deploy (the branded-model blocker P0-1 is resolved; the whole fleet is CC0).
 
 ---
 
-[Unreleased]: https://github.com/AntczakJ/portfolio/commits/main/projects/apex
+[Unreleased]: https://github.com/AntczakJ/portfolio/compare/apex-v0.1.0...HEAD
+[0.1.0]: https://github.com/AntczakJ/portfolio/releases/tag/apex-v0.1.0

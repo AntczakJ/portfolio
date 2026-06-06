@@ -6,13 +6,9 @@ All notable changes to **meld** are documented here. The format follows [Keep a 
 
 ### Added
 
-- Project README rewritten for the shipped v1: live demo link, screenshots (landing and board, light and dark, plus mobile), accurate stack, verified run instructions, and architecture notes.
-- `docs/capture-screenshots.mjs` — Playwright screenshot capture script for the README.
-- `docs/screenshots/` — landing (light / dark / mobile) and board (light / dark) PNGs captured against the live demo.
-
-### Known docs gap
-
-- The two-tab presence image (the headline wow-moment shot) is not yet committed. Capturing a live remote cursor reliably needs both WebSocket connections held in the same room simultaneously, which flaps under headless automation against the single-Machine demo. It is to be captured by hand from a local dev stack and dropped in as `docs/screenshots/two-tab-presence.png` — see the README "Screenshots" section.
+- Project README rewritten for the shipped v1: live demo link, screenshots (the two-tab presence hero plus landing and board, light and dark, plus mobile), accurate stack, verified run instructions, and architecture notes.
+- `docs/capture-screenshots.mjs` — Playwright screenshot capture script for the README; `e2e/capture-hero-local.mjs` drives two browser contexts against a local production-style stack for the two-tab presence hero shot.
+- `docs/screenshots/` — the two-tab presence hero (light / dark, the headline wow-moment shot, captured from a local prod stack), landing (light / dark / mobile), and board (light / dark) PNGs.
 
 ## [0.0.1] — 2026-06-01
 

@@ -4,10 +4,37 @@
 
 ## State
 
-- **Projects:** 6 (`tape` — implement phase Phase 3.2 landed; `meld` — v1 shipped, demo live at https://meld-demo.fly.dev; `razors-edge` — built 2026-06-03, web-only dark-luxe barbershop showcase, reviewer GREEN, 53 unit + 18 E2E pass, not yet deployed; `pulse` — v1 shipped + deployed 2026-06-04, api-heavy NestJS uptime monitor, slot 4, demo live at https://pulse-demo-web.fly.dev; `apex` — built 2026-06-05, web-only premium EV-positioned car-rental showcase with a real R3F + drei 3D configurator (four-tier WebGL degradation) and a fully mocked multi-step reservation flow, slot 5, 151 unit + 22 E2E pass, desktop Lighthouse ≥95, P0-1 resolved (whole fleet on CC0 Kenney models; CSP tightened — no wasm-unsafe-eval), v1 shipped + deployed 2026-06-05, demo live at https://apex-rentals.fly.dev; `atlas` — planned 2026-06-06, api-heavy live geospatial fleet/delivery tracking (Fastify + WebSocket + MapLibre), slot 6, deterministic server-side simulation engine streaming telemetry to a live map, planner done → architect next, not yet built)
+- **Portfolio status: COMPLETE — 6 projects, all shipped and deployed to Fly.io.** The backend-variance target is met: four api-heavy projects across four distinct backends (tape Elysia/Bun, meld Hono/Node, pulse NestJS/Node, atlas Fastify/Node) plus two web-only creative showcases (razors-edge, apex). atlas (slot 6, Fastify) completes the backend-variance story.
+  - `tape` — v1 shipped + deployed, api-heavy orderflow visualizer (Elysia/Bun + Rust worker), slot 1, demo at https://tape-demo.fly.dev
+  - `meld` — v1 shipped + deployed, api-heavy local-first whiteboard (Hono/Node + Yjs), slot 2, demo at https://meld-demo.fly.dev
+  - `razors-edge` — v1 shipped + deployed, web-only dark-luxe barbershop showcase (GSAP), slot 3, demo at https://razors-edge-demo.fly.dev
+  - `pulse` — v1 shipped + deployed, api-heavy uptime monitor (NestJS + BullMQ), slot 4, demo at https://pulse-demo-web.fly.dev
+  - `apex` — v1 shipped + deployed, web-only EV car-rental showcase (R3F 3D configurator), slot 5, demo at https://apex-rentals.fly.dev
+  - `atlas` — v1 shipped + deployed, api-heavy live geospatial fleet tracking (Fastify + WebSocket + MapLibre, keyless Protomaps basemap), slot 6, demo at https://atlas-ops.fly.dev
 - **Scaffold:** done (2026-05-28)
-- **CI:** green on empty repo (placeholder workflows)
-- **First commit:** pending owner ACK
+- **CI:** green
+- **First commit:** done (repo has full history)
+
+## Deployment status (INTERNAL — 2026-06-06)
+
+All six demos are deployed to Fly.io. **The Fly apps are currently STOPPED to control cost; they are restartable on request.** This pause is internal and cost-driven — it is NOT reflected in any public README or CHANGELOG (the demo links there stay normal/live by deliberate owner policy).
+
+Restart procedure (durable — do not hardcode machine IDs; list them with `fly machines list -a <app>`). Start the database first, then the api/server, then the web. Web-only apps auto-start when the demo URL is hit.
+
+```sh
+# pattern
+fly machines list -a <app>                 # find the machine id(s)
+fly machine start <id> -a <app>            # start; DB first, then api/server, then web
+```
+
+| Project     | Apps (start in this order)                                                                                           | Notes                                                                                                                     |
+| ----------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| tape        | `tape-pg` (Postgres) → `tape-demo` (web)                                                                             | web carries the Elysia server + Next via the catch-all proxy                                                              |
+| meld        | `meld-db` (Postgres) → `meld-demo` (web)                                                                             | web carries Hono + Hocuspocus + Next                                                                                      |
+| razors-edge | `razors-edge-demo` (web only, no DB)                                                                                 | auto-starts on URL hit                                                                                                    |
+| pulse       | `pulse-demo-db2` (Postgres) → `pulse-demo-api` (NestJS, web + worker processes, 4 machines) → `pulse-demo-web` (web) | Redis is **Upstash (managed, always-on)** — not a Fly machine, nothing to start; the worker→SSE bridge needs it reachable |
+| apex        | `apex-rentals` (web only, no DB)                                                                                     | auto-starts on URL hit                                                                                                    |
+| atlas       | `atlas-db-eu` (Postgres) → `atlas-fleet-eu` (Fastify server + engine + WS) → `atlas-ops` (web)                       | the live map runs DB-less; DB is for the persisted events history                                                         |
 
 ## Done
 
@@ -27,14 +54,12 @@
 
 ## In progress
 
-- Project 1 (`tape`) — implement phase, Phase 3.2 (cursor + crosshair + cell tooltip + Follow-live affordance) landed 2026-05-30; Phase 3.3..3.6 and Phase 1 Rust-side follow-ons (1.5 / 1.5c / 1.5d) continue.
-- Project 2 (`meld`) planned — handing to `architect` for ADR-002 (Hono WebSocket adapter choice) then ADR-003 (Yjs snapshot persistence strategy), then `frontend-engineer` + `backend-engineer` for parallel implementation of v1 scope.
+- Nothing in active build. All six projects are shipped and deployed; the portfolio composition is complete.
 
 ## Next
 
-- [ ] `architect` authors **ADR-002** (Rust ↔ Elysia bridge), **ADR-003** (persistence schema), **ADR-004** (WebSocket frame contract) in `projects/tape/DECISIONS.md`.
-- [ ] `backend-engineer` scaffolds Bun + Elysia under `projects/tape/server/` (PLAN.md task 1.1).
-- [ ] `frontend-engineer` scaffolds Next.js 15 + Tailwind v4 under `projects/tape/web/` (PLAN.md task 2.1).
+- [ ] Optional: per-project v2 backlogs (recorded in each project's CHANGELOG / PLAN under deferred items).
+- [ ] On request: restart the Fly demos per the Deployment status table above.
 
 ## Portfolio composition tracker
 
@@ -49,9 +74,4 @@ Per `docs/conventions.md` § 12 — minimum 2–3 `api-heavy` projects with back
 | 5    | apex        | web-only (creative) | — (mocked)   |
 | 6    | atlas       | api-heavy           | Fastify      |
 
-Composition status: 6 projects, **4 api-heavy across FOUR distinct backends** (tape Elysia/Bun + meld Hono/Node + pulse NestJS/Node + atlas Fastify/Node) + 2 web-only creative (razors-edge, apex). The § 12 constraint (2–3 api-heavy, ≥ 2 backends — ideally Hono + Fastify + one of NestJS / Elysia) is now **fully satisfied and the backend-variance story is COMPLETE**: atlas (slot 6) claims the last unused § 11 backend (Fastify), so the portfolio now demonstrates all four cutting-edge Node/Bun backends (thin-and-fast Elysia/Bun · multi-runtime-edge Hono · opinionated-enterprise NestJS · focused-performance Fastify). The two web-only creative slots (razors-edge dark-luxe marketing, apex 3D-configurator) round out the range. No backend axis remains to fill.
-
-Planned (pre-allocated, not yet ratified):
-
-- Slot 5 — edge-native voice/multimodal (Motion).
-- Slot 6 (optional) — WebGPU + TSL.
+Composition status: 6 projects, **all shipped + deployed**. **4 api-heavy across FOUR distinct backends** (tape Elysia/Bun + meld Hono/Node + pulse NestJS/Node + atlas Fastify/Node) + 2 web-only creative (razors-edge, apex). The § 12 constraint (2–3 api-heavy, ≥ 2 backends — ideally Hono + Fastify + one of NestJS / Elysia) is **fully satisfied and the backend-variance story is COMPLETE**: atlas (slot 6) claims the last unused § 11 backend (Fastify), so the portfolio demonstrates all four cutting-edge Node/Bun backends (thin-and-fast Elysia/Bun · multi-runtime-edge Hono · opinionated-enterprise NestJS · focused-performance Fastify). The two web-only creative slots (razors-edge dark-luxe marketing, apex 3D-configurator) round out the range. No backend axis remains to fill.

@@ -15,9 +15,11 @@ Production-grade showcase monorepo. Each subfolder in `projects/*` is an indepen
 
 ## Philosophy
 
+Six projects, all complete and deployed. Four are api-heavy, deliberately spread across four distinct backends — Elysia/Bun (`tape`), Hono/Node (`meld`), NestJS/Node (`pulse`), and Fastify/Node (`atlas`) — so the backend-variance story is complete rather than one framework repeated. The remaining two (`razors-edge`, `apex`) are web-only design showcases, one a cinematic marketing site, one a genuine WebGL 3D configurator.
+
 - **Polish over breadth.** Every project ships with a "wow moment" — 3D, scroll-driven animation, transitional view, generative element. Minimalism is not a default; it is a decision.
 - **Variance is the point.** Different projects use different backends, different design systems, different animation strategies. The portfolio demonstrates range, not a single template repeated.
-- **Quality is non-negotiable.** Light + dark, mobile-first from 320 px up, WCAG 2.2 AA, Lighthouse ≥ 95 across categories, shared Zod schemas front-to-back, tests on critical paths.
+- **Quality is non-negotiable.** Light + dark, mobile-first from 320 px up, WCAG 2.2 AA, Lighthouse ≥ 95 across categories (with one scoped, documented exception on `tape`'s live real-time route), shared Zod schemas front-to-back, tests on critical paths.
 
 Full policy lives in [`CLAUDE.md`](./CLAUDE.md) and [`docs/conventions.md`](./docs/conventions.md). Visual references in [`docs/inspirations.md`](./docs/inspirations.md).
 

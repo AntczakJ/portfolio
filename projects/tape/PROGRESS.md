@@ -2,6 +2,17 @@
 
 > Read on start. Write on end.
 
+## Deployment status (INTERNAL — 2026-06-06)
+
+- **Deployed:** https://tape-demo.fly.dev (Fly.io, region `fra`).
+- **Current state: STOPPED to control cost; restartable on request.** This pause is internal only — the README and CHANGELOG keep the demo link live/normal by deliberate owner policy. Do not add paused wording there.
+- **Restart (DB first, then web; do not hardcode machine IDs):**
+  ```sh
+  fly machines list -a tape-pg && fly machine start <id> -a tape-pg      # Postgres
+  fly machines list -a tape-demo && fly machine start <id> -a tape-demo  # Elysia server + Next (catch-all proxy)
+  ```
+  Verify: `curl https://tape-demo.fly.dev/health` returns `status: ok` with `db.connected: true` and `worker.state: connected`.
+
 ## State
 
 - **Phase:** implement phase — backend Phase 1 Tasks 1.1 + 1.2 + 1.2a + 1.2b + 1.3 + 1.4 + 1.4a + 1.4b + 1.5 + 1.5b + 1.6a + 1.6b in + frontend Tasks 2.1 + 2.2 + 2.3 + 2.4 + 2.5 + 2.6 + 3.1 + 3.2 in; **eight architect ADRs landed (ADR-001..008)**; Phase 2 closed; **Phase 3.2 — cursor + crosshair + cell tooltip + clickable Follow-live affordance — landed 2026-05-30**; **Task 1.4 — TypeScript footprint-cell aggregator reference impl + shared conformance fixtures — landed 2026-06-04** (built AFTER the Rust port 1.5; the TS reference is now verified to mirror the existing Rust aggregator, conformance direction is reversed but the contract holds); **ADR-007 + ADR-008 — the two Task-1.4-flagged architecture decisions (bucketing single-source-of-truth + CVD placement) — landed 2026-06-04**; **Task 1.4c (de-dup bucketing constants per ADR-007) + Task 1.5e (port CVD to the Rust aggregator per ADR-008) — landed 2026-06-04**; **Task 3.4 (WS client + Zustand store) + Task 3.3 (live tape ticker) + client-side CVD derivation per ADR-008 — landed 2026-06-04, PROVEN live against the offline synth→worker pipeline** (real `WSStreamClient` + `useStreamStore` ingested snapshot=1/tick=315/cell.delta=315/cell.close=82 over 65 s; store ring-bounded recentTicks=200/closedCells=120, CVD derived client-side = −4.9; reconnect-from-snapshot proven by bouncing the server mid-stream → restartCount climbed → SECOND snapshot reset tickCount 95→0 + CVD→0; live browser screenshot at `docs/screenshots/live-render-3.3-3.4.png`); **Task 3.2c (CVD line sub-pane) + Task 3.5 (aria-live SR cell-readout mirror) landed 2026-06-04, PROVEN live against the offline synth→worker pipeline** — the CVD line renders on a SECOND canvas driven by the SAME engine rAF pass + scale as the footprint (X-axes locked); it tracks correctly (observed `CVD −4.2` red/falling then `+3.5` green/rising as net flow flipped), with a baseline-zero line + numeric value label as the non-colour channel; a bounded `cvdSeries: { bucketTs, cvd }[]` ring was added to the store (additive, per ADR-008's documented seam) as the per-bar time series the line consumes; the SR mirror announces hovered-cell bid/ask/delta/imbalance% throttled to one announcement per CELL change (keyed on `${bucketTs}:${priceBucket}`), and the visual tooltip is now `aria-hidden` (single SR channel); live screenshot at `docs/screenshots/cvd-pane-3.2c.png`; **Task 3.6 (replay mode) landed 2026-06-04 — PHASE 3 / THE WOW-MOMENT FEATURE SET IS NOW COMPLETE**, PROVEN live against a seeded historic day (see below); the remaining Phase 1 Rust-side follow-ons + Task 5.2 continue from here

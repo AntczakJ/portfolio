@@ -2,6 +2,16 @@
 
 > Read on start. Write on end.
 
+## Deployment status (INTERNAL — 2026-06-06)
+
+- **Deployed:** https://razors-edge-demo.fly.dev (Fly.io, region `fra`, web-only, no DB).
+- **Current state: STOPPED to control cost; restartable on request.** This pause is internal only — the README and CHANGELOG keep the demo link live/normal by deliberate owner policy. Do not add paused wording there.
+- **Restart (web only — auto-starts on URL hit; or start it explicitly):**
+  ```sh
+  fly machines list -a razors-edge-demo && fly machine start <id> -a razors-edge-demo
+  ```
+  Verify: loading https://razors-edge-demo.fly.dev returns 200.
+
 ## State
 
 - **Phase:** **Gallery overlay-heading legibility bugfix complete + verified** (frontend-engineer, 2026-06-03) — fixed the owner-reported "heading invisible in light mode" in the gallery section. **Did NOT commit** (the main thread commits + redeploys). Root cause + fix + proof:
