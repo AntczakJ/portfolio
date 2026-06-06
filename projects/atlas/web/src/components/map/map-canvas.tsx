@@ -9,6 +9,7 @@ import { resolveBasemapTheme } from '@/lib/map/basemap-style';
 import { AtlasMapController } from '@/lib/map/map-controller';
 import { useControllerStore } from '@/lib/store/controller-store';
 import { useOpsStore } from '@/lib/store/ops-store';
+import { useViewModeStore } from '@/lib/store/view-mode-store';
 
 /**
  * MapCanvas — the `'use client'` boundary around the imperative AtlasMapController
@@ -37,6 +38,7 @@ export function MapCanvas(): ReactNode {
   const { resolvedTheme } = useTheme();
   const selectVehicle = useOpsStore((s) => s.selectVehicle);
   const publishController = useControllerStore((s) => s.setController);
+  const reportWebglLost = useViewModeStore((s) => s.setWebglAvailable);
   const [ready, setReady] = useState(false);
   // The controller exposed as STATE (not just the ref) so the live-telemetry
   // hook re-runs once the map is mounted. The ref still owns the lifecycle.
@@ -57,6 +59,8 @@ export function MapCanvas(): ReactNode {
   selectVehicleRef.current = selectVehicle;
   const publishControllerRef = useRef(publishController);
   publishControllerRef.current = publishController;
+  const reportWebglLostRef = useRef(reportWebglLost);
+  reportWebglLostRef.current = reportWebglLost;
 
   // Mount the controller exactly once.
   useEffect(() => {
@@ -79,6 +83,12 @@ export function MapCanvas(): ReactNode {
       },
       onReady: () => {
         setReady(true);
+      },
+      onContextLost: () => {
+        // WebGL context lost and not restored — degrade to the fleet table
+        // fallback (same live data, same socket). The view-mode store flips
+        // `webglAvailable` to false; the dashboard swaps the surface.
+        reportWebglLostRef.current(false);
       },
     });
     controllerRef.current = controller;

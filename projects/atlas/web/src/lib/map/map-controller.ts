@@ -82,6 +82,15 @@ export interface MapControllerOptions {
   onVehicleSelect?: (vehicleId: string) => void;
   /** Called once the first style + app layers are ready (clears the loader). */
   onReady?: () => void;
+  /**
+   * Called when the WebGL context is lost and not restored within a short grace
+   * window (Task 6.1 — the no-WebGL degradation arm). The wrapper responds by
+   * flipping the view-mode store to the fleet table fallback (same live data,
+   * same socket). The browser may emit `webglcontextlost` under GPU pressure,
+   * tab backgrounding, or a driver reset; if it does not restore we degrade
+   * rather than show a frozen canvas.
+   */
+  onContextLost?: () => void;
 }
 
 export class AtlasMapController {
@@ -93,6 +102,12 @@ export class AtlasMapController {
   private destroyed = false;
   /** Active zone-pulse timers, keyed by zoneId, so a re-pulse cancels cleanly. */
   private readonly pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Grace-window timer between `webglcontextlost` and declaring degradation. */
+  private contextLostTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly onContextLost: (() => void) | undefined;
+  /** Bound canvas listeners kept so `destroy()` can remove them cleanly. */
+  private readonly handleContextLost: (ev: Event) => void;
+  private readonly handleContextRestored: () => void;
 
   constructor(opts: MapControllerOptions) {
     ensurePmtilesProtocol();
@@ -100,6 +115,7 @@ export class AtlasMapController {
     this.theme = opts.theme;
     this.reducedMotion = opts.reducedMotion;
     this.onVehicleSelect = opts.onVehicleSelect;
+    this.onContextLost = opts.onContextLost;
 
     this.map = new maplibregl.Map({
       container: opts.container,
@@ -115,6 +131,29 @@ export class AtlasMapController {
     });
 
     this.map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
+
+    // WebGL context-loss handling (Task 6.1). `webglcontextlost` can fire under
+    // GPU pressure, a driver reset, or tab backgrounding. We prevent the default
+    // (so MapLibre/the browser may attempt a restore) and start a short grace
+    // window; if `webglcontextrestored` does not arrive in time we declare the
+    // map degraded and let the wrapper swap in the fleet table fallback.
+    const canvas = this.map.getCanvas();
+    this.handleContextLost = (ev: Event) => {
+      ev.preventDefault();
+      if (this.contextLostTimer) clearTimeout(this.contextLostTimer);
+      this.contextLostTimer = setTimeout(() => {
+        this.contextLostTimer = null;
+        if (!this.destroyed) this.onContextLost?.();
+      }, 1500);
+    };
+    this.handleContextRestored = () => {
+      if (this.contextLostTimer) {
+        clearTimeout(this.contextLostTimer);
+        this.contextLostTimer = null;
+      }
+    };
+    canvas.addEventListener('webglcontextlost', this.handleContextLost);
+    canvas.addEventListener('webglcontextrestored', this.handleContextRestored);
 
     this.map.on('style.load', () => {
       this.addAppLayers();
@@ -330,6 +369,15 @@ export class AtlasMapController {
   /** Tear down the map + listeners. Called on unmount. */
   destroy(): void {
     this.destroyed = true;
+    if (this.contextLostTimer) {
+      clearTimeout(this.contextLostTimer);
+      this.contextLostTimer = null;
+    }
+    for (const timer of this.pulseTimers.values()) clearTimeout(timer);
+    this.pulseTimers.clear();
+    const canvas = this.map.getCanvas();
+    canvas.removeEventListener('webglcontextlost', this.handleContextLost);
+    canvas.removeEventListener('webglcontextrestored', this.handleContextRestored);
     this.map.remove();
   }
 }

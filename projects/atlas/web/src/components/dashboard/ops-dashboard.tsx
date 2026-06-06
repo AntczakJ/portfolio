@@ -1,8 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { TopBar } from '@/components/chrome/top-bar';
-import { MapRegion } from '@/components/map/map-region';
-import { DemoControl } from '@/components/panels/demo-control';
+import { OpsSurface } from '@/components/dashboard/ops-surface';
 import { DetailPanel } from '@/components/panels/detail-panel';
 import { EventsPanel } from '@/components/panels/events-panel';
 import { FleetPanel } from '@/components/panels/fleet-panel';
@@ -41,17 +40,12 @@ export function OpsDashboard(): ReactNode {
           <FleetPanel />
         </div>
 
-        {/* Map centerpiece — always the lead surface, full height of the grid
-            row. On small screens it takes a fixed tall block at the top. The
-            demo affordance floats over the bottom-left of the map so a recruiter
-            can drive the geofence beat without hunting for a control. */}
+        {/* Operations surface — the live map OR the full-width fleet table (the
+            no-WebGL fallback + a first-class user toggle). The demo affordance
+            floats over the map when it is the active surface. On small screens it
+            takes a fixed tall block at the top. */}
         <div className="relative min-h-[24rem] lg:min-h-0">
-          <MapRegion />
-          <div className="pointer-events-none absolute bottom-3 left-3 z-10">
-            <div className="pointer-events-auto">
-              <DemoControl />
-            </div>
-          </div>
+          <OpsSurface />
         </div>
 
         {/* Right rail (detail + events). Hidden on lg-down; the reflow block

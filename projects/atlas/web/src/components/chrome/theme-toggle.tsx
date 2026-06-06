@@ -41,7 +41,7 @@ export function ThemeToggle({ className }: ThemeToggleProps): ReactNode {
         setTheme(isDark ? 'light' : 'dark');
       }}
       className={cn(
-        'border-border text-fg-muted hover:text-foreground hover:border-border-strong relative inline-flex size-8 items-center justify-center rounded-md border transition-colors',
+        'border-border text-fg-muted hover:text-foreground hover:border-border-strong focus-visible:ring-accent relative inline-flex size-8 items-center justify-center rounded-md border transition-colors focus-visible:ring-2 focus-visible:outline-none',
         className,
       )}
     >

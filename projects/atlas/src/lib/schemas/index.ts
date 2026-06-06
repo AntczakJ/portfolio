@@ -19,6 +19,7 @@ import './zod-config';
 export * from './enums';
 export * from './event';
 export * from './geojson';
+export * from './rest';
 export * from './route';
 export * from './stop';
 export * from './telemetry';

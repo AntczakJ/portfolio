@@ -12,6 +12,7 @@ import { createDbHandle, type AtlasDbHandle } from './db/drizzle.js';
 import { EngineService } from './engine/engine-service.js';
 import { registerWsGateway } from './gateway/ws-gateway.js';
 import { registerHealthRoute } from './routes/health.js';
+import { registerPublicReadRoutes } from './routes/public-read.js';
 
 /**
  * Atlas Fastify app builder (Task 1.1).
@@ -96,6 +97,13 @@ export async function buildApp(env: Env, options: BuildAppOptions = {}): Promise
   // without a reachable Postgres — the sink logs and drops). `app.log` satisfies
   // the sink's logger contract.
   const engineService = new EngineService(dbHandle.db, app.log);
+
+  // Public read REST endpoints (Task 6.3 / ADR-005): the fleet snapshot, route,
+  // zone, and vehicle definitions, served DB-LESS from the engine (the read
+  // surface the SSR floor / no-WebGL paint / external consumers use). Each route
+  // carries its own per-route rate limit (overriding the global floor) and a
+  // cache-control posture (static defs cacheable; the live snapshot no-store).
+  registerPublicReadRoutes(app, { engineService });
 
   // The `@fastify/websocket` telemetry gateway (ADR-003): snapshot-on-connect,
   // per-tick coalesced broadcast, event frames, 20 s heartbeat, Zod-validated +
