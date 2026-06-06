@@ -1,0 +1,90 @@
+# fly.web.toml — atlas-web (ADR-006 / ADR-007).
+#
+# The Next.js 15 standalone frontend, a SEPARATE Fly app from atlas-server (the
+# pulse/meld Next-proxies-API precedent). It reverse-proxies the live telemetry
+# WebSocket (`/ws`) + the REST read (`/health`) to atlas-server over Fly's
+# private 6PN network (web/next.config.ts `rewrites()` -> API_PROXY_TARGET) so
+# the browser sees ONE origin — which keeps the WebSocket SAME-ORIGIN
+# (`wss://<web-host>/ws`) and the strict CSP `connect-src 'self'` sufficient
+# (ADR-006). NO third-party WS origin, NO `unsafe-eval`.
+#
+# Deploy this with the web Dockerfile + this config explicitly:
+#   flyctl deploy --remote-only --app atlas-ops \
+#     --config fly.web.toml --dockerfile Dockerfile.web .
+# (run from projects/atlas/ — the build context is the project dir; the meld
+# "deploy from the project dir" lesson avoids the flyctl first-deploy
+# "No machines configured" quirk).
+
+app = 'atlas-ops'
+primary_region = 'fra'
+
+[build]
+  dockerfile = 'Dockerfile.web'
+
+[deploy]
+  strategy = 'rolling'
+
+[env]
+  NODE_ENV = 'production'
+  PORT = '3000'
+  HOSTNAME = '0.0.0.0'
+  # The single-origin posture: the browser hits THIS app's origin for the page,
+  # the static assets, the keyless `.pmtiles`, AND the live WS (the /ws rewrite
+  # forwards it to atlas-server). NEXT_PUBLIC_SITE_URL is baked at BUILD time in
+  # Dockerfile.web (NEXT_PUBLIC_* inline into the client bundle); mirrored here
+  # as defence-in-depth + an audit signal in `flyctl status`, and honoured by the
+  # server-side reads (metadataBase, sitemap, robots, OG, JSON-LD).
+  NEXT_PUBLIC_SITE_URL = 'https://atlas-ops.fly.dev'
+  # NOTE on API_PROXY_TARGET: Next BAKES the `rewrites()` destination into the
+  # routing manifest at BUILD time, so the effective proxy target is the
+  # Dockerfile.web `ARG API_PROXY_TARGET` (default
+  # http://atlas-fleet.internal:3092 — Fly's private 6PN DNS;
+  # `atlas-fleet.internal` resolves to atlas-server's machine). The default is
+  # already correct for this topology, so no build-arg override is needed. This
+  # [env] entry is documentation/defence-in-depth only (it does NOT re-point the
+  # already-baked rewrite). If atlas-server is ever RENAMED, rebuild atlas-web
+  # with `--build-arg API_PROXY_TARGET=http://<new>.internal:3092`.
+  API_PROXY_TARGET = 'http://atlas-fleet.internal:3092'
+  # The keyless map is the DEFAULT — NO tile key is set, so the CSP stays
+  # same-origin only (the hard keyless gate). The optional enrichment
+  # (NEXT_PUBLIC_MAP_TILE_KEY + NEXT_PUBLIC_MAP_TILE_HOST) is a BUILD-TIME arg
+  # set at the owner's discretion, NEVER committed; leaving it unset is correct.
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # Keep one machine WARM so the showcase loads instantly (no cold-start before
+  # the 5-second wow). The Next server also proxies the long-lived WS upgrade to
+  # atlas-server, so a cold front door would stall the live channel too;
+  # `auto_stop = 'off'` + min 1 guarantees a warm front door.
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+  [http_service.concurrency]
+    # The Next server proxies the long-lived WS connections to atlas-server (each
+    # open map holds one telemetry socket through this proxy), so size for
+    # CONNECTIONS rather than short requests.
+    type = 'connections'
+    hard_limit = 400
+    soft_limit = 300
+
+  # Health check on `/` — a 200 means the Next standalone server is up. (The app
+  # also proxies `/health`, but that reports atlas-server's health, not the web
+  # server's; `/` is the web server's own liveness signal.)
+  [[http_service.checks]]
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '20s'
+    method = 'get'
+    path = '/'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  # 512 MB. The razors-edge lesson is binding: the Next standalone server OOM'd
+  # at 256 MB on the FIRST on-demand next/image AVIF optimization + the OG
+  # `next/og` ImageResponse render. 512 MB serves image optimization + the OG
+  # render + the long-lived WS proxy connections cleanly. Do NOT drop to 256.
+  memory_mb = 512

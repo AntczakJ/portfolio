@@ -1,0 +1,101 @@
+# atlas — Docker build context trimmer (shared by Dockerfile + Dockerfile.web).
+#
+# Build context is `projects/atlas/` (NOT the repo root) for BOTH images. Each
+# image runs its own isolated `pnpm install` inside the build, so committed
+# node_modules / build outputs / local env / test surfaces are dead weight (and
+# a security risk for .env). The build context MUST still include the
+# `atlas-shared` package at the project root (`src/` + the root package.json) —
+# both images need it (the server imports its Zod-runtime + geo impl, the web
+# imports its WS-frame types + client geo impl), so `src/` is deliberately NOT
+# excluded here. The apex lesson (inline what the build context must resolve) is
+# honoured by COPYing the root manifest + `tsconfig.base.json` + `src/` in the
+# Dockerfiles; nothing below excludes them.
+#
+# Keep ONLY what the stages COPY: the umbrella manifest (package.json =
+# atlas-shared) + tsconfig.base.json, src/ (atlas-shared source), server/{src,
+# scripts,drizzle,*.json,*.config.*}, web/{src,public,*.json,*.config.*}, the
+# entrypoint, and the Dockerfiles themselves.
+
+# --- dependencies (each stage installs its own) ---
+**/node_modules
+
+# --- build outputs (rebuilt inside the image) ---
+**/.next
+**/.turbo
+**/coverage
+**/dist
+**/out
+**/.cache
+**/*.tsbuildinfo
+**/.eslintcache
+**/playwright/.cache
+
+# --- env + secrets (NEVER ship .env into an image) ---
+**/.env
+**/.env.*
+!**/.env.example
+
+# --- local data / docker compose (local-only) ---
+docker-compose.yml
+**/*.sqlite
+**/*.sqlite3
+
+# --- the keyless basemap extract is a LARGE BINARY, gitignored + generated at
+#     deploy time and dropped into web/public/map/porto.pmtiles. It is NOT in
+#     the repo; exclude it defensively so a locally-generated copy is not
+#     uploaded in the context (the web image serves it from the same path once
+#     placed there at deploy — see DEPLOY.md). The committed keyless graticule
+#     fallback renders WITHOUT it.
+web/public/map/*.pmtiles
+
+# --- tests, smoke scripts, review artifacts, coverage (not needed at runtime) ---
+e2e
+**/__tests__
+**/__fixtures__
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+**/playwright.config.ts
+**/playwright-report
+**/test-results
+**/.lighthouseci
+lighthouserc.json
+web/lighthouserc.json
+# NOTE: server/scripts/seed.ts is NEEDED at runtime (the entrypoint runs it on
+# boot), so server/scripts is NOT excluded. server/scripts/ws-smoke.ts is a dev
+# smoke and harmless to ship; it is never invoked by the entrypoint.
+
+# --- docs + meta (the runtime never reads these) ---
+PLAN.md
+DECISIONS.md
+PROGRESS.md
+AGENT_NOTES.md
+CHANGELOG.md
+README.md
+DEPLOY.md
+**/*.md
+.github
+docs
+
+# --- the build / deploy descriptors themselves ---
+fly.toml
+fly.web.toml
+Dockerfile
+Dockerfile.web
+.dockerignore
+
+# --- editor / OS noise ---
+.vscode
+.idea
+**/.DS_Store
+**/Thumbs.db
+
+# --- logs ---
+**/*.log
+**/npm-debug.log*
+
+# --- git metadata ---
+.git
+.gitignore
+.gitattributes

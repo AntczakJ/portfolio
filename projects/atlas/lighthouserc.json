@@ -1,0 +1,53 @@
+{
+  "$comment": [
+    "Lighthouse CI config for atlas (Phase 9). Audits the BUILT + SERVED",
+    "production surface on :3093 (next start, NOT next dev — the strict CSP",
+    "forbids unsafe-eval and next dev cannot run under it; the AGENT_NOTES CSP",
+    "lesson carried from meld/razors-edge/pulse).",
+    "",
+    "The SEO-bearing PUBLIC surface is /about: a Server Component rendered",
+    "entirely from static deterministic content (the pitch + a static fleet",
+    "snapshot table + the route/zone reference + JSON-LD/OG), with NO client-only",
+    "data dependency — it SSRs identically every request, scores Lighthouse from",
+    "static HTML, and is meaningful with JS disabled. That is the >= 95 SEO",
+    "front door.",
+    "",
+    "The live operations MAP at / is DELIBERATELY EXEMPT (documented, ADR-001 /",
+    "AGENT_NOTES 'Performance budget'): it is an app surface with a client-only",
+    "live-data first paint (the WebSocket + the WebGL map), not an SEO surface,",
+    "and has no crawler value. Its budget is the 60 fps interpolation frame",
+    "budget, not Lighthouse-SEO. So Lighthouse targets /about only.",
+    "",
+    "Asserts the CLAUDE.md s4 / PLAN.md success criteria: >= 95 in all four",
+    "categories on /about, median of 5 runs, plus Core Web Vitals (LCP < 2.5s,",
+    "CLS < 0.1). Desktop preset matches the recruiter audience.",
+    "",
+    "NOTE: LHCI does NOT need atlas-server or Postgres up — /about renders from",
+    "the STATIC deterministic snapshot (no live fetch), so it is self-contained.",
+    "Bring up `pnpm -F atlas-web build && pnpm -F atlas-web start` first, then",
+    "point LHCI at the already-served :3093."
+  ],
+  "ci": {
+    "collect": {
+      "url": ["http://localhost:3093/about"],
+      "numberOfRuns": 5,
+      "settings": {
+        "preset": "desktop"
+      }
+    },
+    "assert": {
+      "assertions": {
+        "categories:performance": ["error", { "minScore": 0.95 }],
+        "categories:accessibility": ["error", { "minScore": 0.95 }],
+        "categories:best-practices": ["error", { "minScore": 0.95 }],
+        "categories:seo": ["error", { "minScore": 0.95 }],
+        "largest-contentful-paint": ["error", { "maxNumericValue": 2500 }],
+        "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1 }],
+        "total-blocking-time": ["warn", { "maxNumericValue": 200 }]
+      }
+    },
+    "upload": {
+      "target": "temporary-public-storage"
+    }
+  }
+}

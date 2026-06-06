@@ -142,6 +142,27 @@ const contentSecurityPolicy = [
   "form-action 'self'",
 ].join('; ');
 
+/**
+ * Reverse-proxy target for the live telemetry WebSocket (`/ws`) + the REST read
+ * surface (`/health`) — the ADR-007 single-origin deploy posture.
+ *
+ * Next evaluates `rewrites()` at BUILD time and BAKES the destination into the
+ * routing manifest, so `API_PROXY_TARGET` is a BUILD-TIME value (the Dockerfile
+ * `ARG` default `http://atlas-fleet.internal:3092` — atlas-server's private 6PN
+ * Fly address). The browser therefore opens `wss://<web-host>/ws` (resolved by
+ * `src/lib/ws/ws-url.ts` from `window.location`); the Next standalone server
+ * proxies that upgrade to atlas-server over Fly's private network. This is what
+ * keeps the WebSocket SAME-ORIGIN so the strict CSP `connect-src 'self'` holds
+ * (no third-party WS origin) — the pulse/meld Next-proxies-API precedent.
+ *
+ * In LOCAL dev there is no rewrite (atlas-server runs cross-origin on :3092);
+ * the dev path sets `NEXT_PUBLIC_WS_URL=ws://localhost:3092/ws` and the CSP
+ * appends that dev origin to `connect-src` (gated to non-prod — see above). The
+ * rewrite only engages when `API_PROXY_TARGET` is set (i.e. the container
+ * build); a bare local `next dev`/`next start` with no target adds no rewrite.
+ */
+const apiProxyTarget = process.env.API_PROXY_TARGET?.trim();
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   output: 'standalone',
@@ -155,6 +176,18 @@ const nextConfig: NextConfig = {
   images: {
     formats: ['image/avif', 'image/webp'],
     remotePatterns: [],
+  },
+  rewrites() {
+    if (!apiProxyTarget) return Promise.resolve([]);
+    const target = apiProxyTarget.replace(/\/$/, '');
+    // Proxy the WebSocket upgrade (`/ws`) + the REST health read to
+    // atlas-server over Fly's private network. Next proxies the WS upgrade when
+    // the destination is an absolute URL. Keep the proxied surface MINIMAL —
+    // only `/ws` + `/health` — so nothing else is exposed through the web app.
+    return Promise.resolve([
+      { source: '/ws', destination: `${target}/ws` },
+      { source: '/health', destination: `${target}/health` },
+    ]);
   },
   headers() {
     return Promise.resolve([

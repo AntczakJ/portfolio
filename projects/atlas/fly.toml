@@ -1,0 +1,115 @@
+# fly.toml — atlas-server (ADR-007).
+#
+# ONE Fly app, ONE process, ONE machine, kept WARM: the Fastify server that runs
+# the in-process simulation engine (the pure-reducer loop, ADR-002), the
+# @fastify/websocket telemetry gateway (ADR-003), and the small REST surface
+# (/health). It is the SINGLE SOURCE OF TRUTH — every browser connects to the
+# one engine, tick -> broadcast is an in-memory emitter, NO broker, NO Redis
+# (ADR-002 G1 / ADR-007). Contrast pulse (two processes + Redis); atlas is
+# deliberately leaner.
+#
+# WHY SINGLE-INSTANCE + WARM (the load-bearing posture):
+#   - The engine is the one authoritative world. A second instance would be a
+#     SECOND, divergent world (its own seeded fold) — every client must see the
+#     SAME fleet, so the app runs single-instance. (Horizontal scale would need
+#     shared engine state = a broker, explicitly rejected for v1, ADR-002 G2.)
+#   - `auto_stop_machines = 'off'` + `min_machines_running = 1` keep the one
+#     machine WARM: the simulated fleet must be ALREADY MOVING on first paint,
+#     never cold-starting in front of a recruiter (the tape/pulse warm-floor
+#     precedent; ADR-007). A stopped engine = a frozen map.
+#
+# WS over the Fly edge: the long-lived WebSocket survives the edge's ~60 s idle
+# timeout via the 20 s app-level heartbeat (HEARTBEAT_INTERVAL_MS, ADR-003);
+# single-instance makes sticky-routing moot (there is only one machine to route
+# to). The browser reaches `/ws` SAME-ORIGIN through atlas-web's rewrite proxy
+# (fly.web.toml) over the private 6PN network, so this app needs NO public WS
+# origin of its own — though it IS publicly reachable at its own .fly.dev host
+# for a direct DevTools smoke.
+#
+# Region `fra` (EU — co-located with Fly Postgres; the owner is in Poznań),
+# matching pulse/apex/meld/tape. Single region.
+#
+# atlas-web is a SEPARATE app (fly.web.toml) that reverse-proxies /ws + /health
+# to this server so the browser is single-origin (CSP `connect-src 'self'`).
+
+app = 'atlas-fleet'
+primary_region = 'fra'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[deploy]
+  # Migrations + the idempotent demo seed run in the ENTRYPOINT on boot
+  # (RUN_MIGRATIONS=1 / RUN_SEED=1). We do NOT use a [deploy.release_command]:
+  # the engine boots from the frozen Porto baseline (NOT the DB — ADR-005), the
+  # seed is non-fatal, and a single warm machine owning migrate+seed+serve is the
+  # simplest correct shape (no transient release machine to coordinate).
+  strategy = 'rolling'
+
+[env]
+  NODE_ENV = 'production'
+  PORT = '3092'
+  # Migrate + seed on boot (idempotent — safe to re-run every deploy). Set either
+  # to '0' to skip (e.g. RUN_SEED=0 once the demo definitions are seeded and you
+  # do not want a re-seed on redeploy; the seed is idempotent so leaving it ON is
+  # also fine).
+  RUN_MIGRATIONS = '1'
+  RUN_SEED = '1'
+  # CORS allowlist for the REST read surface + the WS upgrade. In the
+  # single-origin prod posture the browser hits atlas-web (which proxies /ws +
+  # /health same-origin), so requests arrive from atlas-web's private network
+  # hop; this allowlist gates the public web origin for any DIRECT cross-origin
+  # call to this app's own .fly.dev host. Set to the atlas-web public origin.
+  CORS_ORIGINS = 'https://atlas-ops.fly.dev'
+
+# --- the public HTTP + WS surface ---
+[http_service]
+  internal_port = 3092
+  force_https = true
+  # Keep the one machine WARM — the live engine + the long-lived WS connections
+  # must never cold-start (the fleet must already be moving; ADR-007).
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+  [http_service.concurrency]
+    # WS connections are long-lived; size the soft/hard limits for CONNECTIONS so
+    # a handful of viewers each holding one telemetry socket (plus the atlas-web
+    # proxy hop) do not trip the concurrency cap.
+    type = 'connections'
+    hard_limit = 400
+    soft_limit = 300
+
+[checks]
+  # HTTP health check on /health. The HealthController returns
+  # { status:'ok', commit, ts } (Zod-serialized). The engine boots from the
+  # frozen baseline (NOT the DB — ADR-005), so /health is up as soon as the
+  # server binds, before migrate/seed completes — the grace_period covers the
+  # boot window.
+  [checks.health]
+    port = 3092
+    type = 'http'
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '40s'
+    method = 'get'
+    path = '/health'
+    protocol = 'http'
+
+# --- VM sizing (documented rationale) ---
+#
+# The Fastify server runs the in-process simulation engine (a 1 Hz fixed-dt
+# reducer over ~18 vehicles — trivial CPU), the WS fan-out (coalesce-to-latest
+# backpressure, bounded by fleet size), and a small postgres-js pool + the async
+# event sink. The workload is light and I/O-bound; 512 MB gives comfortable
+# headroom over the resting footprint so a burst of WS connections does not OOM
+# (the razors-edge lesson: 256 MB is too tight for any non-trivial Node server).
+# shared-cpu-1x — the engine is not CPU-bound at this fleet size. Bump to
+# 1024 MB (no ADR needed) only if the connection count grows past the demo
+# profile.
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512

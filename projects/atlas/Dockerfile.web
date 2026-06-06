@@ -1,0 +1,167 @@
+# syntax=docker/dockerfile:1.7
+#
+# atlas-web — production image for Fly.io (ADR-006 / ADR-007).
+#
+# The Next.js 15 standalone frontend, shipped as a SEPARATE Fly app from
+# atlas-server (the pulse/meld Next-proxies-API precedent). It reverse-proxies
+# the live telemetry WebSocket (`/ws`) + the REST read surface (`/health`) to
+# atlas-server over Fly's private 6PN network via Next `rewrites()` (see
+# web/next.config.ts -> API_PROXY_TARGET), so the browser talks to ONE origin.
+# That single-origin posture is what keeps:
+#   - the telemetry WebSocket SAME-ORIGIN (`wss://<web-host>/ws`, resolved by
+#     web/src/lib/ws/ws-url.ts), and
+#   - the strict CSP `connect-src 'self'` SUFFICIENT (no third-party WS origin,
+#     no `unsafe-eval`; ADR-006, the frontend Phase-2 CSP close-out).
+#
+# THE atlas-shared LESSON (the apex "inline what the build context must resolve"
+# lesson, three-package shape). atlas-web has a workspace dep on `atlas-shared`
+# (the project-root package.json + `src/`):
+#   - TYPES-ONLY for the WS frame contract (`import type { ... } from
+#     'atlas-shared/schemas/ws'`) — Zod is erased on the web side
+#     (verbatimModuleSyntax), so the browser bundle never runs Zod.
+#   - IMPL for the client-side geo (remaining-route slice + interpolation
+#     geometry via `atlas-shared/geo`, ADR-004) — this IS shipped to the browser.
+# So the build needs the atlas-shared MANIFEST resolvable in the workspace AND
+# its `src/` source (the geo impl is bundled by Next; the WS types are read by
+# tsc during the build). The build context (projects/atlas/) MUST include the
+# root package.json (= atlas-shared's manifest), tsconfig.base.json, and `src/`
+# — the .dockerignore keeps all three.
+#
+# Build context: `projects/atlas/` (NOT the repo root) — same as the server
+# Dockerfile. A tiny isolated pnpm-workspace.yaml lists BOTH `.` (atlas-shared,
+# the root) and `web` so the `atlas-web -> atlas-shared` workspace link resolves.
+#
+# Standalone path nesting (load-bearing, the apex/razors-edge/meld lesson):
+# web/next.config.ts pins `outputFileTracingRoot` ONE hop up to the project root
+# (`projects/atlas/`), so Next emits `web/.next/standalone/web/server.js`. The
+# runtime COPY lands server.js at `/app/web/web/server.js` with `.next/static` +
+# `public` (incl. the keyless `.pmtiles` if placed there at deploy) as siblings.
+# Getting this path wrong = "Cannot find module server.js" at boot. NOTE: on the
+# Windows host `next build` emits EPERM symlink warnings for the standalone
+# trace; building INSIDE this Linux stage avoids that (the apex P1-3 resolution).
+
+# ---- Stage 1: deps -------------------------------------------------------
+FROM node:22-bookworm-slim AS deps
+WORKDIR /build
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=/pnpm:$PATH
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    corepack enable && \
+    corepack prepare pnpm@11.4.0 --activate
+
+# Manifests first for layer caching. atlas's ROOT package.json IS the
+# atlas-shared manifest. The web member manifest declares the
+# `atlas-shared: workspace:*` link (types-only for WS frames + impl for geo);
+# both manifests must be present so pnpm wires the workspace link.
+COPY package.json ./
+COPY tsconfig.base.json ./
+COPY web/package.json ./web/
+
+# Isolated workspace descriptor (the repo-root one is not in this context). List
+# BOTH the root (".", atlas-shared) and `web`. Mirror the root allowBuilds
+# allowlist so pnpm 11's "ignored build scripts" gate does not abort on esbuild /
+# sharp (next/image AVIF) / unrs-resolver.
+RUN printf 'packages:\n  - "."\n  - "web"\nallowBuilds:\n  esbuild: true\n  sharp: true\n  unrs-resolver: true\n' > pnpm-workspace.yaml
+
+RUN pnpm install --frozen-lockfile=false
+
+
+# ---- Stage 2: build ------------------------------------------------------
+FROM node:22-bookworm-slim AS build
+WORKDIR /build
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=/pnpm:$PATH
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    corepack enable && \
+    corepack prepare pnpm@11.4.0 --activate
+
+# Reuse the resolved install + the generated workspace descriptor from deps.
+COPY --from=deps /build/node_modules ./node_modules
+COPY --from=deps /build/web/node_modules ./web/node_modules
+COPY --from=deps /build/pnpm-workspace.yaml ./
+COPY package.json tsconfig.base.json ./
+COPY web/package.json ./web/
+
+# Real sources. atlas-shared's source (`src/`) is needed for BOTH the types-only
+# WS-frame import (so tsc during `next build` sees the contract) AND the client
+# geo IMPL (`atlas-shared/geo`, bundled into the browser). `web` is the app.
+COPY src ./src
+COPY web ./web
+
+# Next inlines NEXT_PUBLIC_* at BUILD time. In the single-origin prod topology
+# the browser hits the atlas-web origin for EVERYTHING (the WS + REST are proxied
+# same-origin), so NO explicit NEXT_PUBLIC_WS_URL is needed — ws-url.ts derives
+# `wss://<web-host>/ws` from window.location, which the same-origin proxy serves.
+# NEXT_PUBLIC_SITE_URL drives metadataBase / OG / sitemap / canonical; bake the
+# real production origin so absolute URLs point at the demo host (the meld "a
+# wrong baked NEXT_PUBLIC_* silently ships" lesson). The keyless map needs NO
+# key — NEXT_PUBLIC_MAP_TILE_KEY / _HOST stay UNSET so the CSP stays same-origin
+# only (the hard keyless gate; override only if the owner supplies a key).
+ARG NEXT_PUBLIC_SITE_URL=https://atlas-ops.fly.dev
+ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
+
+# The reverse-proxy target for the Next `rewrites()` (the `/ws` WebSocket + the
+# `/health` REST read). IMPORTANT: Next evaluates `rewrites()` at BUILD time and
+# BAKES the destination into the routing manifest — so this is a BUILD-TIME
+# value, not a runtime read. The default (atlas-server's internal Fly address,
+# http://atlas-fleet.internal:3092 — private 6PN network, no public hop) is
+# correct for the ADR-007 topology, so no override is normally needed. If the
+# server app is renamed, rebuild with
+# `--build-arg API_PROXY_TARGET=http://<new-name>.internal:3092`.
+ARG API_PROXY_TARGET=http://atlas-fleet.internal:3092
+ENV API_PROXY_TARGET=${API_PROXY_TARGET}
+
+# Build. `output: 'standalone'` (web/next.config.ts) emits
+# web/.next/standalone/web/server.js (one-hop trace root). `rewrites()` (the /ws
+# + /health proxy) are baked into the build's routing manifest. NO `unsafe-eval`
+# in the CSP — verified under a prod build (the keyless map renders clean).
+RUN pnpm -F atlas-web build
+
+
+# ---- Stage 3: runtime ----------------------------------------------------
+# A SINGLE Node process: the Next standalone server. No migrations, no second
+# service — CMD execs server.js directly. The keyless `.pmtiles` (if generated
+# + dropped under web/public/map/ at deploy) ships in the public/ COPY; without
+# it the committed keyless graticule fallback renders (the hard gate holds).
+FROM node:22-bookworm-slim AS runtime
+
+# curl for the HEALTHCHECK smoke (Fly uses its own fly.web.toml check).
+# ca-certificates for outbound TLS hygiene (the rewrites proxy to atlas-server on
+# Fly's private .internal network is plain HTTP, but TLS hygiene is cheap).
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /app/web && chown -R node:node /app
+WORKDIR /app
+
+# Next standalone bundle. The one-hop outputFileTracingRoot nests it as
+# web/.next/standalone/web/server.js; .next/static + public are emitted
+# SEPARATELY and copied alongside server.js:
+#   /app/web/package.json       (standalone root manifest)
+#   /app/web/web/server.js      (the actual Next server entry — CMD target)
+#   /app/web/web/.next/static   (hashed build assets)
+#   /app/web/web/public         (favicon, OG, map/porto.pmtiles if placed there)
+COPY --from=build --chown=node:node /build/web/.next/standalone /app/web
+COPY --from=build --chown=node:node /build/web/.next/static /app/web/web/.next/static
+COPY --from=build --chown=node:node /build/web/public /app/web/web/public
+
+USER node
+
+# Production env defaults — fly.web.toml mirrors these. The Next standalone
+# conventional PORT is 3000; Fly maps 443 -> 3000.
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+ENV NEXT_PUBLIC_SITE_URL=https://atlas-ops.fly.dev
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -sf http://127.0.0.1:3000/ || exit 1
+
+CMD ["node", "/app/web/web/server.js"]
