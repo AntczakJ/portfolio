@@ -86,6 +86,21 @@ export function readMapPalette(): MapPalette {
  * GeoJSON FeatureCollection builders from a snapshot.
  * --------------------------------------------------------------------- */
 
+/**
+ * The short marker label for a vehicle — the HUMAN identifier, unified with the
+ * panels/feed (P1-3 fix: markers must not show the `veh-N` slug while the panels
+ * show `Unit N`). Derives a compact `U<n>` glyph from the human label so the dot
+ * stays legible at city zoom: "Unit 7" -> "U7", "Truck 12" -> "T12". Falls back
+ * to the first 3 chars of the label, never the raw id.
+ */
+export function shortVehicleLabel(label: string): string {
+  const match = /([a-z])[a-z]*\s*(\d+)/i.exec(label);
+  const initial = match?.[1];
+  const number = match?.[2];
+  if (initial && number) return `${initial.toUpperCase()}${number}`;
+  return label.slice(0, 3).toUpperCase();
+}
+
 export function buildVehiclesGeoJSON(snapshot: FleetSnapshot): FeatureCollection<Point> {
   return {
     type: 'FeatureCollection',
@@ -95,6 +110,7 @@ export function buildVehiclesGeoJSON(snapshot: FleetSnapshot): FeatureCollection
       properties: {
         id: v.id,
         label: v.label,
+        marker: shortVehicleLabel(v.label),
         status: v.status,
         heading: v.heading,
         type: v.type,
@@ -268,28 +284,85 @@ export function buildAppLayers(palette: MapPalette): LayerSpecification[] {
         'circle-stroke-color': palette.labelHalo,
       },
     },
-    // Vehicle label — the unit id, drawn only from zoom 14 so the map is not
-    // cluttered at city scale. Uses the basemap-free text path; if no glyph
-    // server is configured the label gracefully no-ops (the dot still renders).
+    // Vehicle label — the HUMAN unit id ("U7"), drawn from zoom 13.5 so the map
+    // is not cluttered at city scale. KEYLESS: the keyless basemap has NO glyph
+    // server, so a `text-field` label silently no-ops. We instead pre-render a
+    // canvas image PER short-label (registered by the controller) and place it
+    // as an `icon-image` keyed on the per-feature `marker` property — so the
+    // human label renders WITHOUT a glyph endpoint, unified with the panels
+    // (P1-3 fix: no `veh-N` slug anywhere in the visible UI).
     {
       id: LAYER_VEHICLE_LABEL,
       type: 'symbol',
       source: SOURCE_VEHICLES,
-      minzoom: 14,
+      minzoom: 13.5,
       layout: {
-        'text-field': ['get', 'label'],
-        'text-size': 10,
-        'text-offset': [0, 1.2],
-        'text-anchor': 'top',
-        'text-allow-overlap': false,
-      },
-      paint: {
-        'text-color': palette.label,
-        'text-halo-color': palette.labelHalo,
-        'text-halo-width': 1.2,
+        'icon-image': ['concat', LABEL_IMAGE_PREFIX, ['get', 'marker']],
+        'icon-offset': [0, 16],
+        'icon-anchor': 'top',
+        'icon-allow-overlap': false,
+        'icon-optional': true,
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 13.5, 0.85, 16, 1],
       },
     },
   ];
+}
+
+/** Prefix for the per-short-label canvas images registered as MapLibre images. */
+export const LABEL_IMAGE_PREFIX = 'atlas-label-';
+
+/**
+ * A small canvas-drawn label chip ("U7") registered as a MapLibre image so the
+ * vehicle label renders WITHOUT a glyph server (keyless). A rounded pill with
+ * the label text in the foreground colour over a haloed dark backing — legible
+ * over the map at city zoom. Returns ImageData; re-registered on theme switch.
+ */
+export function createLabelImage(
+  text: string,
+  fg: string,
+  bg: string,
+): { data: ImageData; pixelRatio: number } {
+  const ratio = 2;
+  const padX = 5 * ratio;
+  const h = 15 * ratio;
+  const fontPx = 9 * ratio;
+  // Measure on a scratch context.
+  const scratch = document.createElement('canvas').getContext('2d');
+  const font = `600 ${String(fontPx)}px ui-sans-serif, system-ui, sans-serif`;
+  let textW = text.length * fontPx * 0.6;
+  if (scratch) {
+    scratch.font = font;
+    textW = scratch.measureText(text).width;
+  }
+  const w = Math.ceil(textW + padX * 2);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return { data: new ImageData(w, h), pixelRatio: ratio };
+
+  ctx.clearRect(0, 0, w, h);
+  // Rounded backing pill.
+  const r = 4 * ratio;
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.arcTo(w, 0, w, h, r);
+  ctx.arcTo(w, h, 0, h, r);
+  ctx.arcTo(0, h, 0, 0, r);
+  ctx.arcTo(0, 0, w, 0, r);
+  ctx.closePath();
+  ctx.fillStyle = bg;
+  ctx.globalAlpha = 0.82;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  ctx.font = font;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = fg;
+  ctx.fillText(text, w / 2, h / 2 + 0.5 * ratio);
+
+  return { data: ctx.getImageData(0, 0, w, h), pixelRatio: ratio };
 }
 
 /**

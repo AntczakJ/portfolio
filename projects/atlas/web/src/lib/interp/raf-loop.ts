@@ -88,7 +88,9 @@ export class RafLoop {
         id,
         properties: {
           id,
-          label: state.next.vehicleId,
+          // The HUMAN short marker label ("U7"), unified with the panels — the
+          // label layer's icon-image keys on this (P1-3: no `veh-N` on markers).
+          marker: this.store.markerLabel(id),
           status: state.next.status,
           heading: pose.headingDeg,
         },

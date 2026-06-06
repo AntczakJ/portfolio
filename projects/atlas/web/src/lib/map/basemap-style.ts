@@ -1,6 +1,7 @@
+import type { FeatureCollection, LineString } from 'geojson';
 import type { StyleSpecification } from 'maplibre-gl';
 
-import { DEMO_CITY_NAME } from '@/lib/fleet/demo-city';
+import { DEMO_CITY_BBOX, DEMO_CITY_NAME } from '@/lib/fleet/demo-city';
 
 /**
  * Keyless basemap styles — dark + light (ADR-006).
@@ -41,31 +42,90 @@ export type BasemapTheme = 'dark' | 'light';
 
 /** Token-aligned colour ramps for each basemap register (kept in sync with the
  * globals.css control-room tokens; the basemap is part of the sovereign
- * identity and is reviewed in its own right). */
+ * identity and is reviewed in its own right).
+ *
+ * P0-1 FIX (designer-critic 7.1): the dark `earth` MUST sit ABOVE the app void
+ * (`--color-background` #0b1018) so the map plate reads as a deliberate dark
+ * slate, not a black hole — especially in the KEYLESS state (no `.pmtiles`, a
+ * Phase-9 deploy artifact) where `earth` is the whole visible field. The tones
+ * step in clear value tiers (earth < landuse < water/park < buildings < roads)
+ * so the plate has depth at zero tiles. A painted graticule + a soft vignette
+ * (the `graticule` + `vignette` colours) finish the control-room floor. */
 const PALETTE = {
   dark: {
-    earth: '#0b1018',
-    water: '#0e1a26',
-    landuse: '#10161f',
-    park: '#0f1c19',
-    roadMinor: '#1b2737',
-    roadMajor: '#26384d',
-    building: '#141d29',
-    boundary: '#2a3b52',
-    label: '#7e8ca0',
+    // Lifted distinctly above the app void (#0b1018) — a backlit slate plate.
+    earth: '#10171f',
+    water: '#16273a',
+    landuse: '#141d28',
+    park: '#152318',
+    roadMinor: '#243245',
+    roadMajor: '#33485f',
+    building: '#1a242f',
+    boundary: '#3a4f6b',
+    label: '#8b99ad',
+    /** Painted control-room graticule over the plate (keyless floor). */
+    graticule: '#1b2735',
+    graticuleMajor: '#24344a',
+    /** Soft outer vignette so the plate reads as lit from centre. */
+    vignette: '#0b1018',
   },
   light: {
-    earth: '#eef1f5',
-    water: '#d3e2ec',
-    landuse: '#e6eaf0',
-    park: '#dde9df',
+    earth: '#e7ecf2',
+    water: '#c6d8e6',
+    landuse: '#dde4ec',
+    park: '#d4e6d8',
     roadMinor: '#ffffff',
-    roadMajor: '#f3f5f8',
-    building: '#e1e6ec',
-    boundary: '#c7cfda',
-    label: '#5a6577',
+    roadMajor: '#f1f4f8',
+    building: '#dadfe7',
+    boundary: '#bcc7d4',
+    label: '#566175',
+    graticule: '#d6dde6',
+    graticuleMajor: '#c4cedb',
+    vignette: '#cdd6e1',
   },
 } satisfies Record<BasemapTheme, Record<string, string>>;
+
+/**
+ * Build a painted coordinate-graticule GeoJSON over the demo-city bbox (widened
+ * so the lines extend past the visible plate at any zoom). This is the KEYLESS
+ * control-room floor: even with NO `.pmtiles`, the dark plate carries a faint
+ * lat/lng grid so it reads as a deliberate operations map, not an empty canvas.
+ * Pure + deterministic; built once and used by both style JSONs.
+ */
+function buildGraticule(): { minor: FeatureCollection<LineString>; major: FeatureCollection<LineString> } {
+  const [minLng, minLat, maxLng, maxLat] = DEMO_CITY_BBOX;
+  // Pad generously so panning/zoom-out never reveals a grid edge.
+  const padLng = (maxLng - minLng) * 1.5;
+  const padLat = (maxLat - minLat) * 1.5;
+  const w = minLng - padLng;
+  const e = maxLng + padLng;
+  const s = minLat - padLat;
+  const n = maxLat + padLat;
+
+  const step = 0.005; // ~0.5 km grid at this latitude — control-room density.
+  const minor: LineString[] = [];
+  const major: LineString[] = [];
+
+  // Snap to the step grid so lines are stable as the camera moves.
+  const startLng = Math.floor(w / step) * step;
+  for (let lng = startLng, i = 0; lng <= e; lng += step, i++) {
+    const line: LineString = { type: 'LineString', coordinates: [[lng, s], [lng, n]] };
+    (i % 4 === 0 ? major : minor).push(line);
+  }
+  const startLat = Math.floor(s / step) * step;
+  for (let lat = startLat, i = 0; lat <= n; lat += step, i++) {
+    const line: LineString = { type: 'LineString', coordinates: [[w, lat], [e, lat]] };
+    (i % 4 === 0 ? major : minor).push(line);
+  }
+
+  const toFc = (lines: LineString[]): FeatureCollection<LineString> => ({
+    type: 'FeatureCollection',
+    features: lines.map((geometry) => ({ type: 'Feature', properties: {}, geometry })),
+  });
+  return { minor: toFc(minor), major: toFc(major) };
+}
+
+const GRATICULE = buildGraticule();
 
 /**
  * Build a MapLibre style for the given theme. The style is self-contained and
@@ -90,13 +150,38 @@ export function buildBasemapStyle(theme: BasemapTheme): StyleSpecification {
         attribution:
           '<a href="https://protomaps.com">Protomaps</a> | <a href="https://openstreetmap.org">OpenStreetMap</a>',
       },
+      // Painted control-room graticule (keyless floor — renders with no tiles).
+      'atlas-graticule-minor': { type: 'geojson', data: GRATICULE.minor },
+      'atlas-graticule-major': { type: 'geojson', data: GRATICULE.major },
     },
     layers: [
-      // Background earth — also the keyless floor when the .pmtiles is absent.
+      // Background earth — a LIFTED slate plate (above the app void), so even
+      // with the .pmtiles absent the map reads as a deliberate dark surface.
       {
         id: 'background',
         type: 'background',
         paint: { 'background-color': c.earth },
+      },
+      // Painted graticule — the keyless control-room floor (minor then major).
+      {
+        id: 'graticule-minor',
+        type: 'line',
+        source: 'atlas-graticule-minor',
+        paint: {
+          'line-color': c.graticule,
+          'line-width': 0.6,
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0.5, 15, 0.8],
+        },
+      },
+      {
+        id: 'graticule-major',
+        type: 'line',
+        source: 'atlas-graticule-major',
+        paint: {
+          'line-color': c.graticuleMajor,
+          'line-width': 1,
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0.6, 15, 0.9],
+        },
       },
       {
         id: 'water',

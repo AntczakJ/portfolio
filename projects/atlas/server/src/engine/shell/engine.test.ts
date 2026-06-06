@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { MAX_SEEK_TICK } from 'atlas-shared/schemas/ws';
+
 import { buildBaseline } from '../baseline/build-baseline.js';
 import { buildPortoFixture, fixtureToBaselineInput } from '../../seed/porto-fixture.js';
 import { SimulationEngine, type EngineTickOutput } from './engine.js';
@@ -119,6 +121,27 @@ describe('SimulationEngine — control surface', () => {
     expect(engine.currentSpeed).toBe(4);
     engine.setSpeed(-2);
     expect(engine.currentSpeed).toBe(0);
+  });
+
+  it('clamps a giant seek target to MAX_SEEK_TICK (no unbounded fold = no event-loop DoS)', () => {
+    const nowRef = { value: 0 };
+    const engine = makeEngine(nowRef);
+
+    // A hostile target far past the cap (the P0 DoS frame). The engine must NOT
+    // fold a billion times — it clamps to MAX_SEEK_TICK and the call returns
+    // quickly. We also assert the resulting tick is exactly the cap, proving the
+    // defensive clamp (not the schema) bounds the fold even when seek() is called
+    // directly (schema bypassed).
+    const started = Date.now();
+    const snap = engine.seek(1_000_000_000);
+    const elapsedMs = Date.now() - started;
+
+    expect(snap.serverTick).toBe(MAX_SEEK_TICK);
+    expect(engine.currentTick).toBe(MAX_SEEK_TICK);
+    // A bounded fold of MAX_SEEK_TICK over the small Porto fleet is fast; a
+    // billion-iteration fold would hang for minutes. Generous ceiling to stay
+    // robust on slow CI.
+    expect(elapsedMs).toBeLessThan(5000);
   });
 
   it('seek re-folds deterministically (seek == stepped run)', () => {

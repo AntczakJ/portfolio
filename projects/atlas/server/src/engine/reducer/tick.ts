@@ -4,7 +4,6 @@ import {
   isPointInZone,
   projectAlongRoute,
   pushSpeedSample,
-  remainingDistanceToStop,
   stepGeofence,
   type GeofenceTracker,
 } from 'atlas-shared/geo';
@@ -310,11 +309,15 @@ export function telemetryFor(
   const progress = total > 0 ? Math.min(1, Math.max(0, vehicle.s / total)) : 0;
 
   const nextStop = findNextStop(baselineRoute, vehicle.s, vehicle.direction);
-  const remainingM = remainingDistanceToStop(vehicle.s, nextStop?.stop.s ?? null);
+  // Use the DIRECTION-AWARE remaining distance `findNextStop` already returns
+  // (`Math.abs(stop.s - s)`). The old `remainingDistanceToStop(s, stop.s)` was
+  // direction-BLIND (`Math.max(0, stop.s - s)`), so for a ping_pong vehicle in
+  // direction -1 (stop.s < s) it returned 0 and collapsed the ETA to the dwell
+  // remainder — wrong for ~half the fleet (4 of 6 Porto routes are ping_pong).
   const etaSeconds =
     nextStop === null
       ? null
-      : estimateEtaSeconds(remainingM, vehicle.speedBuffer, vehicle.dwellRemainingS);
+      : estimateEtaSeconds(nextStop.remainingM, vehicle.speedBuffer, vehicle.dwellRemainingS);
 
   return {
     vehicleId: vehicle.vehicleId,

@@ -7,7 +7,7 @@ import maplibregl, {
 } from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 
-import { DEMO_CITY_CENTER, DEMO_CITY_ZOOM } from '@/lib/fleet/demo-city';
+import { DEMO_CITY_BBOX, DEMO_CITY_CENTER, DEMO_CITY_ZOOM } from '@/lib/fleet/demo-city';
 import type { FleetSnapshot } from '@/lib/fleet/types';
 import { buildBasemapStyle, type BasemapTheme } from '@/lib/map/basemap-style';
 import {
@@ -16,10 +16,13 @@ import {
   buildVehiclesGeoJSON,
   buildZonesGeoJSON,
   createHeadingWedgeImage,
+  createLabelImage,
+  LABEL_IMAGE_PREFIX,
   LAYER_VEHICLE_DOT,
   LAYER_ZONE_FILL,
   LAYER_ZONE_LINE,
   readMapPalette,
+  shortVehicleLabel,
   SOURCE_REMAINING,
   SOURCE_ROUTES,
   SOURCE_TRAILS,
@@ -97,6 +100,10 @@ export class AtlasMapController {
   private readonly map: MapLibreMap;
   private snapshot: FleetSnapshot;
   private theme: BasemapTheme;
+  /** True once the first style + the `load` event have fired. */
+  private styleReady = false;
+  /** A theme requested before `styleReady`, applied on `load`. */
+  private pendingTheme: BasemapTheme | null = null;
   private reducedMotion: boolean;
   private readonly onVehicleSelect: ((id: string) => void) | undefined;
   private destroyed = false;
@@ -104,6 +111,12 @@ export class AtlasMapController {
   private readonly pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Grace-window timer between `webglcontextlost` and declaring degradation. */
   private contextLostTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Debounce timer for the re-fit-on-resize (P1-2). */
+  private resizeFitTimer: ReturnType<typeof setTimeout> | null = null;
+  /** True once the user manually moved the camera — suppresses the resize re-fit. */
+  private userInteracted = false;
+  /** True once the first live WS snapshot has replaced the static fixture. */
+  private hadLiveSnapshot = false;
   private readonly onContextLost: (() => void) | undefined;
   /** Bound canvas listeners kept so `destroy()` can remove them cleanly. */
   private readonly handleContextLost: (ev: Event) => void;
@@ -160,7 +173,23 @@ export class AtlasMapController {
     });
 
     this.map.on('load', () => {
-      if (!this.destroyed) opts.onReady?.();
+      if (this.destroyed) return;
+      this.styleReady = true;
+      // Apply any theme that was requested before the initial style finished
+      // loading (next-themes resolves the system theme AFTER the map mounts, so
+      // a `setTheme('light')` can arrive while the dark style is still loading —
+      // without this, a prefers-color-scheme: light visitor keeps the dark map).
+      if (this.pendingTheme && this.pendingTheme !== this.theme) {
+        const pending = this.pendingTheme;
+        this.pendingTheme = null;
+        this.applyTheme(pending);
+      }
+      // Fit the camera to the fleet so it fills the viewport at any width — the
+      // fixed centre/zoom leaves the fleet a tiny cluster on a 1440px+/2560
+      // monitor (the primary device). fitBounds respects the live container size
+      // (P1-2 fix).
+      this.fitToFleet(false);
+      opts.onReady?.();
     });
 
     // Vehicle click → focus callback (Phase 5 pins the detail panel).
@@ -177,6 +206,16 @@ export class AtlasMapController {
     this.map.on('mouseleave', LAYER_VEHICLE_DOT, () => {
       this.map.getCanvas().style.cursor = '';
     });
+
+    // Mark user-driven camera moves so the resize re-fit does not override a
+    // deliberate pan/zoom. `dragstart`/`zoomstart` carry `originalEvent` only
+    // when the user initiated them (programmatic moves do not).
+    const markInteracted = (e: { originalEvent?: unknown }): void => {
+      if (e.originalEvent) this.userInteracted = true;
+    };
+    this.map.on('dragstart', markInteracted);
+    this.map.on('zoomstart', markInteracted);
+    this.map.on('rotatestart', markInteracted);
   }
 
   /** Add the heading-wedge image + the fleet/route/zone sources + app layers to
@@ -190,6 +229,12 @@ export class AtlasMapController {
       const img = createHeadingWedgeImage(palette.label);
       this.map.addImage('atlas-heading-wedge', img, { pixelRatio: 2 });
     }
+
+    // Register a canvas-drawn label chip per short-label (keyless — no glyph
+    // server). Keyed by the short label so the marker shows the human "U7", not
+    // the `veh-N` slug (P1-3). Re-registered here on every style.load (initial +
+    // theme switch) so the chip recolours with the theme.
+    this.registerLabelImages(palette);
 
     if (!this.map.getSource(SOURCE_ZONES)) {
       this.map.addSource(SOURCE_ZONES, {
@@ -226,6 +271,27 @@ export class AtlasMapController {
 
     for (const layer of buildAppLayers(palette)) {
       if (!this.map.getLayer(layer.id)) this.map.addLayer(layer);
+    }
+  }
+
+  /** Register/refresh a canvas label chip per unique short-label in the fleet.
+   * `force` re-creates them (theme switch recolours); otherwise only missing
+   * ones are added (a new vehicle in a snapshot). Keyless — no glyph server. */
+  private registerLabelImages(palette: ReturnType<typeof readMapPalette>, force = true): void {
+    const seen = new Set<string>();
+    for (const v of this.snapshot.vehicles) {
+      const short = shortVehicleLabel(v.label);
+      if (seen.has(short)) continue;
+      seen.add(short);
+      const imageId = `${LABEL_IMAGE_PREFIX}${short}`;
+      const exists = this.map.hasImage(imageId);
+      if (exists && !force) continue;
+      const { data, pixelRatio } = createLabelImage(short, palette.label, palette.labelHalo);
+      if (exists) {
+        this.map.updateImage(imageId, data);
+      } else {
+        this.map.addImage(imageId, data, { pixelRatio });
+      }
     }
   }
 
@@ -269,20 +335,28 @@ export class AtlasMapController {
     const existing = this.pulseTimers.get(zoneId);
     if (existing) clearTimeout(existing);
 
-    // A data-driven `case`: the pulsed zone gets the raised opacity, all others
-    // keep the resting value. Re-applied (not transitioned) so multiple zones
-    // can pulse independently.
+    // A data-driven `case`: the pulsed zone gets the raised opacity + line-width
+    // bloom, all others keep the resting value. Re-applied (not transitioned) so
+    // multiple zones can pulse independently. P2-2: a CLEARER single eased pulse
+    // (a larger fill/line-opacity raise + a line-width bloom) so the geofence
+    // beat reads as "the world reacts", not a faint fill bump.
     const raisedFill: maplibregl.DataDrivenPropertyValueSpecification<number> = [
       'case',
       ['==', ['get', 'id'], zoneId],
-      0.28,
+      0.42,
       0.08,
     ];
     const raisedLine: maplibregl.DataDrivenPropertyValueSpecification<number> = [
       'case',
       ['==', ['get', 'id'], zoneId],
-      0.95,
+      1,
       0.55,
+    ];
+    const raisedWidth: maplibregl.DataDrivenPropertyValueSpecification<number> = [
+      'case',
+      ['==', ['get', 'id'], zoneId],
+      3.5,
+      1.25,
     ];
 
     if (!this.reducedMotion) {
@@ -293,17 +367,22 @@ export class AtlasMapController {
       this.map.setPaintProperty(LAYER_ZONE_LINE, 'line-opacity-transition', {
         duration: ZONE_PULSE_MS,
       });
+      this.map.setPaintProperty(LAYER_ZONE_LINE, 'line-width-transition', {
+        duration: ZONE_PULSE_MS,
+      });
     }
 
     this.map.setPaintProperty(LAYER_ZONE_FILL, 'fill-opacity', raisedFill);
     this.map.setPaintProperty(LAYER_ZONE_LINE, 'line-opacity', raisedLine);
+    this.map.setPaintProperty(LAYER_ZONE_LINE, 'line-width', raisedWidth);
 
     const timer = setTimeout(() => {
       this.pulseTimers.delete(zoneId);
       if (this.destroyed || !this.map.getLayer(LAYER_ZONE_FILL)) return;
-      // Reset to the resting opacity (the transition eases it down).
+      // Reset to the resting opacity + width (the transition eases them down).
       this.map.setPaintProperty(LAYER_ZONE_FILL, 'fill-opacity', 0.08);
       this.map.setPaintProperty(LAYER_ZONE_LINE, 'line-opacity', 0.55);
+      this.map.setPaintProperty(LAYER_ZONE_LINE, 'line-width', 1.25);
     }, ZONE_PULSE_MS);
     this.pulseTimers.set(zoneId, timer);
   }
@@ -313,10 +392,18 @@ export class AtlasMapController {
    * `setVehiclesGeoJSON` instead. */
   setSnapshot(snapshot: FleetSnapshot): void {
     if (this.destroyed) return;
+    const firstLive = !this.hadLiveSnapshot;
     this.snapshot = snapshot;
+    this.hadLiveSnapshot = true;
+    // Ensure a label chip exists for any vehicle in the new snapshot (keyless).
+    this.registerLabelImages(readMapPalette(), false);
     this.map.getSource<GeoJSONSource>(SOURCE_ZONES)?.setData(buildZonesGeoJSON(snapshot));
     this.map.getSource<GeoJSONSource>(SOURCE_ROUTES)?.setData(buildRoutesGeoJSON(snapshot));
     this.setVehiclesGeoJSON(buildVehiclesGeoJSON(snapshot));
+    // The map mounts on the static fixture; the first live WS snapshot carries
+    // the real fleet positions. Re-fit to them (unless the user already moved
+    // the camera) so the live fleet fills the viewport (P1-2).
+    if (firstLive && this.styleReady && !this.userInteracted) this.fitToFleet(true);
   }
 
   /** Focus a vehicle: fly (or cut, under reduced-motion) the camera to it.
@@ -347,9 +434,63 @@ export class AtlasMapController {
     }
   }
 
-  /** Swap the basemap style for the given theme + re-add the app layers. */
+  /**
+   * Fit the camera to the fleet bounds so it fills the viewport at any width
+   * (P1-2). Computes the bounds from the live vehicle positions, falling back to
+   * the demo-city bbox when the fleet is empty or degenerate. A `maxZoom` clamp
+   * keeps it from over-zooming on a small/clustered fleet on an ultrawide
+   * monitor. `animate=false` for the initial load (no jarring fly on first
+   * paint); a resize re-fit also cuts so the world snaps to the new aspect.
+   */
+  fitToFleet(animate: boolean): void {
+    if (this.destroyed) return;
+
+    let west = Infinity;
+    let south = Infinity;
+    let east = -Infinity;
+    let north = -Infinity;
+    for (const v of this.snapshot.vehicles) {
+      const [lng, lat] = v.position;
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
+      if (lng < west) west = lng;
+      if (lng > east) east = lng;
+      if (lat < south) south = lat;
+      if (lat > north) north = lat;
+    }
+
+    const haveFleet = west <= east && south <= north && Number.isFinite(west);
+    const bounds: [[number, number], [number, number]] = haveFleet
+      ? [
+          [west, south],
+          [east, north],
+        ]
+      : [
+          [DEMO_CITY_BBOX[0], DEMO_CITY_BBOX[1]],
+          [DEMO_CITY_BBOX[2], DEMO_CITY_BBOX[3]],
+        ];
+
+    this.map.fitBounds(bounds, {
+      padding: { top: 56, bottom: 56, left: 56, right: 56 },
+      maxZoom: 15.2,
+      duration: animate && !this.reducedMotion ? 600 : 0,
+    });
+  }
+
+  /** Swap the basemap style for the given theme + re-add the app layers. If the
+   * initial style has not loaded yet (next-themes resolves the system theme
+   * after the map mounts), the request is deferred and applied on `load` — so a
+   * prefers-color-scheme: light visitor does NOT keep the dark map (P0-2 fix). */
   setTheme(theme: BasemapTheme): void {
     if (this.destroyed || theme === this.theme) return;
+    if (!this.styleReady) {
+      this.pendingTheme = theme;
+      return;
+    }
+    this.applyTheme(theme);
+  }
+
+  /** Actually swap the MapLibre style for the theme (caller has gated readiness). */
+  private applyTheme(theme: BasemapTheme): void {
     this.theme = theme;
     // `setStyle` clears layers; `style.load` re-adds the app layers. Diff is
     // off so the full new basemap applies cleanly.
@@ -361,9 +502,19 @@ export class AtlasMapController {
     this.reducedMotion = reduced;
   }
 
-  /** Resize hook for layout changes (panels collapsing, viewport resize). */
+  /** Resize hook for layout changes (panels collapsing, viewport resize). After
+   * resizing the canvas, re-fit the fleet to the new aspect (debounced) UNLESS
+   * the user has manually panned/zoomed — so an ultrawide monitor keeps the
+   * fleet framed (P1-2) without overriding a deliberate camera move. */
   resize(): void {
-    if (!this.destroyed) this.map.resize();
+    if (this.destroyed) return;
+    this.map.resize();
+    if (this.userInteracted) return;
+    if (this.resizeFitTimer) clearTimeout(this.resizeFitTimer);
+    this.resizeFitTimer = setTimeout(() => {
+      this.resizeFitTimer = null;
+      if (!this.destroyed && !this.userInteracted) this.fitToFleet(true);
+    }, 180);
   }
 
   /** Tear down the map + listeners. Called on unmount. */
@@ -372,6 +523,10 @@ export class AtlasMapController {
     if (this.contextLostTimer) {
       clearTimeout(this.contextLostTimer);
       this.contextLostTimer = null;
+    }
+    if (this.resizeFitTimer) {
+      clearTimeout(this.resizeFitTimer);
+      this.resizeFitTimer = null;
     }
     for (const timer of this.pulseTimers.values()) clearTimeout(timer);
     this.pulseTimers.clear();

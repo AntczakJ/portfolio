@@ -192,26 +192,27 @@ function FleetRowItem({
         </div>
         <div className="mt-1 flex items-center justify-between gap-2">
           <StatusBadge status={row.status} size="sm" />
-          <span className="text-fg-subtle font-mono text-2xs tabular-nums" aria-hidden="true">
+          <span className="text-fg-muted font-mono text-2xs tabular-nums" aria-hidden="true">
             {formatSpeed(row.speedMps)}
           </span>
         </div>
         <div className="mt-1.5 flex items-center gap-2">
-          {/* Progress bar — text percentage carries the value too (not bar-alone). */}
+          {/* Progress bar — taller + cleaner so the distribution reads at a glance
+              (P2-3); the text percentage carries the value too (not bar-alone). */}
           <span
-            className="bg-surface relative h-1 flex-1 overflow-hidden rounded-full"
+            className="bg-surface ring-border relative h-1.5 flex-1 overflow-hidden rounded-full ring-1 ring-inset"
             aria-hidden="true"
           >
             <span
-              className="bg-accent/70 absolute inset-y-0 left-0 rounded-full"
+              className="bg-accent absolute inset-y-0 left-0 rounded-full"
               style={{ width: `${String(pct)}%` }}
             />
           </span>
-          <span className="text-fg-subtle font-mono text-2xs tabular-nums" aria-hidden="true">
+          <span className="text-fg-muted font-mono text-2xs tabular-nums" aria-hidden="true">
             {String(pct)}%
           </span>
         </div>
-        <p className="text-fg-subtle mt-1 truncate text-2xs" aria-hidden="true">
+        <p className="text-fg-muted mt-1 truncate text-2xs" aria-hidden="true">
           {row.routeName}
           {row.zoneName ? ` · ${row.zoneName}` : ''}
         </p>

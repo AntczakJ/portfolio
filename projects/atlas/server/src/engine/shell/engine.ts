@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 
 import type { SimEvent, VehicleTelemetry } from 'atlas-shared/schemas';
+import { MAX_SEEK_TICK } from 'atlas-shared/schemas/ws';
 
 import type { SimBaseline } from '../baseline/types.js';
 import type { ReducerEvent } from '../reducer/events.js';
@@ -185,9 +186,15 @@ export class SimulationEngine {
    * (a pure replay — the determinism payoff). Emits the resulting snapshot-class
    * tick output. Seeking BACKWARD or FORWARD both re-fold from tick 0 so the
    * result is exact regardless of the live path taken.
+   *
+   * The target is CLAMPED to `[0, MAX_SEEK_TICK]` defensively (defence in depth,
+   * mirroring the `setSpeed` clamp): the schema already bounds the inbound frame,
+   * but the fold is a synchronous loop on the event loop, so the engine never
+   * folds more than the cap even if the schema is bypassed (an unbounded fold is
+   * an event-loop DoS — see `MAX_SEEK_TICK`).
    */
   seek(targetTick: number): EngineSnapshot {
-    const target = Math.max(0, Math.floor(targetTick));
+    const target = Math.min(MAX_SEEK_TICK, Math.max(0, Math.floor(targetTick)));
     let state = createInitialWorldState(this.baseline);
     for (let i = 0; i < target; i += 1) {
       state = tick(this.baseline, state, this.dtSeconds).state;

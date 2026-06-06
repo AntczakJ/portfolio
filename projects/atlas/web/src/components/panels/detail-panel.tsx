@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Gauge, MapPin, Route as RouteIcon, Timer, X } from 'lucide-react';
 import { type ReactNode } from 'react';
 
+import { FleetSummary } from '@/components/panels/fleet-summary';
 import { PanelShell } from '@/components/panels/panel-shell';
 import { StatusBadge } from '@/components/panels/status-badge';
 import { cn } from '@/lib/cn';
@@ -35,7 +36,7 @@ export function DetailPanel(): ReactNode {
 
   return (
     <PanelShell
-      title="Vehicle"
+      title={selectedId ? 'Vehicle' : 'Overview'}
       meta={
         selectedId ? (
           <button
@@ -65,17 +66,17 @@ export function DetailPanel(): ReactNode {
             <DetailBody vehicleId={selectedId} />
           </motion.div>
         ) : (
-          <motion.p
+          <motion.div
             key="empty"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="text-fg-subtle text-sm leading-normal"
           >
-            Select a vehicle on the map or in the fleet list to pin its route,
-            stops, live ETA, speed and recent events here.
-          </motion.p>
+            {/* P1-4: the empty rail earns its space with a live fleet-summary
+                instrument rather than a quarter-screen of placeholder text. */}
+            <FleetSummary />
+          </motion.div>
         )}
       </AnimatePresence>
     </PanelShell>

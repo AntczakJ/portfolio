@@ -60,10 +60,18 @@ export function ConnectionPill(): ReactNode {
   }, []);
 
   const style = STYLES[status];
+  // P2-1: when live, the pill adopts the signal-amber language (amber backing +
+  // ring + label) so the brand accent carries a deliberate "live" moment in the
+  // top bar, not just the status dot.
+  const isLive = mounted && status === 'live';
 
   return (
     <span
-      className="border-border bg-surface-2 text-fg-muted inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
+      className={
+        isLive
+          ? 'bg-accent-soft text-accent-ink ring-accent/40 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ring-1'
+          : 'border-border bg-surface-2 text-fg-muted inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs'
+      }
       title={style.title}
     >
       <span
@@ -80,8 +88,8 @@ export function ConnectionPill(): ReactNode {
       <span className="font-mono tracking-wide uppercase" aria-live="polite">
         {style.label}
       </span>
-      {mounted && status === 'live' && serverTick !== null ? (
-        <span className="text-fg-subtle hidden font-mono tabular-nums sm:inline" aria-hidden="true">
+      {isLive && serverTick !== null ? (
+        <span className="hidden font-mono tabular-nums opacity-70 sm:inline" aria-hidden="true">
           t{serverTick.toLocaleString()}
         </span>
       ) : null}

@@ -123,10 +123,14 @@ export function MapCanvas(): ReactNode {
   }, []);
 
   // Bridge theme changes → swap the basemap style (the toggle switches the map,
-  // not just the chrome — ADR-006 success criterion).
+  // not just the chrome — ADR-006 success criterion). Also re-runs on `ready`:
+  // next-themes resolves the SYSTEM theme after the map mounts, so on the first
+  // ready we reconcile the live resolved theme (a prefers-color-scheme: light
+  // visitor with no stored pref gets the light plate — P0-2 fix). The controller
+  // defers a pre-ready request internally and applies it on load.
   useEffect(() => {
     controllerRef.current?.setTheme(resolveBasemapTheme(resolvedTheme));
-  }, [resolvedTheme]);
+  }, [resolvedTheme, ready]);
 
   return (
     <div className="relative h-full w-full">

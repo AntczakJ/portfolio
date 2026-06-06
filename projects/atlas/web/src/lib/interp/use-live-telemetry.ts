@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 
 import type { AtlasMapController } from '@/lib/map/map-controller';
+import { shortVehicleLabel } from '@/lib/map/fleet-layers';
 import { InterpStore } from '@/lib/interp/interp-store';
 import { RafLoop } from '@/lib/interp/raf-loop';
 import { buildStopSIndex, type StopSIndex } from '@/lib/interp/stop-index';
@@ -99,6 +100,11 @@ export function useLiveTelemetry(
           // The interp store + stop index consume the SHARED wire types directly
           // (geometry as GeoJSON LineString), not the adapted view model.
           interp.setRoutes(frame.routes);
+          // Human short marker labels (P1-3) so the rAF loop emits "U7", not the
+          // raw `veh-N` slug, on the marker — unified with the panels/feed.
+          interp.setMarkerLabels(
+            new Map(frame.vehicles.map((v) => [v.id, shortVehicleLabel(v.label)])),
+          );
           interp.seedFromSnapshot(frame.telemetry, performance.now());
           stopSIndex = buildStopSIndex(frame.routes, frame.stops);
           for (const t of frame.telemetry) setNextStopFor(t.vehicleId, t.nextStopId);

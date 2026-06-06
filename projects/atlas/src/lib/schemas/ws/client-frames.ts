@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { MAX_SEEK_TICK } from './protocol';
+
 /**
  * Client -> server WebSocket frames (ADR-003). The bidirectional control
  * channel that justifies WebSocket over SSE (ADR-001): subscription scoping,
@@ -16,12 +18,21 @@ import { z } from 'zod';
  * A viewport bounding box `[west, south, east, north]` in degrees. Used by
  * `subscribe` to cull off-screen vehicles from the per-tick delta server-side.
  */
-export const bboxSchema = z.tuple([
-  z.number().min(-180).max(180), // west (min longitude)
-  z.number().min(-90).max(90), // south (min latitude)
-  z.number().min(-180).max(180), // east (max longitude)
-  z.number().min(-90).max(90), // north (max latitude)
-]);
+export const bboxSchema = z
+  .tuple([
+    z.number().min(-180).max(180), // west (min longitude)
+    z.number().min(-90).max(90), // south (min latitude)
+    z.number().min(-180).max(180), // east (max longitude)
+    z.number().min(-90).max(90), // north (max latitude)
+  ])
+  // Reject a degenerate/inverted box (west>=east or south>=north) at the
+  // boundary: an inverted box would otherwise silently cull EVERYTHING in the
+  // server-side filter. The filter still degrades safely to "empty" for any box
+  // that slips past, but rejecting here is the honest "validate at the boundary"
+  // posture — the malformed frame is dropped, never trusted.
+  .refine(([west, south, east, north]) => west < east && south < north, {
+    message: 'bbox must satisfy west < east and south < north',
+  });
 export type Bbox = z.infer<typeof bboxSchema>;
 
 /**
@@ -70,8 +81,13 @@ export const simControlFrameSchema = z.discriminatedUnion('action', [
   z.object({
     t: z.literal('sim.control'),
     action: z.literal('seek'),
-    /** Absolute target tick index to fold the reducer to from the baseline. */
-    tick: z.number().int().nonnegative(),
+    /**
+     * Absolute target tick index to fold the reducer to from the baseline.
+     * BOUNDED at `MAX_SEEK_TICK` — `seek` is a synchronous reducer fold, so an
+     * unbounded target is an event-loop DoS (see `MAX_SEEK_TICK`). The engine
+     * also clamps defensively (defence in depth, mirroring the `setSpeed` cap).
+     */
+    tick: z.number().int().nonnegative().max(MAX_SEEK_TICK),
   }),
 ]);
 export type SimControlFrame = z.infer<typeof simControlFrameSchema>;

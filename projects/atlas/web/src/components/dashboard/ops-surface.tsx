@@ -1,6 +1,7 @@
 'use client';
 
 import { Map as MapIcon, Table2 } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, type ReactNode } from 'react';
 
 import { MapRegion } from '@/components/map/map-region';
@@ -50,6 +51,7 @@ export function OpsSurface(): ReactNode {
   }, [setWebglAvailable]);
 
   const effective = resolveEffectiveView(preference, webglAvailable);
+  const reduce = useReducedMotion();
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
@@ -68,19 +70,35 @@ export function OpsSurface(): ReactNode {
         preference={preference}
       />
 
+      {/* P1-5: a considered, reduced-motion-safe crossfade for the map<->table
+          swap (Linear easing), instead of a lazy hard cut. Under reduced motion
+          the duration collapses to ~0 (an instant, motion-free swap). The map
+          and table are mutually exclusive (one socket) — only one is keyed in
+          the presence at a time. */}
       <div className="relative min-h-0 flex-1">
-        {effective === 'map' ? (
-          <>
-            <MapRegion />
-            <div className="pointer-events-none absolute bottom-3 left-3 z-10">
-              <div className="pointer-events-auto">
-                <DemoControl />
-              </div>
-            </div>
-          </>
-        ) : (
-          <FleetTableView mapUnavailable={!webglAvailable} />
-        )}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={effective}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: reduce ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="absolute inset-0"
+          >
+            {effective === 'map' ? (
+              <>
+                <MapRegion />
+                <div className="pointer-events-none absolute bottom-3 left-3 z-10">
+                  <div className="pointer-events-auto">
+                    <DemoControl />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <FleetTableView mapUnavailable={!webglAvailable} />
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </div>
   );

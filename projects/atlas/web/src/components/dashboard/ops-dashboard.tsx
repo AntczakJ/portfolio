@@ -15,24 +15,27 @@ import { FleetPanel } from '@/components/panels/fleet-panel';
  * live events feed. The map owns the most space; the panels are fixed-width
  * rails so the map breathes.
  *
- * Responsive: below `lg` the side panels move under the map (the map stays the
- * lead surface but the rails reflow to a stacked column); below `md` the layout
- * is a single scroll column with the map first, then the fleet roster (the
- * non-map view), then events. Phase 6 turns the narrow-screen panels into
- * bottom-sheets / tabs and wires the no-WebGL table fallback — this scaffold
- * establishes the reflow skeleton.
+ * Responsive (P1-1 fix): on `lg`+ the layout is a FIXED-HEIGHT control room — a
+ * full-viewport three-region grid that does not scroll (the map breathes). BELOW
+ * `lg` it becomes a single SCROLLING column: the map takes a tall fixed block,
+ * then the fleet roster, detail and events flow beneath it at their natural
+ * height. The previous `h-dvh` + `overflow-hidden` trapped the stacked column and
+ * left a large black void below a few fleet rows — here the narrow column scrolls
+ * and fills, so a dispatcher on a phone gets a usable layout from 320px up.
  *
  * A Server Component shell mounting client islands (the map region, the top-bar
  * client bits) — the `'use client'` boundary stays as low as possible.
  */
 export function OpsDashboard(): ReactNode {
   return (
-    <div className="bg-background flex h-dvh flex-col overflow-hidden">
+    // lg+: lock to the viewport (no page scroll, the control-room register).
+    // Below lg: a normal scrolling document (min-h-dvh, no overflow trap).
+    <div className="bg-background flex min-h-dvh flex-col lg:h-dvh lg:overflow-hidden">
       <TopBar />
 
       <main
         id="main"
-        className="grid min-h-0 flex-1 gap-2.5 p-2.5 lg:grid-cols-[var(--panel-width)_minmax(0,1fr)_var(--panel-width-wide)]"
+        className="grid flex-1 gap-2.5 p-2.5 lg:min-h-0 lg:grid-cols-[var(--panel-width)_minmax(0,1fr)_var(--panel-width-wide)]"
       >
         {/* Fleet rail (left). On lg it is a full-height rail; below lg it drops
             under the map in the reflow below. */}
@@ -43,8 +46,8 @@ export function OpsDashboard(): ReactNode {
         {/* Operations surface — the live map OR the full-width fleet table (the
             no-WebGL fallback + a first-class user toggle). The demo affordance
             floats over the map when it is the active surface. On small screens it
-            takes a fixed tall block at the top. */}
-        <div className="relative min-h-[24rem] lg:min-h-0">
+            takes a fixed tall block; on lg it fills the centre column. */}
+        <div className="relative h-[60vh] min-h-[22rem] lg:h-auto lg:min-h-0">
           <OpsSurface />
         </div>
 
@@ -59,9 +62,10 @@ export function OpsDashboard(): ReactNode {
           </div>
         </div>
 
-        {/* Narrow-viewport reflow: the three panels stacked beneath the map.
-            Visible below lg only. The fleet roster (the non-map view) comes
-            first as the most useful glance surface. */}
+        {/* Narrow-viewport reflow: the three panels stacked beneath the map,
+            flowing at their natural height inside the scrolling column. Visible
+            below lg only. The fleet roster (the non-map view) comes first as the
+            most useful glance surface. */}
         <div className="flex flex-col gap-2.5 lg:hidden">
           <FleetPanel />
           <DetailPanel />

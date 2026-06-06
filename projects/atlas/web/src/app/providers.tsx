@@ -26,11 +26,15 @@ interface ProvidersProps {
  *     CANONICAL for Atlas (the control-room register), so `:root` carries the
  *     dark tokens and `.light` overrides for the clean register. next-themes
  *     writes `class="dark"` / `class="light"` on <html>.
- *   - `defaultTheme="dark"` — the control-room dark register is the lead
- *     surface (viewer 1 lands here). The light register is the intentional
- *     clean-dispatcher counterpart, not a fallback.
- *   - `themes={['dark', 'light']}` — exactly two; `enableSystem` lets
- *     `prefers-color-scheme` choose the initial theme, defaulting to dark.
+ *   - `defaultTheme="system"` + `enableSystem` — next-themes' pre-paint inline
+ *     script resolves `prefers-color-scheme` BEFORE the first paint, so a
+ *     light-system visitor with no stored pref gets the light register with NO
+ *     flash on the static `/about` SEO front door (P1-6 fix: `defaultTheme="dark"`
+ *     ignored the system preference on first visit, so a light-system visitor
+ *     first saw the dark landing). DARK stays the FALLBACK when there is no system
+ *     preference (`:root` carries the dark tokens, so the server render + a
+ *     no-preference client agree — still no flash, dark still canonical).
+ *   - `themes={['dark', 'light']}` — exactly two registers.
  *   - `disableTransitionOnChange` — suppresses the token crossfade so the theme
  *     flip (which ALSO swaps the MapLibre basemap style, Task 2.2) is instant.
  *
@@ -57,7 +61,7 @@ export function Providers({ children }: ProvidersProps): ReactNode {
   return (
     <ThemeProvider
       attribute="class"
-      defaultTheme="dark"
+      defaultTheme="system"
       themes={['dark', 'light']}
       enableSystem
       disableTransitionOnChange

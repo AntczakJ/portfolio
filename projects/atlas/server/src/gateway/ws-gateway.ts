@@ -148,11 +148,17 @@ export async function registerWsGateway(
         }
       }
 
-      // Events are low-volume and feed-critical; forward each in scope. (A scoped
-      // connection still hears events for vehicles it can see.)
-      for (const event of output.events) {
-        if (conn.scope.vehicleIds !== null && !conn.scope.vehicleIds.has(event.vehicleId)) continue;
-        send(conn, buildEventFrame(conn.nextSeq(), output.serverTick, event));
+      // Events are low-volume and feed-critical; forward each in scope. A scoped
+      // connection only hears events for vehicles it can see — scoped by BOTH
+      // vehicleIds AND bbox (consistent with the telemetry cull above). The
+      // already-scoped `scoped` telemetry is the authoritative in-scope set this
+      // tick, so reuse it (an event's vehicle is in scope iff its telemetry is).
+      if (output.events.length > 0) {
+        const inScopeIds = new Set(scoped.map((t) => t.vehicleId));
+        for (const event of output.events) {
+          if (!inScopeIds.has(event.vehicleId)) continue;
+          send(conn, buildEventFrame(conn.nextSeq(), output.serverTick, event));
+        }
       }
     }
   }

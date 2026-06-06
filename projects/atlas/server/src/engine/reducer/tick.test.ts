@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { initialGeofenceTracker } from 'atlas-shared/geo';
+
 import { buildBaseline } from '../baseline/build-baseline.js';
-import type { SimBaseline } from '../baseline/types.js';
+import type { BaselineRoute, SimBaseline } from '../baseline/types.js';
 import { buildPortoFixture, fixtureToBaselineInput } from '../../seed/porto-fixture.js';
 import { tick, telemetryFor } from './tick.js';
-import { createInitialWorldState, type WorldState } from './world-state.js';
+import { createInitialWorldState, type VehicleState, type WorldState } from './world-state.js';
 
 /**
  * Phase 3 reducer smoke / sanity tests (the heavy suite is Task 8.1). These pin
@@ -113,6 +115,63 @@ describe('tick reducer — motion', () => {
       expect(t.progress).toBeGreaterThanOrEqual(0);
       expect(t.progress).toBeLessThanOrEqual(1);
     }
+  });
+});
+
+describe('tick reducer — ETA (direction-aware)', () => {
+  /** Find a ping_pong route in the fixture that has at least two stops. */
+  function pingPongRouteWithStops(baseline: SimBaseline): BaselineRoute {
+    for (const route of baseline.routes.values()) {
+      if (route.route.loopMode === 'ping_pong' && route.stops.length >= 2) return route;
+    }
+    throw new Error('test fixture has no ping_pong route with >= 2 stops');
+  }
+
+  it('reports a correct non-zero ETA for a ping_pong vehicle travelling backward (direction -1)', () => {
+    const baseline = fixtureBaseline();
+    const route = pingPongRouteWithStops(baseline);
+    // A vehicle is the one mapped to this route in the baseline.
+    const vehicle = baseline.vehicles.find((v) => v.routeId === route.route.id);
+    expect(vehicle).toBeDefined();
+    if (vehicle === undefined) return;
+
+    // Pick a stop and place the vehicle just AHEAD of it in the BACKWARD sense:
+    // travelling in direction -1, the "next stop" is the one with the largest s
+    // strictly below the current s. Put the vehicle ~50 m past such a stop so
+    // findNextStop returns it with a real remainingM (~50 m), not 0.
+    const sortedBySAsc = [...route.stops].sort((a, b) => a.s - b.s);
+    const targetStop = sortedBySAsc[sortedBySAsc.length - 1];
+    expect(targetStop).toBeDefined();
+    if (targetStop === undefined) return;
+    const currentS = targetStop.s + 50;
+
+    const geofenceTrackers = new Map(
+      baseline.zones.map((z) => [z.id, initialGeofenceTracker()] as const),
+    );
+    const backward: VehicleState = {
+      vehicleId: vehicle.id,
+      routeId: route.route.id,
+      s: currentS,
+      direction: -1,
+      speedMps: 8, // cruising
+      status: 'en_route',
+      dwellRemainingS: 0,
+      dwellingStopSeq: -1,
+      // A populated rolling buffer so the rolling-avg speed is non-zero.
+      speedBuffer: [8, 8, 8, 8, 8],
+      geofenceTrackers,
+      currentZoneId: null,
+    };
+
+    const telemetry = telemetryFor(baseline, backward);
+
+    // The bug (direction-blind remainingDistanceToStop) returned 0 here, so the
+    // ETA collapsed to 0. With the direction-aware fix it must be a real,
+    // finite, positive ETA: ~50 m / ~8 m/s ~ a few seconds.
+    expect(telemetry.nextStopId).toBe(targetStop.stop.id);
+    expect(telemetry.etaSeconds).not.toBeNull();
+    expect(telemetry.etaSeconds ?? 0).toBeGreaterThan(0);
+    expect(Number.isFinite(telemetry.etaSeconds ?? Infinity)).toBe(true);
   });
 });
 

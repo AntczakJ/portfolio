@@ -39,6 +39,10 @@ export interface VehicleInterpState {
 export class InterpStore {
   /** Per-vehicle interpolation state, keyed by vehicleId. */
   private readonly vehicles = new Map<string, VehicleInterpState>();
+  /** Per-vehicle HUMAN short marker label (e.g. "U7"), keyed by vehicleId. The
+   * rAF loop emits this as the `marker` property so the map shows the human
+   * label, unified with the panels — never the `veh-N` slug (P1-3). */
+  private readonly markerLabels = new Map<string, string>();
   /** Cached route projectors, keyed by routeId (built once per route). */
   private readonly projectors = new Map<string, RouteProjector>();
   /** Route lengths in metres, keyed by routeId (for wrap detection). */
@@ -58,6 +62,17 @@ export class InterpStore {
       }
       this.routeLengths.set(route.id, route.lengthM);
     }
+  }
+
+  /** Register the per-vehicle human short marker labels (from a snapshot). */
+  setMarkerLabels(labels: ReadonlyMap<string, string>): void {
+    this.markerLabels.clear();
+    for (const [id, label] of labels) this.markerLabels.set(id, label);
+  }
+
+  /** The human short marker label for a vehicle (falls back to the id). */
+  markerLabel(vehicleId: string): string {
+    return this.markerLabels.get(vehicleId) ?? vehicleId;
   }
 
   getProjector(routeId: string): RouteProjector | undefined {
