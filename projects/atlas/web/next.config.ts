@@ -88,6 +88,39 @@ function withOptionalTileHost(base: string): string {
   return optionalTileHost ? `${base} ${optionalTileHost}` : base;
 }
 
+/**
+ * The telemetry WebSocket origin for `connect-src`.
+ *
+ * PROD (same-origin deploy): the WS is proxied same-origin, so `connect-src
+ * 'self'` already covers it — nothing extra is added.
+ *
+ * DEV (local): the Next web runs on :3093 and the Fastify gateway on :3092, so
+ * the WS is cross-origin to `localhost:3092`. We allow `ws://localhost:3092`
+ * (and the explicit `NEXT_PUBLIC_WS_URL` origin if it points elsewhere) ONLY in
+ * a non-production build — the prod CSP stays same-origin-only, NO `unsafe-eval`
+ * in either case. This is gated on `NODE_ENV !== 'production'`, so a prod build
+ * never carries the localhost allowance.
+ */
+function wsConnectSrc(): string {
+  if (process.env.NODE_ENV === 'production') return '';
+  // Derive the dev WS origin from the override if set, else the default gateway.
+  const override = process.env.NEXT_PUBLIC_WS_URL?.trim();
+  if (override) {
+    try {
+      const u = new URL(override);
+      return `${u.protocol}//${u.host}`;
+    } catch {
+      // fall through to the default dev gateway
+    }
+  }
+  return 'ws://localhost:3092';
+}
+
+function withWsOrigin(base: string): string {
+  const ws = wsConnectSrc();
+  return ws ? `${base} ${ws}` : base;
+}
+
 const contentSecurityPolicy = [
   "default-src 'self'",
   // No `'unsafe-eval'` — the load-bearing guarantee. MapLibre + zod(jitless)
@@ -98,8 +131,9 @@ const contentSecurityPolicy = [
   // MapLibre sprites/glyphs are same-origin; data:/blob: for decoded imagery.
   withOptionalTileHost("img-src 'self' data: blob:"),
   "font-src 'self'",
-  // Same-origin `.pmtiles` range requests + the same-origin telemetry WS.
-  withOptionalTileHost("connect-src 'self'"),
+  // Same-origin `.pmtiles` range requests + the same-origin telemetry WS (prod);
+  // the dev gateway origin (ws://localhost:3092) is appended in dev only.
+  withWsOrigin(withOptionalTileHost("connect-src 'self'")),
   // THE MapLibre allowance: the tile-parse worker is a same-origin blob.
   "worker-src 'self' blob:",
   "child-src 'self' blob:",

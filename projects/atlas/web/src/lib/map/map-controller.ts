@@ -1,3 +1,4 @@
+import type { FeatureCollection, LineString, Point } from 'geojson';
 import maplibregl, {
   type GeoJSONSource,
   type LngLatLike,
@@ -16,8 +17,12 @@ import {
   buildZonesGeoJSON,
   createHeadingWedgeImage,
   LAYER_VEHICLE_DOT,
+  LAYER_ZONE_FILL,
+  LAYER_ZONE_LINE,
   readMapPalette,
+  SOURCE_REMAINING,
   SOURCE_ROUTES,
+  SOURCE_TRAILS,
   SOURCE_VEHICLES,
   SOURCE_ZONES,
 } from '@/lib/map/fleet-layers';
@@ -54,6 +59,12 @@ import {
 
 let protocolRegistered = false;
 
+/** An empty FeatureCollection — the initial data for the per-frame line sources. */
+const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] };
+
+/** Zone-pulse timing (ms): the highlight fades over this window after an event. */
+const ZONE_PULSE_MS = 1400;
+
 /** Register the `pmtiles://` protocol once per page (keyless same-origin tiles). */
 function ensurePmtilesProtocol(): void {
   if (protocolRegistered) return;
@@ -80,6 +91,8 @@ export class AtlasMapController {
   private reducedMotion: boolean;
   private readonly onVehicleSelect: ((id: string) => void) | undefined;
   private destroyed = false;
+  /** Active zone-pulse timers, keyed by zoneId, so a re-pulse cancels cleanly. */
+  private readonly pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(opts: MapControllerOptions) {
     ensurePmtilesProtocol();
@@ -151,6 +164,20 @@ export class AtlasMapController {
         data: buildRoutesGeoJSON(this.snapshot),
       });
     }
+    // Remaining-route + trail sources (Task 4.3) — empty until the rAF loop
+    // fills them per frame off the interpolated vehicle positions. The trail
+    // source needs `lineMetrics` so the layer's `line-gradient` (fade the tail)
+    // can read `line-progress`.
+    if (!this.map.getSource(SOURCE_REMAINING)) {
+      this.map.addSource(SOURCE_REMAINING, { type: 'geojson', data: EMPTY_FC });
+    }
+    if (!this.map.getSource(SOURCE_TRAILS)) {
+      this.map.addSource(SOURCE_TRAILS, {
+        type: 'geojson',
+        data: EMPTY_FC,
+        lineMetrics: true,
+      });
+    }
     if (!this.map.getSource(SOURCE_VEHICLES)) {
       this.map.addSource(SOURCE_VEHICLES, {
         type: 'geojson',
@@ -169,10 +196,77 @@ export class AtlasMapController {
 
   /** Replace the vehicle source data. Phase 4 calls this PER FRAME with the
    * interpolated positions — a single GPU-side `setData`, no React. */
-  setVehiclesGeoJSON(data: ReturnType<typeof buildVehiclesGeoJSON>): void {
+  setVehiclesGeoJSON(data: FeatureCollection<Point>): void {
     if (this.destroyed) return;
     const source = this.map.getSource<GeoJSONSource>(SOURCE_VEHICLES);
     source?.setData(data);
+  }
+
+  /** Replace the trail (fading tail behind each vehicle) source. Per-frame,
+   * off the React render path (Task 4.3). */
+  setTrailsGeoJSON(data: FeatureCollection<LineString>): void {
+    if (this.destroyed) return;
+    this.map.getSource<GeoJSONSource>(SOURCE_TRAILS)?.setData(data);
+  }
+
+  /** Replace the remaining-route (planned path ahead) source. Per-frame,
+   * off the React render path (Task 4.3). */
+  setRemainingGeoJSON(data: FeatureCollection<LineString>): void {
+    if (this.destroyed) return;
+    this.map.getSource<GeoJSONSource>(SOURCE_REMAINING)?.setData(data);
+  }
+
+  /**
+   * Pulse a zone on a geofence enter/exit event (Task 4.3): briefly raise the
+   * zone fill + outline opacity, then ease it back. A MapLibre PAINT update
+   * (`setPaintProperty`) filtered to the one zone — off the React render path,
+   * not Motion. Reduced-motion-safe: under reduced motion the highlight is a
+   * STATIC raise that holds and clears with no transition (no pulse animation).
+   */
+  pulseZone(zoneId: string): void {
+    if (this.destroyed) return;
+    if (!this.map.getLayer(LAYER_ZONE_FILL)) return;
+
+    const existing = this.pulseTimers.get(zoneId);
+    if (existing) clearTimeout(existing);
+
+    // A data-driven `case`: the pulsed zone gets the raised opacity, all others
+    // keep the resting value. Re-applied (not transitioned) so multiple zones
+    // can pulse independently.
+    const raisedFill: maplibregl.DataDrivenPropertyValueSpecification<number> = [
+      'case',
+      ['==', ['get', 'id'], zoneId],
+      0.28,
+      0.08,
+    ];
+    const raisedLine: maplibregl.DataDrivenPropertyValueSpecification<number> = [
+      'case',
+      ['==', ['get', 'id'], zoneId],
+      0.95,
+      0.55,
+    ];
+
+    if (!this.reducedMotion) {
+      // Ease the paint back over the pulse window (MapLibre transition).
+      this.map.setPaintProperty(LAYER_ZONE_FILL, 'fill-opacity-transition', {
+        duration: ZONE_PULSE_MS,
+      });
+      this.map.setPaintProperty(LAYER_ZONE_LINE, 'line-opacity-transition', {
+        duration: ZONE_PULSE_MS,
+      });
+    }
+
+    this.map.setPaintProperty(LAYER_ZONE_FILL, 'fill-opacity', raisedFill);
+    this.map.setPaintProperty(LAYER_ZONE_LINE, 'line-opacity', raisedLine);
+
+    const timer = setTimeout(() => {
+      this.pulseTimers.delete(zoneId);
+      if (this.destroyed || !this.map.getLayer(LAYER_ZONE_FILL)) return;
+      // Reset to the resting opacity (the transition eases it down).
+      this.map.setPaintProperty(LAYER_ZONE_FILL, 'fill-opacity', 0.08);
+      this.map.setPaintProperty(LAYER_ZONE_LINE, 'line-opacity', 0.55);
+    }, ZONE_PULSE_MS);
+    this.pulseTimers.set(zoneId, timer);
   }
 
   /** Replace the full snapshot (e.g. a new WS `snapshot` frame). Re-derives all

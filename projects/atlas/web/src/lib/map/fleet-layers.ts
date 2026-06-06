@@ -1,7 +1,7 @@
+import type { FeatureCollection, LineString, Point, Polygon } from 'geojson';
 import type {
   ExpressionSpecification,
   FilterSpecification,
-  GeoJSONSourceSpecification,
   LayerSpecification,
 } from 'maplibre-gl';
 
@@ -25,10 +25,16 @@ import type { FleetSnapshot } from '@/lib/fleet/types';
 export const SOURCE_VEHICLES = 'atlas-vehicles';
 export const SOURCE_ROUTES = 'atlas-routes';
 export const SOURCE_ZONES = 'atlas-zones';
+/** The fading tail BEHIND each vehicle (where it has been). Updated per frame. */
+export const SOURCE_TRAILS = 'atlas-trails';
+/** The planned path AHEAD of each vehicle (current -> next stop). Per frame. */
+export const SOURCE_REMAINING = 'atlas-remaining';
 
 export const LAYER_ZONE_FILL = 'atlas-zone-fill';
 export const LAYER_ZONE_LINE = 'atlas-zone-line';
 export const LAYER_ROUTE_LINE = 'atlas-route-line';
+export const LAYER_TRAIL_LINE = 'atlas-trail-line';
+export const LAYER_REMAINING_LINE = 'atlas-remaining-line';
 export const LAYER_VEHICLE_DOT = 'atlas-vehicle-dot';
 export const LAYER_VEHICLE_HEADING = 'atlas-vehicle-heading';
 export const LAYER_VEHICLE_LABEL = 'atlas-vehicle-label';
@@ -43,6 +49,10 @@ export interface MapPalette {
   zoneDelivery: string;
   zoneRestricted: string;
   route: string;
+  /** Signal amber — the live/active accent (remaining-route + zone pulse). */
+  accent: string;
+  /** The fading trail colour (the en-route status colour reads as "live"). */
+  trail: string;
   label: string;
   labelHalo: string;
 }
@@ -65,6 +75,8 @@ export function readMapPalette(): MapPalette {
     zoneDelivery: readVar('--color-zone-delivery', '#36d399'),
     zoneRestricted: readVar('--color-zone-restricted', '#ff6b81'),
     route: readVar('--color-border-strong', '#34465f'),
+    accent: readVar('--color-accent', '#f6a821'),
+    trail: readVar('--color-status-enroute', '#36d399'),
     label: readVar('--color-foreground', '#e6ecf3'),
     labelHalo: readVar('--color-background', '#0b1018'),
   };
@@ -74,9 +86,7 @@ export function readMapPalette(): MapPalette {
  * GeoJSON FeatureCollection builders from a snapshot.
  * --------------------------------------------------------------------- */
 
-type FC = GeoJSONSourceSpecification['data'];
-
-export function buildVehiclesGeoJSON(snapshot: FleetSnapshot): FC {
+export function buildVehiclesGeoJSON(snapshot: FleetSnapshot): FeatureCollection<Point> {
   return {
     type: 'FeatureCollection',
     features: snapshot.vehicles.map((v) => ({
@@ -94,7 +104,7 @@ export function buildVehiclesGeoJSON(snapshot: FleetSnapshot): FC {
   };
 }
 
-export function buildRoutesGeoJSON(snapshot: FleetSnapshot): FC {
+export function buildRoutesGeoJSON(snapshot: FleetSnapshot): FeatureCollection<LineString> {
   return {
     type: 'FeatureCollection',
     features: snapshot.routes.map((r) => ({
@@ -106,7 +116,7 @@ export function buildRoutesGeoJSON(snapshot: FleetSnapshot): FC {
   };
 }
 
-export function buildZonesGeoJSON(snapshot: FleetSnapshot): FC {
+export function buildZonesGeoJSON(snapshot: FleetSnapshot): FeatureCollection<Polygon> {
   return {
     type: 'FeatureCollection',
     features: snapshot.zones.map((z) => ({
@@ -191,6 +201,44 @@ export function buildAppLayers(palette: MapPalette): LayerSpecification[] {
         'line-color': palette.route,
         'line-width': 2,
         'line-opacity': 0.7,
+      },
+    },
+    // Remaining route AHEAD — the planned path from each vehicle's current
+    // position to its next stop (signal amber, the "intent" line). Off-render
+    // updated by the rAF loop (Task 4.3). Drawn over the base route, under the
+    // markers.
+    {
+      id: LAYER_REMAINING_LINE,
+      type: 'line',
+      source: SOURCE_REMAINING,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': palette.accent,
+        'line-width': 2.5,
+        'line-opacity': 0.85,
+      },
+    },
+    // Trail BEHIND — the recent stretch the vehicle has covered, fading from the
+    // marker backwards (a line-gradient along the slice). Reads as "where it has
+    // been" (Task 4.3).
+    {
+      id: LAYER_TRAIL_LINE,
+      type: 'line',
+      source: SOURCE_TRAILS,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': palette.trail,
+        'line-width': 3,
+        // Fade the tail from transparent (oldest) to solid (at the vehicle).
+        'line-gradient': [
+          'interpolate',
+          ['linear'],
+          ['line-progress'],
+          0,
+          'rgba(0,0,0,0)',
+          1,
+          palette.trail,
+        ],
       },
     },
     // Vehicle heading wedge — a rotated triangle (sized in px, rotated by the

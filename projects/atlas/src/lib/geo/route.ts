@@ -113,6 +113,45 @@ export function projectAlongRoute(projector: RouteProjector, s: number): Project
 }
 
 /**
+ * Slice the route geometry between two distances-along-route `fromM` and `toM`
+ * (metres), returning the `[lng, lat]` coordinates of that sub-path INCLUDING
+ * the interpolated endpoints and every original vertex strictly between them.
+ *
+ * Used by the web (ADR-006 trails + remaining-route layers): the trail behind a
+ * vehicle is `slice(0, currentS)`, the remaining route ahead is
+ * `slice(currentS, nextStopS)`. Pure and exact off the projector's cumulative
+ * table — no turf round trip, so it shares the SAME geometry the engine
+ * projects positions from (no FE/BE drift). Both bounds are clamped into the
+ * projector domain; `from > to` is swapped so callers can pass either order.
+ * Returns at least the two endpoints (a degenerate zero-length slice yields a
+ * single point duplicated, which MapLibre renders as nothing — safe).
+ */
+export function sliceRouteGeometry(
+  projector: RouteProjector,
+  fromM: number,
+  toM: number,
+): [number, number][] {
+  const lo = clampS(projector, Math.min(fromM, toM));
+  const hi = clampS(projector, Math.max(fromM, toM));
+
+  const start = projectAlongRoute(projector, lo);
+  const end = projectAlongRoute(projector, hi);
+
+  const coords: [number, number][] = [[start.lng, start.lat]];
+  // Every original vertex whose cumulative distance is strictly inside (lo, hi).
+  for (let i = 0; i < projector.cumulative.length; i++) {
+    const cum = projector.cumulative[i];
+    const vertex = projector.coordinates[i];
+    if (cum === undefined || vertex === undefined) continue;
+    if (cum > lo && cum < hi) {
+      coords.push([vertex[0], vertex[1]]);
+    }
+  }
+  coords.push([end.lng, end.lat]);
+  return coords;
+}
+
+/**
  * Snap a stop (or any Point) onto a route LineString and return its
  * distance-along-route `s` in METRES, clamped into the projector domain. Used by
  * the engine baseline (each stop's `s` so ETA is `stopS - currentS`, ADR-004)

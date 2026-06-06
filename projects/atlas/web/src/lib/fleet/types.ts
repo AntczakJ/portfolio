@@ -1,13 +1,15 @@
 /**
- * Local placeholder domain types for the Atlas web client (Phase 2 scaffold).
+ * The Atlas web map's VIEW MODEL types.
  *
- * TODO: import from `atlas-shared` (`projects/atlas/src/lib/schemas/`) once
- * Phase 1 (backend-engineer) lands the shared Zod schemas — the FE/BE contract
- * (vehicle, route, stop, zone, telemetry tick, WS frame envelope). These local
- * shapes mirror the PLAN.md "Simulation / mock data shape" + ADR-005 schema so
- * the static map fixture (Phase 2) renders the real geometry shape; when the
- * shared schema arrives they are replaced by the `z.infer` types from it and
- * the static fixture is swapped for the seeded backend snapshot.
+ * These are the map controller's render shape — deliberately distinct from the
+ * shared WIRE contract (`atlas-shared/schemas`): a view-model `Vehicle` carries
+ * the LIVE position/heading the marker layer reads, routes nest their stops, and
+ * zones carry a flat `[lng,lat]` ring — the convenient shape for building
+ * MapLibre GeoJSON sources. The shared contract types ARE consumed now (Phase 4):
+ * `snapshot-adapter.ts` maps the WS `SnapshotFrame` (static vehicle defs + routes
+ * + stops + zones + telemetry) into this view model, and the interpolation path
+ * imports the shared telemetry/route types + geo impl directly. This file is the
+ * single place the wire->view boundary resolves to.
  *
  * Geometry is plain GeoJSON (RFC 7946) `[lng, lat]` coordinate order — the
  * MapLibre + turf order. The map wrapper consumes these directly as GeoJSON

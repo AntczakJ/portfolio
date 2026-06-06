@@ -4,6 +4,7 @@ import { useTheme } from 'next-themes';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { getStaticFleetSnapshot } from '@/mocks/static-fleet';
+import { useLiveTelemetry } from '@/lib/interp/use-live-telemetry';
 import { resolveBasemapTheme } from '@/lib/map/basemap-style';
 import { AtlasMapController } from '@/lib/map/map-controller';
 import { useOpsStore } from '@/lib/store/ops-store';
@@ -35,6 +36,14 @@ export function MapCanvas(): ReactNode {
   const { resolvedTheme } = useTheme();
   const selectVehicle = useOpsStore((s) => s.selectVehicle);
   const [ready, setReady] = useState(false);
+  // The controller exposed as STATE (not just the ref) so the live-telemetry
+  // hook re-runs once the map is mounted. The ref still owns the lifecycle.
+  const [controller, setController] = useState<AtlasMapController | null>(null);
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  // The single WebSocket + the rAF interpolation loop (Phase 4). Mounts when the
+  // controller is ready; everything per-frame is off the React render path.
+  useLiveTelemetry(controller, ready, reducedMotion);
 
   // The controller mounts exactly once and is imperative; it must NOT re-create
   // on a theme/selection change. We read the live theme + the (stable) Zustand
@@ -50,15 +59,16 @@ export function MapCanvas(): ReactNode {
     const container = containerRef.current;
     if (!container || controllerRef.current) return;
 
-    const reducedMotion =
+    const mqInitial =
       typeof window !== 'undefined' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    setReducedMotion(mqInitial);
 
     const controller = new AtlasMapController({
       container,
       theme: resolveBasemapTheme(resolvedThemeRef.current),
       snapshot: snapshotRef.current,
-      reducedMotion,
+      reducedMotion: mqInitial,
       onVehicleSelect: (id) => {
         selectVehicleRef.current(id);
         controller.focusVehicle(id);
@@ -68,11 +78,14 @@ export function MapCanvas(): ReactNode {
       },
     });
     controllerRef.current = controller;
+    setController(controller);
 
-    // Bridge reduced-motion changes to the controller (camera fly vs cut).
+    // Bridge reduced-motion changes to the controller (camera fly vs cut) AND to
+    // the interpolation loop (snap vs tween) via the state the hook reads.
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     const onMqChange = (ev: MediaQueryListEvent) => {
       controller.setReducedMotion(ev.matches);
+      setReducedMotion(ev.matches);
     };
     mq.addEventListener('change', onMqChange);
 
@@ -87,6 +100,7 @@ export function MapCanvas(): ReactNode {
       resizeObserver.disconnect();
       controller.destroy();
       controllerRef.current = null;
+      setController(null);
     };
   }, []);
 
