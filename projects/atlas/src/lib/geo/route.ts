@@ -1,8 +1,9 @@
 import bearing from '@turf/bearing';
 import distance from '@turf/distance';
-import { point } from '@turf/helpers';
+import { lineString, point } from '@turf/helpers';
+import nearestPointOnLine from '@turf/nearest-point-on-line';
 
-import type { LineStringGeometry } from '../schemas/geojson';
+import type { LineStringGeometry, PointGeometry } from '../schemas/geojson';
 import type { ProjectedPoint, RouteProjector } from './types';
 
 /**
@@ -109,4 +110,21 @@ export function projectAlongRoute(projector: RouteProjector, s: number): Project
 
   const segmentBearing = bearing(point([a[0], a[1]]), point([b[0], b[1]]));
   return { lat, lng, headingDeg: normalizeHeading(segmentBearing) };
+}
+
+/**
+ * Snap a stop (or any Point) onto a route LineString and return its
+ * distance-along-route `s` in METRES, clamped into the projector domain. Used by
+ * the engine baseline (each stop's `s` so ETA is `stopS - currentS`, ADR-004)
+ * and shareable with the web for the remaining-route slice. Pure; units pinned
+ * to metres (the ADR-004 sharp edge).
+ */
+export function projectPointToS(
+  projector: RouteProjector,
+  geometry: LineStringGeometry,
+  stop: PointGeometry,
+): number {
+  const line = lineString(geometry.coordinates);
+  const snapped = nearestPointOnLine(line, point(stop.coordinates), { units: 'meters' });
+  return clampS(projector, snapped.properties.totalDistance);
 }
