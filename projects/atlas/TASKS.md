@@ -55,9 +55,9 @@
 
 ## Phase 8 — Tests
 
-- [ ] **8.1** Vitest unit — tick reducer (same seed+ticks → same world; `s`→position; speed/dwell; route-end), geo module (length, projection, ETA vs known-geometry fixtures, point-in-polygon + debounce/hysteresis — boundary-skimmer does not flap), WS frame Zod (round-trip, reject malformed control frames). `L` — test-engineer
-- [ ] **8.2** Playwright E2E — map loads + fleet moving (exactly ONE WS connection, not polling); focused-vehicle ETA decrements; geofence event fires + lands on feed (drive deterministic replay/seek, not an organic wait); no-WebGL table fallback renders same live data; reduced-motion does not break live map; keyboard focus flow through fleet list; socket-drop shows reconnect indicator. `L` — test-engineer
-- [ ] **8.3** Lighthouse CI ≥ 95 all four categories on the landing/public SEO surface. `S` — test-engineer
+- [x] **8.1** Vitest unit — tick reducer (same seed+ticks → same world; `s`→position; speed/dwell; route-end), geo module (length, projection, ETA vs known-geometry fixtures, point-in-polygon + debounce/hysteresis — boundary-skimmer does not flap), WS frame Zod (round-trip, reject malformed control frames). `L` — test-engineer · DONE: the WS-frame schema test was the one real gap (`src/lib/schemas/ws/ws-frames.test.ts`, +30 tests → shared 44); reducer/geo/seek-clamp/backward-ETA already covered + verified.
+- [x] **8.2** Playwright E2E — map loads + fleet moving (exactly ONE WS connection, not polling); focused-vehicle ETA decrements; geofence event fires + lands on feed (drive deterministic replay/seek, not an organic wait); no-WebGL table fallback renders same live data; reduced-motion does not break live map; keyboard focus flow through fleet list; socket-drop shows reconnect indicator. `L` — test-engineer · DONE: `projects/atlas/e2e/` package, 7 specs ALL PASS against the prod stack behind a same-origin proxy (gateway DB-less :3092 + Next prod :3097 + proxy :3096). Determinism via the "Play geofence beat" affordance + web-first assertions.
+- [x] **8.3** Lighthouse CI ≥ 95 all four categories on the landing/public SEO surface. `S` — test-engineer · DONE: `e2e/lighthouserc.json` gates `/about` ≥ 95 ×4; RESULT 100/100/100/100 (median of 5).
 
 ## Phase 9 — Docs + deploy
 

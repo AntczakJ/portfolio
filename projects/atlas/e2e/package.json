@@ -1,0 +1,29 @@
+{
+  "name": "atlas-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Playwright E2E harness for atlas — Phase 8.2. Critical-path coverage on the live geospatial control room: the live map loads with the fleet MOVING over exactly ONE WebSocket (no polling XHR loop — the senior signal), a focused vehicle's ETA decrements, a geofence event fires and lands on the feed (driven by the deterministic demo affordance, never an organic sleep), the no-WebGL fleet-table fallback renders the same live data over one socket, prefers-reduced-motion keeps the map live, keyboard focus flows through the fleet list, and a socket drop shows the reconnect indicator. Runs against the BUILT + SERVED production stack behind a same-origin proxy so the strict connect-src 'self' CSP covers the WS (the meld/razors-edge/pulse prod-CSP lesson). Lighthouse CI (lighthouserc.json) gates the /about SEO surface at >= 95 x4.",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report",
+    "list": "playwright test --list",
+    "proxy": "node atlas-proxy.mjs",
+    "install:browsers": "playwright install --with-deps chromium",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test:lh": "lhci autorun --config=lighthouserc.json"
+  },
+  "devDependencies": {
+    "@lhci/cli": "^0.15.1",
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.9.0",
+    "dotenv": "^16.4.5",
+    "typescript": "^5.6.3"
+  }
+}

@@ -72,25 +72,35 @@ export function MapCanvas(): ReactNode {
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     setReducedMotion(mqInitial);
 
-    const controller = new AtlasMapController({
-      container,
-      theme: resolveBasemapTheme(resolvedThemeRef.current),
-      snapshot: snapshotRef.current,
-      reducedMotion: mqInitial,
-      onVehicleSelect: (id) => {
-        selectVehicleRef.current(id);
-        controller.focusVehicle(id);
-      },
-      onReady: () => {
-        setReady(true);
-      },
-      onContextLost: () => {
-        // WebGL context lost and not restored — degrade to the fleet table
-        // fallback (same live data, same socket). The view-mode store flips
-        // `webglAvailable` to false; the dashboard swaps the surface.
-        reportWebglLostRef.current(false);
-      },
-    });
+    // Constructing the MapLibre instance throws on a client with no usable WebGL
+    // context (a hard-disabled GPU loses the race the OpsSurface probe usually
+    // wins). Catch it and degrade to the fleet table fallback (same live data,
+    // same socket) rather than crashing the dashboard — the no-WebGL gate.
+    let controller: AtlasMapController;
+    try {
+      controller = new AtlasMapController({
+        container,
+        theme: resolveBasemapTheme(resolvedThemeRef.current),
+        snapshot: snapshotRef.current,
+        reducedMotion: mqInitial,
+        onVehicleSelect: (id) => {
+          selectVehicleRef.current(id);
+          controller.focusVehicle(id);
+        },
+        onReady: () => {
+          setReady(true);
+        },
+        onContextLost: () => {
+          // WebGL context lost and not restored — degrade to the fleet table
+          // fallback (same live data, same socket). The view-mode store flips
+          // `webglAvailable` to false; the dashboard swaps the surface.
+          reportWebglLostRef.current(false);
+        },
+      });
+    } catch {
+      reportWebglLostRef.current(false);
+      return;
+    }
     controllerRef.current = controller;
     setController(controller);
     // Publish the controller so sibling panels (fleet/detail) can drive the
