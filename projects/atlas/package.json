@@ -1,0 +1,53 @@
+{
+  "name": "atlas-shared",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Atlas — the FE/BE shared contract package. Holds the Zod schemas (domain entities + the WebSocket frame envelope, ADR-003) and the pure turf-backed geo module (route projection, length, ETA, geofence hysteresis, ADR-002/ADR-004). Both atlas-server and atlas-web depend on it: the server imports impl + types (runtime validation, the engine's geo math), the web imports types-only for the WS contract and impl for the client-side geo (remaining-route slice, interpolation geometry). This is the conventions section 5 single-source discipline applied to both schemas and algorithms.",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./schemas": {
+      "types": "./src/lib/schemas/index.ts",
+      "default": "./src/lib/schemas/index.ts"
+    },
+    "./schemas/ws": {
+      "types": "./src/lib/schemas/ws/index.ts",
+      "default": "./src/lib/schemas/ws/index.ts"
+    },
+    "./geo": {
+      "types": "./src/lib/geo/index.ts",
+      "default": "./src/lib/geo/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@turf/along": "^7.3.5",
+    "@turf/bearing": "^7.3.5",
+    "@turf/boolean-point-in-polygon": "^7.3.5",
+    "@turf/distance": "^7.3.5",
+    "@turf/helpers": "^7.3.5",
+    "@turf/length": "^7.3.5",
+    "@turf/line-slice": "^7.3.5",
+    "@turf/nearest-point-on-line": "^7.3.5",
+    "geojson": "^0.5.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/geojson": "^7946.0.16",
+    "@types/node": "^22.9.0",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.0"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "atlas-server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Atlas — Fastify (Node 22 LTS) backend for live geospatial fleet tracking. The api-heavy spine: a server-authoritative deterministic simulation engine (in-process pure-reducer loop, ADR-002), a @fastify/websocket telemetry gateway (the JSON tagged-union frame contract, ADR-003), Drizzle + Postgres for the GeoJSON route/zone/stop definitions + a bounded telemetry/events window (ADR-005), and the shared turf geo math (ADR-004). Phase 1 lands the scaffold (config + health), the Drizzle schema + migrations, and wires the shared atlas-shared contract; the engine + gateway are Phases 3-4.",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc --noEmit",
+    "start": "node --import tsx src/main.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.0.1",
+    "@fastify/rate-limit": "^10.3.0",
+    "@fastify/websocket": "^11.2.0",
+    "atlas-shared": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "fastify": "^5.8.0",
+    "fastify-type-provider-zod": "^6.1.0",
+    "postgres": "^3.4.9",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.0"
+  }
+}

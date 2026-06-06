@@ -1,0 +1,44 @@
+# atlas — local development services
+#
+# Scope: PostgreSQL only. Atlas stores route / stop / zone DEFINITIONS as
+# GeoJSON in `jsonb`, fleet metadata, a bounded telemetry snapshot, and a
+# capped events window (ADR-005). The authoritative geo is computed in-engine
+# (turf), NOT in spatial SQL — so plain Postgres, no PostGIS (PostGIS is the
+# clean v2 upgrade if a real spatial query ever lands). There is NO Redis:
+# the simulation runs as a single in-process loop, no broker (ADR-002/ADR-007).
+#
+# Port hygiene (AGENT_NOTES "Port hygiene", corrected by the architect). Picks:
+#   5432 = system default (avoid)
+#   5434 = Mila    5435 = tape    5436 = meld    5437 = pulse
+#   5438 = atlas Postgres (this file)
+#
+# Bring up:    docker compose -f projects/atlas/docker-compose.yml up -d
+# Tear down:   docker compose -f projects/atlas/docker-compose.yml down
+# Wipe data:   docker compose -f projects/atlas/docker-compose.yml down -v
+#
+# The connection string the server reads from .env must match the credentials /
+# port below:
+#   DATABASE_URL=postgres://atlas:atlas@localhost:5438/atlas
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: atlas-postgres
+    restart: unless-stopped
+    ports:
+      - '5438:5432'
+    environment:
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: atlas
+      POSTGRES_DB: atlas
+    volumes:
+      - atlas-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U atlas -d atlas']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  atlas-postgres-data:
+    name: atlas-postgres-data
