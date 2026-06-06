@@ -44,7 +44,7 @@ primary_region = 'fra'
   # [env] entry is documentation/defence-in-depth only (it does NOT re-point the
   # already-baked rewrite). If atlas-server is ever RENAMED, rebuild atlas-web
   # with `--build-arg API_PROXY_TARGET=http://<new>.internal:3092`.
-  API_PROXY_TARGET = 'http://atlas-fleet.internal:3092'
+  API_PROXY_TARGET = 'http://atlas-fleet-eu.internal:3092'
   # The keyless map is the DEFAULT — NO tile key is set, so the CSP stays
   # same-origin only (the hard keyless gate). The optional enrichment
   # (NEXT_PUBLIC_MAP_TILE_KEY + NEXT_PUBLIC_MAP_TILE_HOST) is a BUILD-TIME arg

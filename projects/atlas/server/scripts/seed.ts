@@ -40,7 +40,12 @@ import { buildPortoFixture, fixtureToBaselineInput } from '../src/seed/porto-fix
 
 async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL ?? 'postgres://atlas:atlas@localhost:5438/atlas';
-  const { sql, db } = createDbHandle(databaseUrl, 4);
+  // NOTE: destructure the postgres-js client as `pgClient`, NOT `sql` — a `sql`
+  // binding here would shadow the drizzle-orm `sql` operator imported above, so
+  // the `onConflictDoUpdate` `set: { x: sql\`excluded.x\` }` clauses below would
+  // build postgres-js query fragments instead of drizzle SQL, corrupting the
+  // upsert params (an [object Promise] / tagged-template object reaches the wire).
+  const { sql: pgClient, db } = createDbHandle(databaseUrl, 4);
 
   const fixture = buildPortoFixture();
   const baseline = buildBaseline(fixtureToBaselineInput(fixture));
@@ -194,7 +199,7 @@ async function main(): Promise<void> {
 
     process.stdout.write('Seed complete (idempotent — re-runnable).\n');
   } finally {
-    await sql.end({ timeout: 5 });
+    await pgClient.end({ timeout: 5 });
   }
 }
 

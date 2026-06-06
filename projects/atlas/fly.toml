@@ -32,7 +32,7 @@
 # atlas-web is a SEPARATE app (fly.web.toml) that reverse-proxies /ws + /health
 # to this server so the browser is single-origin (CSP `connect-src 'self'`).
 
-app = 'atlas-fleet'
+app = 'atlas-fleet-eu'
 primary_region = 'fra'
 
 [build]

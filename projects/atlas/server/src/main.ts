@@ -45,10 +45,15 @@ async function main(): Promise<void> {
     shutdown('SIGINT');
   });
 
-  // Bind 0.0.0.0 (Task 1.1). Dual-stack split-process / 6PN concerns (the pulse
-  // `::` bind) do not apply: Atlas is a single Fly machine fronted by the edge,
-  // and 0.0.0.0 is what the brief pins for the dev server.
-  await app.listen({ port: env.PORT, host: '0.0.0.0' });
+  // Bind `::` (dual-stack: IPv6 + IPv4-mapped). This is REQUIRED on Fly: the
+  // separate atlas-web (atlas-ops) app reverse-proxies /ws + /health to this
+  // server over Fly's private 6PN network, which is IPv6-only — a `0.0.0.0`
+  // (IPv4-only) bind is reachable by the public edge but REFUSES the private
+  // app-to-app IPv6 connection (ECONNREFUSED on the .internal address), which
+  // breaks the same-origin WS proxy (ADR-006/007). `::` accepts both, so the
+  // public edge AND the private 6PN hop both connect, and localhost dev still
+  // resolves over IPv4-mapped (the pulse `::` precedent).
+  await app.listen({ port: env.PORT, host: '::' });
 
   // Start the simulation loop AFTER the server is listening so the warm-floor
   // fleet is already moving on first paint (ADR-007). The engine boots from the
@@ -57,7 +62,7 @@ async function main(): Promise<void> {
   engineService.start();
 
   app.log.info(
-    `atlas-server (commit ${COMMIT_SHA}) listening on http://0.0.0.0:${String(env.PORT)} [env=${env.NODE_ENV}] — engine running, ws at /ws`,
+    `atlas-server (commit ${COMMIT_SHA}) listening on [::]:${String(env.PORT)} [env=${env.NODE_ENV}] — engine running, ws at /ws`,
   );
 }
 

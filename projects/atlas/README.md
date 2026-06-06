@@ -10,7 +10,7 @@ Built for a senior fullstack / backend reviewer who can open the board, glance a
 
 ## Demo
 
-**Live:** _deploying — Phase 9.2._ Atlas is not yet on Fly.io; this section is updated with the live URL when the deploy lands (Postgres + a single warm Fastify machine running the gateway and the in-process engine + the Next web, per [ADR-007](./DECISIONS.md)). Until then, run it locally (below) — the whole experience, including the live map and the geofence beat, runs against a local prod stack with no database required.
+**Live:** **[atlas-ops.fly.dev](https://atlas-ops.fly.dev)** — deployed on Fly.io (Fly Postgres + a single warm Fastify machine running the gateway and the in-process engine + the Next web, per [ADR-007](./DECISIONS.md)). The fleet is already moving on first paint; open the Network tab to confirm the single WebSocket on `/ws` carrying telemetry. You can also run it locally (below) — the whole experience, including the live map and the geofence beat, runs against a local prod stack with no database required.
 
 The wow is a five-second glance and a one-click beat. Open the board and the fleet is already moving — markers gliding along Porto's downtown roads, route trails fading behind them, ETAs counting down, the events feed scrolling. Click **Play geofence beat** and the deterministic engine drives a chosen vehicle toward a zone at higher speed: it crosses the boundary, the zone pulses, an "entered" row lands at the top of the feed, and the vehicle's status flips — all in real time, all from the real engine. Open the Network tab first and you see one WebSocket on `/ws` with telemetry frames, not a polling loop.
 
