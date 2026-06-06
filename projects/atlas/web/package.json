@@ -1,0 +1,59 @@
+{
+  "name": "atlas-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Atlas — Next.js 15 live geospatial fleet-tracking control room. A MapLibre map where a server-authoritative simulated fleet glides smoothly in real time over a keyless Protomaps basemap, with route trails, live ETAs, and geofence events.",
+  "scripts": {
+    "dev": "next dev -p 3093",
+    "build": "next build",
+    "start": "next start -p 3093",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.101.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.16.0",
+    "maplibre-gl": "^5.24.0",
+    "motion": "^12.40.0",
+    "next": "^15.5.18",
+    "next-themes": "^0.4.6",
+    "pmtiles": "^4.4.1",
+    "radix-ui": "^1.4.3",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-hook-form": "^7.76.1",
+    "tailwind-merge": "^3.6.0",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.14"
+  },
+  "browserslist": [
+    "chrome >= 100",
+    "edge >= 100",
+    "firefox >= 100",
+    "safari >= 15.4",
+    "ios_saf >= 15.4",
+    "not dead"
+  ],
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.2.0",
+    "@faker-js/faker": "^10.4.0",
+    "@hookform/resolvers": "^5.1.1",
+    "@tailwindcss/postcss": "^4.3.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^22.9.0",
+    "@types/react": "^19.2.4",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^4.7.0",
+    "eslint-config-next": "^15.5.18",
+    "jsdom": "^25.0.1",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.0"
+  }
+}
