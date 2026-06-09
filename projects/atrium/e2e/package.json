@@ -1,0 +1,28 @@
+{
+  "name": "atrium-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Playwright E2E harness for atrium (Phase 6, Task 6.2) — critical-path coverage for the portfolio's scroll-driven lobby: the twelve outward affordances (six live demo links + six U2 disabled repo controls), the reduced-motion static-directory path (no pin, nothing frozen), the theme toggle in both themes, full keyboard reachability of all twelve affordances, the no-JS directory render, and the SEO surface. Runs against a built + served Next app on :3080 (NOT next dev, per the project's strict-CSP/GSAP discipline). Point at any deployed URL via BASE_URL.",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report",
+    "trace": "playwright show-trace",
+    "list": "playwright test --list",
+    "install:browsers": "playwright install --with-deps chromium",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.9.0",
+    "dotenv": "^16.4.5",
+    "typescript": "^5.6.3",
+    "zod": "^4.4.3"
+  }
+}

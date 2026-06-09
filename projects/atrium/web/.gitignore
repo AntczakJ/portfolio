@@ -1,0 +1,13 @@
+# Build / deps
+.next/
+node_modules/
+*.tsbuildinfo
+next-env.d.ts
+
+# Local env
+.env
+.env.local
+.env*.local
+
+# Review scratch — headless capture screenshots, not for commit.
+.review/

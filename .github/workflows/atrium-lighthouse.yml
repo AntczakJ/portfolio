@@ -1,0 +1,74 @@
+name: atrium-lighthouse
+
+# Phase 6, Task 6.3 — Lighthouse CI for atrium.
+#
+# atrium is the portfolio's FRONT DOOR — the page a recruiter opens first and
+# judges hardest. Audits the BUILT + SERVED production surface on :3080 (NOT
+# next dev — the strict CSP forbids unsafe-eval and next dev cannot run under it,
+# the meld lesson carried in atrium AGENT_NOTES). Asserts the success criteria
+# from PLAN.md / CLAUDE.md § 4: >= 95 in ALL FOUR categories on the landing page
+# (/) with NO scoped exception, median of 5 runs, plus the Core Web Vitals
+# (LCP < 2.5s, CLS < 0.1, TBT proxy for INP < 200ms). Config + assertions live
+# in projects/atrium/lighthouserc.json; LHCI starts the server itself via
+# `startServerCommand`.
+#
+# Trigger model (mirrors razors-edge-lighthouse):
+#   - push to main touching projects/atrium/** — gate the project on every
+#     change.
+#   - workflow_dispatch — manual run on demand.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - 'projects/atrium/**'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/atrium-lighthouse.yml'
+
+concurrency:
+  group: atrium-lighthouse-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lighthouse:
+    name: Lighthouse (>= 95 all categories, /)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build atrium-web
+        run: pnpm -F atrium-web build
+
+      - name: Run Lighthouse CI
+        run: |
+          npx --yes @lhci/cli@0.15.x autorun \
+            --config=projects/atrium/lighthouserc.json
+        env:
+          # LHCI uploads to temporary public storage; no token needed.
+          LHCI_BUILD_CONTEXT__CURRENT_HASH: ${{ github.sha }}
+
+      - name: Upload Lighthouse report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atrium-lighthouse-${{ github.run_id }}
+          path: .lighthouseci
+          retention-days: 30

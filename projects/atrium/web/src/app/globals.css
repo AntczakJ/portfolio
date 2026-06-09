@@ -1,0 +1,561 @@
+@import 'tailwindcss';
+
+/* Tailwind v4 class-strategy dark variant. next-themes is configured with
+ * `attribute="class"` + `defaultTheme="dark"`, so it writes `class="dark"` (or
+ * `class="light"`) on <html>. This custom variant makes shadcn `dark:`
+ * utilities resolve against that class. Dark is also the :root default below, so
+ * `dark:` utilities and the :root tokens agree on first paint. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* =========================================================================
+ * Atrium — sovereign design tokens (Phase 2.1, real palette).
+ *
+ * SOVEREIGN per docs/conventions.md § 14 — NO reuse from any sibling project
+ * (ADR-001). The identity is "architectural / volumetric light": a near-black,
+ * faintly-warm CHARCOAL field that reads as the unlit shell of a building, with
+ * WARM VOLUMETRIC LIGHT (a soft amber-bone glow) as the signature surface — the
+ * atrium is a space made of light. atrium's own chrome stays near-monochrome
+ * (light-on-near-black + ONE neutral warm accent for the wordmark / threshold).
+ *
+ * THE SIX SIGNATURE HUES (ADR-003) are the per-bay accents only — each EVOKES a
+ * sibling project (it is an atrium-local token, NOT imported from the sibling).
+ * They make the portfolio's range VISIBLE as a tour of differently-lit rooms.
+ * Each ships a base (UI / fill, ≥ 3:1 vs ground), a text-safe variant (small
+ * text / icons, ≥ 4.5:1), and an on-color (ink for a hue fill) — the razors-edge
+ * two-treatment lesson. Contrast WINS over literal evocation (ADR-003): a hue
+ * that fails light-theme contrast is re-tuned, not pixel-matched.
+ *
+ * Tailwind v4 is CSS-first: theme tokens are CSS custom properties in @theme so
+ * Tailwind generates the matching utilities at build time. There is NO
+ * tailwind.config.js — @theme plus the :root (dark, canonical) and .light
+ * overrides ARE the configuration.
+ *
+ * ── Naming note: warm accent vs shadcn `accent` ───────────────────────────
+ * The brand neutral-warm light is `--color-light*` / the wordmark glow, NOT
+ * shadcn `accent`. shadcn `accent` maps to a QUIET raised hover surface
+ * (ghost/outline hover, menu-item hover), never the brand glow — so primitives
+ * stay calm. Deliberate brand light is `text-light` / the hero shaft tokens; a
+ * per-bay accent is `text-[color:var(--bay-…-text)]` etc.
+ *
+ * ── Contrast (verified — see AGENT_NOTES.md Phase 2 entry; ratios measured
+ *    with the WCAG 2.1 relative-luminance formula in BOTH themes) ───────────
+ * All body/UI fg pairs clear AA; every signature hue clears ≥ 4.5:1 as text and
+ * ≥ 3:1 as a UI boundary in both the canonical dark theme and the intentional
+ * light "architectural daylight" theme. Plain `--color-border` is a quiet
+ * decorative separator (not required to hit 3:1); interactive boundaries use
+ * `--color-border-strong`, which clears 3:1 in both themes.
+ * ===================================================================== */
+
+@theme {
+  /* ── Type ───────────────────────────────────────────────────────────
+   * Phase 2.2 loads the real variable faces via next/font; layout.tsx puts
+   * `--font-fraunces` / `--font-inter` on <html>, and these hooks reference
+   * them. Fallbacks keep the page legible before swap-in. */
+  --font-display: var(--font-fraunces), ui-serif, Georgia, 'Times New Roman', serif;
+  --font-sans:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', Menlo, Monaco, 'Cascadia Mono', Consolas, 'Courier New', monospace;
+
+  /* Variable-font axis hooks. The ATRIUM wordmark + per-bay titles animate
+   * weight (and Fraunces' optical-size / soft axes) via these; the kinetic
+   * title resolves read them for the weight/width settle on bay lock-in
+   * (ADR-002/003 — real-DOM type + font-variation-settings, no Club plugin). */
+  --display-wght-light: 320;
+  --display-wght: 440;
+  --display-wght-bold: 600;
+  --display-opsz: 144;
+  --display-soft: 0;
+  --sans-wght: 400;
+  --sans-wght-medium: 520;
+  --sans-wght-bold: 640;
+
+  /* ── Type scale (architectural restraint: tight display tracking, generous
+   *    body leading). clamp() so it is fluid 320px → 1920px. The display step
+   *    is large — the wordmark is a SPECIMEN, not a logo (Stripe/Klim). ───── */
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.4;
+  --text-caption--letter-spacing: 0.09em;
+  --text-body-sm: 0.875rem;
+  --text-body-sm--line-height: 1.55;
+  --text-body: 1rem;
+  --text-body--line-height: 1.65;
+  --text-body-lg: 1.125rem;
+  --text-body-lg--line-height: 1.6;
+  --text-h3: clamp(1.25rem, 1.05rem + 1vw, 1.6rem);
+  --text-h3--line-height: 1.2;
+  --text-h3--letter-spacing: -0.01em;
+  --text-h2: clamp(1.6rem, 1.25rem + 1.75vw, 2.4rem);
+  --text-h2--line-height: 1.12;
+  --text-h2--letter-spacing: -0.015em;
+  --text-h1: clamp(2.25rem, 1.6rem + 3.25vw, 3.75rem);
+  --text-h1--line-height: 1.05;
+  --text-h1--letter-spacing: -0.02em;
+  /* Bay title — larger than h1 so the primary bay title dominates its room (D-06),
+   * smaller than the hero wordmark specimen. Sits at max opsz like the wordmark. */
+  --text-display-bay: clamp(2.75rem, 1.6rem + 5vw, 5.5rem);
+  --text-display-bay--line-height: 0.98;
+  --text-display-bay--letter-spacing: -0.025em;
+  --text-display: clamp(3rem, 1rem + 10vw, 10rem);
+  --text-display--line-height: 0.9;
+  --text-display--letter-spacing: -0.03em;
+
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+  --radius-xl: 22px;
+
+  /* ── Sovereign palette (DARK / canonical). Values live here so the @theme
+   *    utilities are generated; :root re-states them as the runtime source of
+   *    truth and .light overrides. ──────────────────────────────────────── */
+
+  /* Grounds → raised surface ramp. Faintly-warm near-black charcoal. */
+  --color-bg: oklch(0.16 0.008 75);
+  --color-surface: oklch(0.21 0.01 74);
+  --color-surface-raised: oklch(0.26 0.011 72);
+
+  /* Borders. `border` is a quiet decorative separator; `border-strong` is the
+   * interactive / component boundary token (≥ 3:1). */
+  --color-border: oklch(0.33 0.011 72);
+  --color-border-strong: oklch(0.54 0.012 72);
+
+  /* Foreground ramp. */
+  --color-fg: oklch(0.95 0.008 82);
+  --color-fg-muted: oklch(0.77 0.012 80);
+  --color-fg-subtle: oklch(0.63 0.012 78);
+
+  /* The neutral warm "light" — atrium's single brand accent (the wordmark glow,
+   * the shaft of light, the threshold). NOT a sibling hue; a warm bone/amber. */
+  --color-light: oklch(0.9 0.05 85);
+  --color-light-text: oklch(0.9 0.045 85);
+  --color-light-strong: oklch(0.95 0.04 88);
+  --color-on-light: oklch(0.2 0.02 75);
+
+  /* shadcn `accent` = QUIET primitive hover surface (NOT the brand light). */
+  --color-accent: oklch(0.26 0.011 72);
+
+  /* Semantic status (sparse — atrium has no app state, but shadcn wants them). */
+  --color-success: oklch(0.78 0.11 150);
+  --color-danger: oklch(0.7 0.15 28);
+  --color-on-danger: oklch(0.18 0.02 28);
+
+  --color-ring: oklch(0.9 0.045 85);
+
+  /* ── Six signature-hue bay tokens (atrium-local — ADR-003). Each: base /
+   *    text-safe / on-color. DARK theme values.
+   *
+   *    D-05 RE-SPACING. The previous wheel clustered three cool hues
+   *    (tape 220 / apex 255 / atlas 175), so half the tour barely changed
+   *    temperature. Re-spaced for genuine separation around the wheel so the six
+   *    read as distinctly-lit rooms (warm → gold → green → teal → cyan → indigo):
+   *      meld 40 · razors-edge 80 · pulse 150 · atlas 195 · tape 230 · apex 285.
+   *    apex is pushed off tape's cyan to a true indigo/violet; atlas is pulled
+   *    off tape's band to a distinct teal. Evocation bends to separation (the
+   *    same rule ADR-003 applies for contrast). All `-text` variants remain
+   *    contrast-verified ≥ 4.5:1 in both themes (AGENT_NOTES table). ──────── */
+
+  /* tape — slate / cyan (orderflow terminal, live Canvas tape). */
+  --bay-tape: oklch(0.74 0.12 230);
+  --bay-tape-text: oklch(0.83 0.1 228);
+  --bay-tape-on: oklch(0.18 0.03 238);
+
+  /* meld — collaborative warm orange (multi-user presence, warm paper). */
+  --bay-meld: oklch(0.76 0.135 40);
+  --bay-meld-text: oklch(0.84 0.11 44);
+  --bay-meld-on: oklch(0.2 0.04 38);
+
+  /* razors-edge — brass / warm gold (dark-luxe metallic edge). */
+  --bay-razors-edge: oklch(0.81 0.12 88);
+  --bay-razors-edge-text: oklch(0.86 0.11 90);
+  --bay-razors-edge-on: oklch(0.2 0.03 80);
+
+  /* pulse — status green (uptime / incident states). */
+  --bay-pulse: oklch(0.78 0.16 150);
+  --bay-pulse-text: oklch(0.85 0.14 152);
+  --bay-pulse-on: oklch(0.18 0.04 155);
+
+  /* atlas — control-room teal (geospatial ops console). */
+  --bay-atlas: oklch(0.79 0.12 195);
+  --bay-atlas-text: oklch(0.86 0.1 196);
+  --bay-atlas-on: oklch(0.18 0.04 198);
+
+  /* apex — premium indigo / violet (configurator, premium metal). */
+  --bay-apex: oklch(0.7 0.13 285);
+  --bay-apex-text: oklch(0.81 0.12 286);
+  --bay-apex-on: oklch(0.18 0.04 288);
+
+  /* ── shadcn/ui token bridge ───────────────────────────────────────
+   * Alias the generic shadcn vocabulary onto the sovereign tokens (never fresh
+   * values). `primary` is the deliberate brand light; `accent` is the quiet
+   * hover surface above. */
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-fg);
+  --color-primary: var(--color-light);
+  --color-primary-foreground: var(--color-on-light);
+  --color-secondary: var(--color-surface-raised);
+  --color-secondary-foreground: var(--color-fg);
+  --color-muted: var(--color-surface);
+  --color-muted-foreground: var(--color-fg-muted);
+  --color-accent-foreground: var(--color-fg);
+  --color-destructive: var(--color-danger);
+  --color-destructive-foreground: var(--color-on-danger);
+  --color-input: var(--color-border-strong);
+  --color-card: var(--color-surface);
+  --color-card-foreground: var(--color-fg);
+  --color-popover: var(--color-surface-raised);
+  --color-popover-foreground: var(--color-fg);
+}
+
+/* =========================================================================
+ * Canonical DARK palette in :root → first paint is dark before next-themes
+ * resolves (no light flash on a dark-default brand). The @theme values above
+ * already encode dark; restating here is the explicit runtime anchor that
+ * .light overrides.
+ * ===================================================================== */
+:root {
+  color-scheme: dark;
+
+  --color-bg: oklch(0.16 0.008 75);
+  --color-surface: oklch(0.21 0.01 74);
+  --color-surface-raised: oklch(0.26 0.011 72);
+  --color-border: oklch(0.33 0.011 72);
+  --color-border-strong: oklch(0.54 0.012 72);
+
+  --color-fg: oklch(0.95 0.008 82);
+  --color-fg-muted: oklch(0.77 0.012 80);
+  --color-fg-subtle: oklch(0.63 0.012 78);
+
+  --color-light: oklch(0.9 0.05 85);
+  --color-light-text: oklch(0.9 0.045 85);
+  --color-light-strong: oklch(0.95 0.04 88);
+  --color-on-light: oklch(0.2 0.02 75);
+
+  --color-accent: oklch(0.26 0.011 72);
+
+  --color-success: oklch(0.78 0.11 150);
+  --color-danger: oklch(0.7 0.15 28);
+  --color-on-danger: oklch(0.18 0.02 28);
+
+  --color-ring: oklch(0.9 0.045 85);
+
+  /* Six bay hues — DARK (D-05 re-spaced wheel; see @theme block above). */
+  --bay-tape: oklch(0.74 0.12 230);
+  --bay-tape-text: oklch(0.83 0.1 228);
+  --bay-tape-on: oklch(0.18 0.03 238);
+
+  --bay-meld: oklch(0.76 0.135 40);
+  --bay-meld-text: oklch(0.84 0.11 44);
+  --bay-meld-on: oklch(0.2 0.04 38);
+
+  --bay-razors-edge: oklch(0.81 0.12 88);
+  --bay-razors-edge-text: oklch(0.86 0.11 90);
+  --bay-razors-edge-on: oklch(0.2 0.03 80);
+
+  --bay-pulse: oklch(0.78 0.16 150);
+  --bay-pulse-text: oklch(0.85 0.14 152);
+  --bay-pulse-on: oklch(0.18 0.04 155);
+
+  --bay-atlas: oklch(0.79 0.12 195);
+  --bay-atlas-text: oklch(0.86 0.1 196);
+  --bay-atlas-on: oklch(0.18 0.04 198);
+
+  --bay-apex: oklch(0.7 0.13 285);
+  --bay-apex-text: oklch(0.81 0.12 286);
+  --bay-apex-on: oklch(0.18 0.04 288);
+
+  /* ── Volumetric-light / atrium surface hooks (read by Phase 3 chrome + hero;
+   *    CSS/SVG gradients + parallax planes, NO WebGL — ADR-001/002). ──────── */
+  /* The warm shaft of light that lights the wordmark + threshold motif. */
+  --shaft-core: oklch(0.92 0.06 86 / 0.9);
+  --shaft-mid: oklch(0.82 0.07 82 / 0.32);
+  --shaft-edge: oklch(0.7 0.06 80 / 0);
+  /* Atrium field gradient stops (the unlit shell behind the light). */
+  --field-top: oklch(0.13 0.006 75);
+  --field-bottom: oklch(0.19 0.01 72);
+  --field-vignette: oklch(0.1 0.005 75 / 0.7);
+  /* Anti-banding grain opacity over the large dark gradients (very subtle). */
+  --grain-opacity: 0.045;
+
+  /* ── Colonnade tokens (D-01 rebuild — the CSS-3D atrium of light). The columns
+   *    are slabs of warm light standing on a receding floor; `lit` is the edge
+   *    catching the shaft, `shadow` the far side of the round pillar, `edge` the
+   *    bright rim. The floor pool is the warm light at the far end of the hall. */
+  --colonnade-lit: oklch(0.82 0.055 84 / 0.62);
+  --colonnade-shadow: oklch(0.4 0.02 78 / 0.05);
+  --colonnade-edge: oklch(0.95 0.05 88 / 0.78);
+  --floor-pool: oklch(0.86 0.06 84 / 0.55);
+  --floor-mid: oklch(0.5 0.03 80 / 0.22);
+  --floor-far: oklch(0.2 0.01 76 / 0);
+}
+
+/* =========================================================================
+ * Intentional LIGHT theme — a "daytime atrium / architectural daylight"
+ * register: a warm bone/limestone field, charcoal ink, the warm light accent
+ * and the six signature hues DARKENED/re-tuned to hold contrast on light. NOT a
+ * mechanical inversion of the dark theme — a separate, considered design
+ * reviewed in its own right (CLAUDE.md § 4, ADR-003).
+ * ===================================================================== */
+.light {
+  color-scheme: light;
+
+  --color-bg: oklch(0.96 0.009 85);
+  --color-surface: oklch(0.93 0.011 84);
+  --color-surface-raised: oklch(0.99 0.005 85);
+  --color-border: oklch(0.86 0.012 82);
+  --color-border-strong: oklch(0.6 0.016 76);
+
+  --color-fg: oklch(0.27 0.016 70);
+  --color-fg-muted: oklch(0.45 0.016 70);
+  --color-fg-subtle: oklch(0.54 0.015 72);
+
+  /* On light, the "light" accent becomes a darkened warm amber so it can read
+   * as text / a lit edge against bone. */
+  --color-light: oklch(0.62 0.1 70);
+  --color-light-text: oklch(0.5 0.11 64);
+  --color-light-strong: oklch(0.56 0.11 66);
+  --color-on-light: oklch(0.99 0.005 85);
+
+  --color-accent: oklch(0.91 0.014 80);
+
+  --color-success: oklch(0.5 0.12 150);
+  --color-danger: oklch(0.52 0.2 28);
+  --color-on-danger: oklch(0.99 0.005 85);
+
+  --color-ring: oklch(0.5 0.11 64);
+
+  /* Six bay hues — LIGHT (D-05 re-spaced wheel, darkened so each clears AA as
+   * text on bone; the text variant is the AA-safe one, the base stays ≥ 3:1 as a
+   * UI boundary). Hue angles track the dark wheel: meld 40 · razors 88 · pulse
+   * 150 · atlas 195 · tape 230 · apex 285. */
+  --bay-tape: oklch(0.55 0.13 234);
+  --bay-tape-text: oklch(0.5 0.13 236);
+  --bay-tape-on: oklch(0.99 0.005 85);
+
+  --bay-meld: oklch(0.57 0.16 42);
+  --bay-meld-text: oklch(0.51 0.17 38);
+  --bay-meld-on: oklch(0.99 0.005 85);
+
+  --bay-razors-edge: oklch(0.57 0.12 72);
+  --bay-razors-edge-text: oklch(0.51 0.12 68);
+  --bay-razors-edge-on: oklch(0.99 0.005 85);
+
+  --bay-pulse: oklch(0.52 0.15 152);
+  --bay-pulse-text: oklch(0.47 0.14 154);
+  --bay-pulse-on: oklch(0.99 0.005 85);
+
+  --bay-atlas: oklch(0.52 0.11 197);
+  --bay-atlas-text: oklch(0.47 0.1 199);
+  --bay-atlas-on: oklch(0.99 0.005 85);
+
+  --bay-apex: oklch(0.48 0.16 286);
+  --bay-apex-text: oklch(0.44 0.17 288);
+  --bay-apex-on: oklch(0.99 0.005 85);
+
+  /* ── Daytime atrium surface (D-03 re-key — architectural daylight, NOT a
+   *    flipped dark site). Directional skylight: a warm, slightly off-white core
+   *    raking down from the clerestory with a VISIBLE falloff into the warmer
+   *    limestone field. The shaft is a soft volumetric wedge of daylight, the
+   *    floor a warm limestone wash — so the volumetric-light identity survives
+   *    the theme, the colonnade reads as a sunlit hall, and the bay hues read as
+   *    lit floor rather than floating smudges on white. ──────────────────── */
+  --shaft-core: oklch(0.995 0.018 90 / 0.9);
+  --shaft-mid: oklch(0.95 0.045 82 / 0.55);
+  --shaft-edge: oklch(0.9 0.04 80 / 0);
+  /* The field is a limestone gradient with a brighter daylit top, not flat bone. */
+  --field-top: oklch(0.985 0.012 88);
+  --field-bottom: oklch(0.9 0.018 78);
+  --field-vignette: oklch(0.62 0.02 70 / 0.2);
+  --grain-opacity: 0.025;
+
+  /* Colonnade — LIGHT. Sunlit limestone columns: the lit edge is a warm
+   * near-white catching daylight, the shadow side a soft warm grey (a real cast
+   * shadow on stone, not transparency). The floor pool is warm sunlight on the
+   * limestone hall. */
+  --colonnade-lit: oklch(0.97 0.025 86 / 0.9);
+  --colonnade-shadow: oklch(0.64 0.025 72 / 0.62);
+  --colonnade-edge: oklch(0.995 0.015 90 / 0.98);
+  --floor-pool: oklch(0.985 0.03 86 / 0.7);
+  --floor-mid: oklch(0.9 0.025 80 / 0.4);
+  --floor-far: oklch(0.84 0.02 76 / 0);
+}
+
+/* =========================================================================
+ * Base layer.
+ * ===================================================================== */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* The display face wants optical sizing + a confident default weight for
+   * headings / the wordmark; binding the axes here keeps headings consistent
+   * and lets components animate `font-variation-settings` on the kinetic
+   * title resolves. */
+  .font-display {
+    font-variation-settings:
+      'opsz' var(--display-opsz),
+      'wght' var(--display-wght),
+      'SOFT' var(--display-soft);
+  }
+
+  /* Brand focus ring — visible, never removed (WCAG 2.2 AA). The text-safe warm
+   * light token clears AA against every ground in both themes; the bg-coloured
+   * box-shadow separator detaches the ring from any surface it lands on
+   * (including a hue fill). Applied to every interactive element via
+   * `:focus-visible`; components add `focus-visible:outline-none` only when they
+   * layer their own equivalent, never to suppress focus. */
+  :focus-visible {
+    outline: 2px solid var(--color-light-text) !important;
+    outline-offset: 2px !important;
+  }
+
+  /* ── Mobile-nav sheet + overlay enter/exit (CSS, keyed off Radix Dialog
+   *    `data-state` — ADR-002: micro-interaction is CSS, never Motion). The
+   *    reduced-motion floor below collapses these to ~0ms automatically. ───── */
+  @keyframes atrium-overlay-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes atrium-overlay-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes atrium-sheet-in {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes atrium-sheet-out {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
+  [data-atrium-overlay][data-state='open'] {
+    animation: atrium-overlay-in 0.2s ease-out;
+  }
+  [data-atrium-overlay][data-state='closed'] {
+    animation: atrium-overlay-out 0.2s ease-in;
+  }
+  [data-atrium-sheet][data-state='open'] {
+    animation: atrium-sheet-in 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  [data-atrium-sheet][data-state='closed'] {
+    animation: atrium-sheet-out 0.24s cubic-bezier(0.4, 0, 1, 1);
+  }
+
+  /* ── Hero ambience (CSS-only, disabled under reduced-motion by the floor
+   *    below). The scroll cue's quiet bob and the barely-perceptible idle drift
+   *    of the warm shaft "breathe" the threshold (PLAN: a barely-perceptible
+   *    idle drift, disabled under prefers-reduced-motion). These are decorative
+   *    CSS animations on aria-hidden / non-content elements — NOT scroll-driven
+   *    (that is GSAP only, ADR-002). ─────────────────────────────────────── */
+  @keyframes atrium-cue-bob {
+    0%,
+    100% {
+      transform: translateY(0);
+      opacity: 0.85;
+    }
+    50% {
+      transform: translateY(5px);
+      opacity: 0.5;
+    }
+  }
+  @keyframes atrium-shaft-drift {
+    0%,
+    100% {
+      transform: translateX(-1.2%) scale(1.02);
+      opacity: 0.92;
+    }
+    50% {
+      transform: translateX(1.2%) scale(1);
+      opacity: 1;
+    }
+  }
+  .atrium-cue-bob {
+    animation: atrium-cue-bob 2.4s ease-in-out infinite;
+  }
+  .atrium-shaft-drift {
+    animation: atrium-shaft-drift 11s ease-in-out infinite;
+    transform-origin: 50% 0%;
+    will-change: transform;
+  }
+
+  /* ── Colonnade resting state (D-01 / D-11). At rest (no-JS / reduced-motion /
+   *    first paint) the colonnade sits as a FAINT implied hall behind the
+   *    wordmark — present enough to read as an atrium (D-14), dim enough that the
+   *    wordmark dominates. On the smallest widths it is dimmed further so the
+   *    columns do not crowd the type under ATRIUM (D-11 — the critique flagged the
+   *    320px stripes sitting right under the wordmark). The full-motion descent
+   *    sets its own per-plane opacity via GSAP, overriding this at scrub time. */
+  [data-colonnade] {
+    opacity: 0.5;
+  }
+  @media (max-width: 560px) {
+    [data-colonnade] {
+      opacity: 0.26;
+    }
+  }
+  @media (max-width: 380px) {
+    [data-colonnade] {
+      opacity: 0.16;
+    }
+  }
+
+  /* ── Project bays (Phase 4). The RESTING frame of every bay is its RESOLVED
+   *    composition (the no-JS / reduced-motion floor — ADR-003): the final title
+   *    fully shown, the ghost copy sitting quietly behind it, every reveal item
+   *    at full opacity. The GSAP sequence (`BaysSequence`) only sets the
+   *    UNRESOLVED start state at attach and scrubs it to this resting frame on
+   *    lock-in — so if JS never runs, the bay already reads complete. ───────── */
+
+  /* The unresolved hue "ghost" copy of the title sits exactly under the final
+   * copy. At rest it is faint (a low-chroma underprint); the scrub wipes it. It
+   * is decorative (aria-hidden) and never the accessible title. */
+  [data-bay-title-ghost] {
+    opacity: 0.18;
+  }
+
+  /* When the cinema is active, the sequence flags the bay (`data-bay-armed`) so
+   * the ghost starts fully lit + clipped and resolves — but ONLY then, so the
+   * no-JS/reduced-motion resting frame stays the calm composed state above. */
+  [data-bay-armed] [data-bay-title-ghost] {
+    opacity: 1;
+  }
+
+  /* Reduced-motion floor; GSAP sites add their own `gsap.matchMedia()` reduced
+   * branches on top of this (ADR-002/003 three-tier contract). */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

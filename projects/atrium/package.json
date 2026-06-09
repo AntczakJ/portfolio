@@ -1,0 +1,17 @@
+{
+  "name": "atrium",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Atrium — the portfolio's front door. A single, scroll-driven cinematic landing page that presents the six showcase projects as the lobby of the whole portfolio. Web-only Next.js 15 showcase (slot 7). Animation: GSAP + ScrollTrigger as the single library (no Motion). See DECISIONS.md ADR-001..ADR-003.",
+  "scripts": {
+    "dev": "pnpm -F atrium-web dev",
+    "build": "pnpm -F atrium-web build",
+    "start": "pnpm -F atrium-web start",
+    "lint": "pnpm -F atrium-web lint",
+    "typecheck": "pnpm -F atrium-web typecheck",
+    "test": "pnpm -F atrium-web test",
+    "test:e2e": "pnpm -F atrium-e2e test",
+    "lighthouse": "lhci autorun --config=lighthouserc.json"
+  }
+}
