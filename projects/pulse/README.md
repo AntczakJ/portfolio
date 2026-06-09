@@ -146,7 +146,7 @@ The frontend reads `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_SSE_URL` in split-orig
 
 ## Key decisions
 
-- **ADR-001** — `api-heavy` flavour, NestJS on Node 22 LTS, SSE (not WebSocket) for the strictly server-to-client live channel, uPlot for live time series, Motion as the single animation library, sovereign clean-SaaS tokens. Portfolio backend variance: tape runs Elysia on Bun, meld runs Hono on Node, pulse runs NestJS on Node — three distinct backends across three api-heavy projects.
+- **ADR-001** — `api-heavy` flavour, NestJS on Node 22 LTS, SSE (not WebSocket) for the strictly server-to-client live channel, uPlot for live time series, Motion as the single animation library, sovereign clean-SaaS tokens. Portfolio backend variance: tape runs Elysia on Bun, meld runs Hono on Node, pulse runs NestJS on Node, atlas runs Fastify on Node — four distinct backends across four api-heavy projects.
 - **ADR-002** — Probe scheduler: one BullMQ repeatable job per monitor with a stable id, remove-then-add reconciliation, boot reconciliation against the DB, the "down endpoint is a successful job" rule, and the resolve-then-pin SSRF guard.
 - **ADR-003** — Real-time contract: the named-event SSE vocabulary with Zod payloads, the two channel scopes (authenticated dashboard / redacted public), cookie auth on the `EventSource`, and the worker-to-SSE Redis pub/sub bridge with a `Last-Event-ID` ring buffer.
 - **ADR-004** — Incident state machine (N=3 fail opens exactly one, M=2 success closes, degraded escalates to down) and the hybrid uptime computation (24h from raw, 7d/30d from rollups, degraded counts 50%, unknown gaps excluded).

@@ -212,7 +212,7 @@ The critical paths are covered across all three runtimes:
 
 Full ADR text in [`DECISIONS.md`](./DECISIONS.md).
 
-- **ADR-001** — `api-heavy` flavour; Elysia on Bun plus a Rust hot-path worker. Portfolio backend variance: tape runs Elysia/Bun, meld runs Hono/Node, pulse runs NestJS.
+- **ADR-001** — `api-heavy` flavour; Elysia on Bun plus a Rust hot-path worker. Portfolio backend variance: tape runs Elysia/Bun, meld runs Hono/Node, pulse runs NestJS, atlas runs Fastify — four distinct backends across four api-heavy projects.
 - **ADR-002** — Bridge transport: UDS (Linux) / named pipe (Windows), length-prefixed binary framing. Won against Bun FFI on debuggability and independent-restart story.
 - **ADR-003** — Bridge payload: MessagePack (`rmp-serde` <-> `msgpackr`, `useRecords: false`); schema source of truth = Rust structs via `ts-rs`, CI-gated by `bridge:check`. Won against Protobuf on the pcap-to-readable-JSON bar.
 - **ADR-004** — Worker supervision: Elysia-as-supervisor via `Bun.spawn`; backoff 250 ms -> 5 s with jitter; 10-crashes-in-60-s circuit breaker; `control.worker_unavailable` to the browser.
