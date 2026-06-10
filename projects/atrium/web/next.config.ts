@@ -37,11 +37,15 @@ import type { NextConfig } from 'next';
  *     that GSAP cannot nonce. The v1.1 nonce-hardening (per-request nonce
  *     middleware dropping both inline grants) is documented debt in
  *     AGENT_NOTES.md, the same carried debt razors-edge noted. `'unsafe-eval'`
- *     is NEVER granted.
+ *     is NEVER granted IN PRODUCTION; the `headers()` dev branch adds it (plus
+ *     `ws:`/`wss:` to connect-src) for `next dev` ONLY, because Next's HMR +
+ *     React Fast Refresh eval at runtime and the strict CSP would otherwise
+ *     kill all client JS (and GSAP) in development. The shipped build is
+ *     eval-free.
  *     `img-src 'self' data: blob:` covers favicons + AVIF preview stills + the
  *     OG composition. `font-src 'self'` covers self-hosted `next/font` faces.
- *     `connect-src 'self'` — there is no network in v1 (atrium is a static typed
- *     index; ADR-001). `frame-ancestors 'none'` mirrors `X-Frame-Options: DENY`.
+ *     `connect-src 'self'` (prod) — there is no network in v1 (atrium is a static
+ *     typed index; ADR-001). `frame-ancestors 'none'` mirrors `X-Frame-Options: DENY`.
  *     `base-uri 'self'` blocks `<base>` injection. `form-action 'self'` — no
  *     form collects data in v1, contact is a `mailto:` link (ADR-003).
  *   - `X-Content-Type-Options: nosniff` — no MIME-sniff.
@@ -66,6 +70,24 @@ const nextConfig: NextConfig = {
   // Non-async (no awaited work) but returns a Promise to satisfy Next's
   // `headers` config type without an unnecessary `async`.
   headers() {
+    // DEV-ONLY CSP relaxation. `next dev` (HMR + React Fast Refresh)
+    // evaluates code via eval / `new Function` and opens an HMR WebSocket.
+    // The production-strict CSP (no `'unsafe-eval'`, `connect-src 'self'`)
+    // blocks both outright, which kills ALL client JS in development — GSAP
+    // never loads, so the scroll choreography is dead and the page reads as a
+    // flat static document (the symptom that surfaced this). We therefore add
+    // `'unsafe-eval'` to script-src and `ws:`/`wss:` to connect-src for DEV
+    // ONLY. PRODUCTION keeps the strict, eval-free CSP that ADR-002 mandates
+    // (verified clean against the deployed build: GSAP core + ScrollTrigger
+    // never eval at runtime, so prod needs no eval grant). `headers()` is read
+    // once at process start, so `NODE_ENV` correctly distinguishes
+    // `next dev` (development) from `next build` / `next start` (production).
+    const isDev = process.env.NODE_ENV !== 'production';
+    const scriptSrc = isDev
+      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+      : "script-src 'self' 'unsafe-inline'";
+    const connectSrc = isDev ? "connect-src 'self' ws: wss:" : "connect-src 'self'";
+
     return Promise.resolve([
       {
         source: '/(.*)',
@@ -84,11 +106,11 @@ const nextConfig: NextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline'",
+              scriptSrc,
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob:",
               "font-src 'self'",
-              "connect-src 'self'",
+              connectSrc,
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",
