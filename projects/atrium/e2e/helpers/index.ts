@@ -7,8 +7,11 @@ export { baseUrl } from './env';
 export { attachDiagnostics, type Diagnostics } from './diagnostics';
 export { LandingPage } from './landing-page';
 export {
+  GITHUB_BASE,
   PROJECTS,
   bayId,
   demoLinkName,
+  repoLinkName,
+  repoUrl,
   type ProjectFixture,
 } from './projects';

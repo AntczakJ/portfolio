@@ -1,19 +1,20 @@
 import { expect, test, type Locator } from '@playwright/test';
 
-import { LandingPage, PROJECTS } from '@helpers/index';
+import { LandingPage, PROJECTS, repoLinkName } from '@helpers/index';
 
 /**
  * Test 5 — full keyboard reachability of the twelve outward affordances
  * (Task 6.2, the success criterion).
  *
- * In the directory floor (the canonical no-cinema index — ADR-003) every one of
- * the six demo links must be a real, keyboard-focusable `<a>` with a discernible
- * accessible name ("<name> — live demo"). The six repo affordances are the U2
- * disabled state: present and accessibly labelled, but correctly NOT a tab stop
- * (a non-navigating `aria-disabled` span removed from the tab order) so a
- * keyboard user is never stopped on a dead control.
+ * In the directory floor (the canonical no-cinema index — ADR-003) all twelve
+ * outward affordances must now be real, keyboard-focusable `<a>`s with
+ * discernible accessible names. The `GITHUB_BASE` seam is flipped (the repo is
+ * public + pushed), so each project has BOTH a live demo link ("<name> — live
+ * demo") AND a live repo link ("<name> — GitHub repository") — there is no longer
+ * a non-focusable disabled repo span. Tabbing forward through the directory hits
+ * each row's demo link THEN its repo link, in canonical order.
  */
-test.describe('keyboard — twelve affordances reachable, disabled repo not a tab stop', () => {
+test.describe('keyboard — all twelve outward links reachable, repo is a live tab stop', () => {
   test('every directory demo link is keyboard-focusable with a discernible name @smoke', async ({
     page,
   }) => {
@@ -31,76 +32,77 @@ test.describe('keyboard — twelve affordances reachable, disabled repo not a ta
     }
   });
 
-  test('the six disabled repo affordances are NOT tab stops', async ({ page }) => {
+  test('every directory repo link is keyboard-focusable with a discernible name', async ({
+    page,
+  }) => {
     const landing = new LandingPage(page);
     await landing.goto();
 
-    const repoControls = landing.directoryRepoAffordances();
-    await expect(repoControls).toHaveCount(6);
+    // No disabled repo span survives the flip.
+    await expect(
+      page.locator('[aria-disabled="true"]', { hasText: 'GitHub repo' }),
+    ).toHaveCount(0);
 
-    for (let i = 0; i < 6; i++) {
-      const control = repoControls.nth(i);
-      // It is an aria-disabled span, present + accessibly explained...
-      await expect(control).toHaveAttribute('aria-disabled', 'true');
-      // ...with no tabindex making it focusable, and not a link/button.
-      await expect(control).not.toHaveAttribute('tabindex', /.*/);
-      const tag = await control.evaluate((el) => el.tagName.toLowerCase());
-      expect(tag).toBe('span');
+    for (const project of PROJECTS) {
+      const link = landing.directoryRepoLink(project.name);
+      await expect(link).toHaveCount(1);
+      // Programmatic focus = a real tab stop (it is a live <a>).
+      await link.focus();
+      await expect(link).toBeFocused();
+      // The discernible accessible name disambiguates across the twelve.
+      await expect(link).toHaveAccessibleName(repoLinkName(project.name));
     }
   });
 
-  test('tabbing forward through the directory hits the six demo links in order, skipping repo controls', async ({
+  test('tabbing forward through the directory hits each row demo link then its repo link, in order', async ({
     page,
   }) => {
     const landing = new LandingPage(page);
     await landing.goto();
 
     // Start focus at the first directory demo link, then Tab forward and collect
-    // the accessible names of the focused elements that are demo/anchor controls
-    // within the directory. The disabled repo span must never receive focus.
+    // the accessible names of the directory anchors as they gain focus. The repo
+    // link is now a real tab stop, so the expected sequence interleaves
+    // demo + repo per row, in canonical order.
     const firstDemo = landing.directoryDemoLink(PROJECTS[0]!.name);
     await firstDemo.focus();
     await expect(firstDemo).toBeFocused();
 
-    const seenDemoNames: string[] = [];
+    const seen: string[] = [];
+    const expected = PROJECTS.flatMap((p) => [
+      `${p.name} — live demo`,
+      repoLinkName(p.name),
+    ]);
 
-    // Walk forward enough Tab presses to traverse all six rows (each row: a demo
-    // link + a skipped repo span). Collect demo-link names as they gain focus.
-    for (let step = 0; step < 24; step++) {
+    // Walk forward enough Tab presses to traverse all twelve directory anchors.
+    for (let step = 0; step < 48; step++) {
       const focused = page.locator(':focus');
       const info = await focused.evaluate((el) => {
         const a = el as HTMLElement;
         return {
           tag: a.tagName.toLowerCase(),
-          ariaDisabled: a.getAttribute('aria-disabled'),
           name: a.getAttribute('aria-label') ?? a.textContent.trim(),
           inDirectory: !!a.closest('#directory'),
         };
       });
 
-      // A disabled repo control must NEVER be the focused element.
-      expect(
-        info.ariaDisabled,
-        'a disabled repo affordance must not receive keyboard focus',
-      ).not.toBe('true');
-
       if (
         info.inDirectory &&
         info.tag === 'a' &&
-        info.name.endsWith(' — live demo') &&
-        !seenDemoNames.includes(info.name)
+        (info.name.endsWith(' — live demo') ||
+          info.name.endsWith(' — GitHub repository')) &&
+        !seen.includes(info.name)
       ) {
-        seenDemoNames.push(info.name);
+        seen.push(info.name);
       }
 
-      if (seenDemoNames.length === PROJECTS.length) break;
+      if (seen.length === expected.length) break;
       await page.keyboard.press('Tab');
     }
 
-    // All six demo links were reached by keyboard, in canonical order.
-    expect(seenDemoNames).toEqual(
-      PROJECTS.map((p) => `${p.name} — live demo`),
-    );
+    // All twelve directory affordances were reached by keyboard, demo-then-repo
+    // per row, in canonical order.
+    expect(seen).toEqual(expected);
   });
 
   test('the hero wordmark and header chrome are real focusable DOM', async ({

@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 
-import { bayId, demoLinkName } from './projects';
+import { bayId, demoLinkName, repoLinkName } from './projects';
 
 /**
  * `landing-page.ts` — Page Object for the single long-form lobby route (`/`).
@@ -12,8 +12,9 @@ import { bayId, demoLinkName } from './projects';
  *
  * The hero renders the real `<h1>` "ATRIUM" — the LCP element and the no-JS /
  * SSR / reduced-motion content floor. The directory section is the canonical
- * reachable index: exactly six live-demo anchors + six repo affordances, present
- * with JS disabled, under reduced motion, and in the full cinema.
+ * reachable index: exactly six live-demo anchors + six live repo anchors (the
+ * `GITHUB_BASE` seam is flipped — the repo is public), present with JS disabled,
+ * under reduced motion, and in the full cinema.
  */
 export class LandingPage {
   readonly page: Page;
@@ -56,18 +57,19 @@ export class LandingPage {
   }
 
   /**
-   * The repo affordance(s) — while the placeholder GITHUB_BASE is in force these
-   * are disabled, `aria-disabled` spans (NOT links), so they are matched by
-   * text, not role=link. Scope to a section for the directory's copy.
+   * A project's repo link(s) by its discernible accessible name. The
+   * `GITHUB_BASE` seam is flipped (the repo is public + pushed), so the repo
+   * affordance is now a live `<a>` — matched by role=link, not by text on a
+   * disabled span. The same named link appears in the bay AND the directory, so
+   * callers scope to a section or use `.first()`.
    */
-  repoAffordances(): Locator {
-    return this.page.locator('[aria-disabled="true"]', { hasText: 'GitHub repo' });
+  repoLink(name: string): Locator {
+    return this.page.getByRole('link', { name: repoLinkName(name) });
   }
 
-  directoryRepoAffordances(): Locator {
-    return this.directory().locator('[aria-disabled="true"]', {
-      hasText: 'GitHub repo',
-    });
+  /** The directory's copy of a project's repo link (unambiguous). */
+  directoryRepoLink(name: string): Locator {
+    return this.directory().getByRole('link', { name: repoLinkName(name) });
   }
 
   /** The theme toggle — a button whose accessible name flips with the theme. */

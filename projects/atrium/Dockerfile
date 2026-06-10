@@ -127,13 +127,18 @@ COPY web ./web
 ARG NEXT_PUBLIC_SITE_URL=https://atrium-demo.fly.dev
 ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
 
-# NEXT_PUBLIC_GITHUB_BASE is INTENTIONALLY UNSET here. Leaving it unset
-# keeps `REPO_LINKS_LIVE === false` (site-config.ts), so the per-project
-# repo affordance renders as the disabled "coming soon" control (ADR-003
-# / U2) rather than a live link. The repo is currently PRIVATE, so a live
-# `github.com/.../tree/main/projects/<slug>` link would 404 for visitors.
-# Flip this (set the ARG to the real public base) only once the repo is
-# public AND the relevant commits are pushed — see DEPLOY.md "GITHUB_BASE".
+# NEXT_PUBLIC_GITHUB_BASE drives the six per-project repo links (via the
+# single `GITHUB_BASE` / `REPO_LINKS_LIVE` seam in site-config.ts). The
+# repo `github.com/AntczakJ/portfolio` is now PUBLIC and `main` is pushed,
+# so we bake the real base here: `REPO_LINKS_LIVE` flips true (base !==
+# the placeholder) and every bay/directory repo affordance renders as a
+# live `<a href="${base}/tree/main/projects/<slug>">` instead of the
+# disabled "coming soon" control. The links were verified to resolve 200
+# unauthenticated before this was enabled (2026-06-10). Set the ARG to a
+# different base (or back to the placeholder) to retarget/disable — see
+# DEPLOY.md "GITHUB_BASE".
+ARG NEXT_PUBLIC_GITHUB_BASE=https://github.com/AntczakJ/portfolio
+ENV NEXT_PUBLIC_GITHUB_BASE=${NEXT_PUBLIC_GITHUB_BASE}
 
 # Build. `output: 'standalone'` (web/next.config.ts) emits
 # `web/.next/standalone/web/server.js` because of the one-hop

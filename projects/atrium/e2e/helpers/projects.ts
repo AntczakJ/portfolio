@@ -11,6 +11,16 @@
  * accessible-name stem for "<name> — live demo"). `demoUrl` is the real public
  * Fly URL the live demo anchor must point at.
  */
+
+/**
+ * The live GitHub base — the single `GITHUB_BASE` seam, flipped (the repo is now
+ * public + pushed). The E2E build bakes `NEXT_PUBLIC_GITHUB_BASE=<this>` (see
+ * `playwright.config.ts` `webServer`) so the served app matches production
+ * (`REPO_LINKS_LIVE` true). Each project's repo affordance is the live monorepo
+ * deep-link `${GITHUB_BASE}/tree/main/projects/<slug>` (R1 shape, ADR-003) — kept
+ * in lockstep with the `fly.toml [env]` / Dockerfile ARG value.
+ */
+export const GITHUB_BASE = 'https://github.com/AntczakJ/portfolio';
 export interface ProjectFixture {
   readonly slug: string;
   readonly name: string;
@@ -40,4 +50,19 @@ export function bayId(slug: string): string {
 /** The discernible accessible name of a project's live-demo link. */
 export function demoLinkName(name: string): string {
   return `${name} — live demo`;
+}
+
+/**
+ * The discernible accessible name of a project's repo link. NOTE: the live `<a>`
+ * uses "<name> — GitHub repository" as its `aria-label` (the visible text is
+ * "GitHub repo"); see `repo-affordance.tsx`. The accessible name disambiguates
+ * across the twelve outward links.
+ */
+export function repoLinkName(name: string): string {
+  return `${name} — GitHub repository`;
+}
+
+/** The live monorepo deep-link a project's repo `<a>` must point at (R1). */
+export function repoUrl(slug: string): string {
+  return `${GITHUB_BASE}/tree/main/projects/${slug}`;
 }

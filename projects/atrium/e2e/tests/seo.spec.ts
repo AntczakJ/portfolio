@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { PROJECTS } from '@helpers/index';
+import { GITHUB_BASE, PROJECTS, repoUrl } from '@helpers/index';
 
 /**
  * Test 7 — the SEO surface (Task 6.2 support for the Lighthouse SEO criterion).
@@ -55,9 +55,18 @@ test.describe('SEO surface — robots, sitemap, OG image, JSON-LD', () => {
       );
     }
 
-    // U2 honesty: while the placeholder GITHUB_BASE is in force, no github.com
-    // link is emitted into the structured data (no broken codeRepository/sameAs).
-    expect(flat).not.toContain('github.com');
+    // The GITHUB_BASE seam is flipped (the repo is public + pushed), so the
+    // structured data now carries the repo links it gates on REPO_LINKS_LIVE:
+    // each SoftwareApplication's `codeRepository` is its monorepo deep-link, and
+    // the author's `sameAs` is the repo root (the GitHub profile/org base).
+    for (const project of PROJECTS) {
+      expect(flat, `${project.slug} codeRepository in JSON-LD`).toContain(
+        `"codeRepository":"${repoUrl(project.slug)}"`,
+      );
+    }
+    expect(flat, 'author sameAs in JSON-LD').toContain(
+      `"sameAs":["${GITHUB_BASE}"]`,
+    );
   });
 
   test('the home page carries a canonical link + meta description', async ({

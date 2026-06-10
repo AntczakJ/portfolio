@@ -49,6 +49,12 @@ primary_region = 'fra'
   # this runtime value, and it documents the canonical origin. Keep in
   # sync with the Dockerfile ARG.
   NEXT_PUBLIC_SITE_URL = 'https://atrium-demo.fly.dev'
+  # NEXT_PUBLIC_GITHUB_BASE is likewise baked at BUILD time (the Dockerfile
+  # ARG). Mirrored here as defence-in-depth + an audit signal. The repo
+  # `github.com/AntczakJ/portfolio` is public + pushed, so this flips
+  # `REPO_LINKS_LIVE` true and the six per-project repo links go live. Keep
+  # in sync with the Dockerfile ARG.
+  NEXT_PUBLIC_GITHUB_BASE = 'https://github.com/AntczakJ/portfolio'
 
 [http_service]
   # All external HTTPS traffic terminates at the Next standalone server

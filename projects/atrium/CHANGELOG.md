@@ -4,7 +4,6 @@ All notable changes to **atrium** are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
-- **Flip the GitHub repo links live.** A git remote now exists (`github.com/AntczakJ/portfolio`), but the repo is still private (unauthenticated requests 404) and `main` is not fully pushed, so `repoUrl` continues to derive from the `GITHUB_BASE` placeholder and the repo affordances render as disabled "coming soon" controls. Once the repo is public and the commits are pushed, setting `NEXT_PUBLIC_GITHUB_BASE` to the real base flips `REPO_LINKS_LIVE` and makes all six links live with no other code change.
 - **Host at the portfolio root domain.** atrium is deployed at `atrium-demo.fly.dev`; the eventual decision to point a root domain at it (rather than the per-project demo subdomain) is still open.
 - **Per-bay preview stills.** Each bay reserves a no-reflow media slot and the `Project` schema carries an optional `previewImage`; sourcing six optimised AVIF preview stills (captured, optimised, never the LCP) is the planned enrichment.
 
@@ -15,6 +14,10 @@ All notable changes to **atrium** are documented here. The format follows [Keep 
 - **Deployed to Fly.io.** Live at [atrium-demo.fly.dev](https://atrium-demo.fly.dev) (region `fra`, single Machine, Next.js 15 standalone — the razors-edge/apex web-only pattern). The bare `atrium` Fly app name was already taken, so the app is `atrium-demo` and the canonical origin (`NEXT_PUBLIC_SITE_URL`, baked at build time) is `https://atrium-demo.fly.dev`.
 - **Deploy surface:** `Dockerfile` (three-stage: deps → Linux standalone build → slim runtime; the standalone is built inside the Linux image to dodge the Windows symlink-EPERM trace failure), `fly.toml` (single HTTP service on :3000, health check on `/`, shared-cpu-1x / 512 MB, region `fra`), `.dockerignore`, and `DEPLOY.md` (the runbook, including the flyctl 0.4.57 first-deploy gotcha — run from the project dir, not `--config` + `--app`). No `web/public` copy step: atrium has no static public dir (OG/robots/sitemap are dynamic routes, fonts are self-hosted by `next/font`).
 - Verified live: `/` returns 200 with the exact strict CSP (no `unsafe-eval`); `/robots.txt`, `/sitemap.xml`, and `/opengraph-image` all resolve and reference the canonical origin.
+
+### Changed
+
+- **GitHub repo links flipped live.** The monorepo `github.com/AntczakJ/portfolio` was made public and `main` pushed, and the deployed build now bakes `NEXT_PUBLIC_GITHUB_BASE` (Dockerfile ARG + `fly.toml [env]`). This flips `REPO_LINKS_LIVE` true, so all six per-project repo affordances render as live `<a>` monorepo deep-links (`${GITHUB_BASE}/tree/main/projects/<slug>`) instead of the disabled "coming soon" controls — no component change, the single `GITHUB_BASE` seam. All six deep-links were verified to resolve HTTP 200 unauthenticated before the flip. The disabled-affordance fallback remains for any build that leaves the base unset.
 
 ## [0.1.0] — 2026-06-09
 

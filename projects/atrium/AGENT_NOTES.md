@@ -619,3 +619,90 @@ deploy is the only remaining work.
   `next.config.ts` + `playwright.config.ts` to the web `tsconfig.json` `include` — mirroring apex's
   tsconfig EXACTLY (the strict type-aware lint needs the config files inside the TS project). The
   eslint config itself was NOT touched.
+
+## test-engineer — GITHUB_BASE flip → E2E realignment (2026-06-10)
+
+The repo went PUBLIC + pushed and production baked `NEXT_PUBLIC_GITHUB_BASE=https://github.com/AntczakJ/portfolio`
+(Dockerfile ARG + fly.toml [env]), flipping `REPO_LINKS_LIVE` true on the live site. The E2E still
+asserted the OLD pre-flip U2 disabled state and only stayed green because the LOCAL Playwright build
+defaulted to the placeholder base — testing a code path that no longer ships. Realigned the E2E to
+production (the single source of truth now). TEST-ONLY work + the E2E build env; NO production
+source/component touched (they already branch on `REPO_LINKS_LIVE`).
+
+### The env seam — how the E2E surface is made to match production
+
+- **`e2e/playwright.config.ts` now OWNS the build+serve** via a `webServer` block:
+  `command: 'pnpm -F atrium-web build && pnpm -F atrium-web start'`, `url: baseURL`, with
+  `env: { NEXT_PUBLIC_GITHUB_BASE: 'https://github.com/AntczakJ/portfolio' }`. **Why `webServer.env`
+  works for a BUILD-time inline:** Next inlines `NEXT_PUBLIC_*` at BUILD, not start; `webServer.env`
+  applies to the WHOLE command process — which runs `build` first — so the build picks it up. This is
+  the robust, deterministic seam the task asked for (no hardcoding in source, one place to keep in
+  lockstep with fly.toml).
+- **Conditional ownership:** `const ownsServer = !env.BASE_URL && !env.ATRIUM_E2E_TARGET_URL;` — the
+  `webServer` is spread in only when targeting the default local :3080. If a caller points
+  `BASE_URL`/`ATRIUM_E2E_TARGET_URL` at an already-running or deployed server (the live Fly app IS
+  prod-parity), no server is spawned and that target is trusted as-is. `reuseExistingServer: !isCI`
+  lets a dev keep a hand-started prod server up between runs; CI builds fresh.
+- **The GITHUB_BASE value is RE-STATED in three test-side places** (none import the app): the config
+  (`webServer.env`), the helper `e2e/helpers/projects.ts` (`export const GITHUB_BASE`), and is the
+  same string as `fly.toml [env]`. Same rationale as the existing `helpers/env.ts` BASE_URL
+  duplication — the config loads in a separate process context, and the E2E re-states the truth
+  independently so a spec is a genuine end-to-end check (importing the app's own module would only
+  prove the app agrees with itself). **If the owner/repo slug ever changes, update all three.**
+
+### The aria-label gotcha (load-bearing for the assertions)
+
+- The LIVE repo `<a>` in `repo-affordance.tsx` uses `aria-label="<name> — GitHub repository"` (the
+  word "repository", not "repo") while its VISIBLE text is "GitHub repo". The disabled span (now
+  gone) used the visible "GitHub repo" text. So the live-link role queries match `/— GitHub
+repository$/`, NOT "GitHub repo". `repoLinkName()` in the helper encodes this; do not "fix" it to
+  match the visible text.
+- The repoUrl shape is R1 monorepo deep-link `${GITHUB_BASE}/tree/main/projects/<slug>`; note the
+  `razor's edge` project's SLUG is `razors-edge` (the href uses the slug, the aria-label uses the
+  display name `razor's edge`).
+
+### What each spec now asserts (was → is)
+
+- **`links.spec.ts`** — "the repo affordances are the U2 disabled state" → "the directory carries
+  exactly six live repo links": exact href per slug, target/rel, `aria-label`, ZERO `aria-disabled`
+  repo controls. Plus TWO new tests mirroring the demo-link rigor: each bay carries the same live
+  repo anchor; and a github.com-integrity test (every `a[href*="github.com"]` is under the single
+  `GITHUB_BASE`, all six deep-links present, the repo-root profile link present). **Suite count 18 →
+  20** (the +2 are these mirrors).
+- **`keyboard.spec.ts`** — the disabled repo was asserted NOT a tab stop; it IS now a live focusable
+  `<a>`. The "tabbing skips repo controls" test became "tabbing hits each row's demo THEN repo link,
+  in canonical order" (12 anchors). A new "every directory repo link is keyboard-focusable" test
+  mirrors the demo-link one.
+- **`no-js.spec.ts`** — six disabled repo spans → six server-rendered live repo `<a>`s (the seam is
+  baked at build, not client-toggled, so they render with JS off); asserts no disabled span survives.
+- **`seo.spec.ts`** — the JSON-LD honesty check `expect(flat).not.toContain('github.com')` flipped to
+  assert the live structured data: each `SoftwareApplication.codeRepository` is its deep-link and the
+  `Person.sameAs` is `[GITHUB_BASE]` (both gated on `REPO_LINKS_LIVE` in `portfolio-json-ld.tsx`).
+- **`landing.spec` / `reduced-motion.spec` / `theme-toggle.spec`** — no repo assumptions; untouched.
+- **Helpers:** `projects.ts` now exports `GITHUB_BASE` + `repoLinkName()` + `repoUrl()`;
+  `landing-page.ts` replaced the `repoAffordances()`/`directoryRepoAffordances()` (aria-disabled
+  locators) with `repoLink()`/`directoryRepoLink()` (role=link locators); barrel re-exports updated.
+
+### Vitest unit — untouched + confirmed green
+
+- `web/src/data/projects.test.ts` + `web/src/lib/schemas/project.test.ts` are env-agnostic: the
+  `REPO_LINKS_LIVE` assertion is the tautology `expect(REPO_LINKS_LIVE).toBe(GITHUB_BASE !==
+GITHUB_PLACEHOLDER)` (true under either base), and the single-seam GUARD ("github.com in exactly
+  one source file, comments stripped") is STATIC source analysis of `src/` excluding `.test.` files —
+  unaffected by env. NOT weakened. 54/54 still green.
+
+### Pass counts + verification (local, this machine, Windows)
+
+- Vitest **54/54**. Playwright **20/20** (the webServer built with the env baked, served on :3080).
+  `typecheck` clean (web + e2e). Lint clean — including the load-bearing ROOT type-aware command
+  `npx eslint --quiet "projects/atrium/web/**/*.{ts,tsx}" "projects/atrium/e2e/**/*.{ts,tsx}"` (exit 0,
+  zero output), not just `next lint`.
+- **Could not verify against the actual deployed Fly app** (no network probe run here) — but the
+  baked-env local build reproduces the exact production `REPO_LINKS_LIVE`-true surface, which is the
+  parity the task asked for. To run the suite against the live site instead:
+  `BASE_URL=https://atrium-demo.fly.dev pnpm -F atrium-e2e test` (the `webServer` self-skips).
+- **Benign build noise (pre-existing, not a regression):** `next build` on Windows emits the
+  standalone-trace EPERM symlink warnings (build SUCCEEDS, the carried Windows-no-symlink quirk), and
+  `next start` warns `"next start" does not work with "output: standalone"` yet still serves :3080
+  correctly — the landing.spec CSP gate passed with zero violations against it. Both are the existing
+  `pnpm -F atrium-web start` behaviour the README already uses for the E2E surface; not introduced here.
