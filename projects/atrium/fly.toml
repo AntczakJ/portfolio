@@ -1,0 +1,93 @@
+# fly.toml app configuration file for atrium-demo
+#
+# NOTE: the app is `atrium-demo` — the bare `atrium` name was already
+# taken on Fly. If you redeploy under yet another name, update BOTH the
+# `app =` line below AND every `NEXT_PUBLIC_SITE_URL` (the Dockerfile ARG
+# default + the `[env]` mirror here) to match — every absolute URL
+# (canonical, OG, sitemap, robots, JSON-LD) is built from it. See
+# DEPLOY.md.
+#
+# See https://fly.io/docs/reference/configuration/ for the schema. The
+# `[http_service]` block (NOT the legacy `[[services]]` array) is the
+# current Fly recommendation for single-service apps — the
+# razors-edge / apex posture carried forward.
+#
+# atrium's deploy posture (ADR-001 web-only):
+#   - WEB-ONLY: a single Fly Machine running ONE process, the Next.js 15
+#     standalone Node server. No backend, no Postgres, no migrations, no
+#     secrets (atrium is a static typed index with a GSAP scroll hero;
+#     ZERO network at runtime — ADR-001).
+#   - Single external port (443) → Fly edge TLS terminator → container
+#     internal port 3000 (the conventional Next standalone PORT).
+#   - Region `fra` (EU — owner is in Poznań), matching every sibling.
+#   - `auto_stop_machines = 'stop'` + `min_machines_running = 1`: the app
+#     is stateless and could safely scale to zero, but this is THE
+#     PORTFOLIO FRONT DOOR — a recruiter landing here must not hit a
+#     5-10 s cold-start before the "five-second wow" (the scroll descent
+#     through the ATRIUM wordmark into the colonnade of light). min 1
+#     keeps one Machine warm; `auto_stop` still lets Fly reap any extra
+#     Machines a burst spun up.
+
+app = 'atrium-demo'
+primary_region = 'fra'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[deploy]
+  strategy = 'rolling'
+
+[env]
+  NODE_ENV = 'production'
+  # Next standalone listens on 3000 inside the container; Fly's edge
+  # forwards 443 → 3000 per `internal_port` below.
+  PORT = '3000'
+  # NEXT_PUBLIC_SITE_URL is baked at BUILD time in the Dockerfile (Next
+  # inlines NEXT_PUBLIC_* into the client bundle at build). Mirroring it
+  # here is defence-in-depth + an audit signal during `flyctl status`:
+  # server-side reads (metadataBase, sitemap, robots, OG, JSON-LD) honour
+  # this runtime value, and it documents the canonical origin. Keep in
+  # sync with the Dockerfile ARG.
+  NEXT_PUBLIC_SITE_URL = 'https://atrium-demo.fly.dev'
+
+[http_service]
+  # All external HTTPS traffic terminates at the Next standalone server
+  # on 3000. There is exactly one process and one surface — the whole
+  # site (the `/` landing page, `/sitemap.xml`, `/robots.txt`, the OG
+  # image, the static assets) is served from it.
+  internal_port = 3000
+  force_https = true
+  # Keep one Machine warm so the front door loads instantly. `auto_stop`
+  # reaps extras; `min_machines_running = 1` guarantees no cold start on
+  # the canonical demo URL.
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+  [http_service.concurrency]
+    type = 'requests'
+    hard_limit = 250
+    soft_limit = 200
+
+  # HTTP health check on `/` — a 200 means the Next server is up and
+  # serving the landing page (the app has no separate /health route; it
+  # is web-only, so the root document IS the liveness signal).
+  [[http_service.checks]]
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '20s'
+    method = 'get'
+    path = '/'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  # 512 MB. The Next server itself is light (atrium is static-render + a
+  # client-side GSAP scroll hero — no server compute beyond serving the
+  # document). The only server-side memory pressure is the dynamic OG
+  # `ImageResponse` (satori) render + any on-demand `next/image` work,
+  # which is exactly what OOM-killed razors-edge at 256 MB on its first
+  # image optimization. We start at 512 MB to serve that path cleanly.
+  # Bump to 1024 MB (no ADR needed) only if a burst pressures it.
+  memory_mb = 512

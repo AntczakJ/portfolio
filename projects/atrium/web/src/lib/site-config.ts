@@ -18,7 +18,7 @@
  * reflect the public origin, hence the placeholder rather than localhost.
  */
 export const SITE_URL = (
-  process.env.NEXT_PUBLIC_SITE_URL ?? 'https://atrium.fly.dev'
+  process.env.NEXT_PUBLIC_SITE_URL ?? 'https://atrium-demo.fly.dev'
 ).replace(/\/$/, '');
 
 export const SITE_NAME = 'Atrium';

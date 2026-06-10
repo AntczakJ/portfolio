@@ -4,13 +4,21 @@ All notable changes to **atrium** are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
-- **Deploy to Fly.io** (single Machine, Next.js 15 standalone, web-only — the razors-edge pattern), and the eventual decision to host atrium at the portfolio's conceptual root domain.
-- **Flip the GitHub repo links live.** The repo has no git remote yet, so `repoUrl` derives from a single `GITHUB_BASE` placeholder and the repo affordances render as disabled "coming soon" controls. Setting `NEXT_PUBLIC_GITHUB_BASE` to a real base flips `REPO_LINKS_LIVE` and makes all six links live with no other code change.
+- **Flip the GitHub repo links live.** A git remote now exists (`github.com/AntczakJ/portfolio`), but the repo is still private (unauthenticated requests 404) and `main` is not fully pushed, so `repoUrl` continues to derive from the `GITHUB_BASE` placeholder and the repo affordances render as disabled "coming soon" controls. Once the repo is public and the commits are pushed, setting `NEXT_PUBLIC_GITHUB_BASE` to the real base flips `REPO_LINKS_LIVE` and makes all six links live with no other code change.
+- **Host at the portfolio root domain.** atrium is deployed at `atrium-demo.fly.dev`; the eventual decision to point a root domain at it (rather than the per-project demo subdomain) is still open.
 - **Per-bay preview stills.** Each bay reserves a no-reflow media slot and the `Project` schema carries an optional `previewImage`; sourcing six optimised AVIF preview stills (captured, optimised, never the LCP) is the planned enrichment.
+
+## [0.1.1] — 2026-06-10
+
+### Added
+
+- **Deployed to Fly.io.** Live at [atrium-demo.fly.dev](https://atrium-demo.fly.dev) (region `fra`, single Machine, Next.js 15 standalone — the razors-edge/apex web-only pattern). The bare `atrium` Fly app name was already taken, so the app is `atrium-demo` and the canonical origin (`NEXT_PUBLIC_SITE_URL`, baked at build time) is `https://atrium-demo.fly.dev`.
+- **Deploy surface:** `Dockerfile` (three-stage: deps → Linux standalone build → slim runtime; the standalone is built inside the Linux image to dodge the Windows symlink-EPERM trace failure), `fly.toml` (single HTTP service on :3000, health check on `/`, shared-cpu-1x / 512 MB, region `fra`), `.dockerignore`, and `DEPLOY.md` (the runbook, including the flyctl 0.4.57 first-deploy gotcha — run from the project dir, not `--config` + `--app`). No `web/public` copy step: atrium has no static public dir (OG/robots/sitemap are dynamic routes, fonts are self-hosted by `next/font`).
+- Verified live: `/` returns 200 with the exact strict CSP (no `unsafe-eval`); `/robots.txt`, `/sitemap.xml`, and `/opengraph-image` all resolve and reference the canonical origin.
 
 ## [0.1.0] — 2026-06-09
 
-Initial build of atrium: the portfolio's front door — a single, scroll-driven cinematic landing page that presents the six showcase projects as the lobby of the whole portfolio, and is itself project number seven. Feature-complete for v1, reviewed (designer-critic and reviewer passes landed, all must-fix defects cleared), and fully tested. Web-only, no backend. Not yet deployed; built and measured against the ambition of being the eventual portfolio root.
+Initial build of atrium: the portfolio's front door — a single, scroll-driven cinematic landing page that presents the six showcase projects as the lobby of the whole portfolio, and is itself project number seven. Feature-complete for v1, reviewed (designer-critic and reviewer passes landed, all must-fix defects cleared), and fully tested. Web-only, no backend. Built and measured against the ambition of being the eventual portfolio root. (Deployed the following day — see [0.1.1].)
 
 ### Added
 
@@ -57,3 +65,5 @@ Initial build of atrium: the portfolio's front door — a single, scroll-driven 
 - This `CHANGELOG.md`, and the end-user-facing `README.md` (pitch, demo status, screenshots of the descent and the bays in both themes and on mobile, stack, run instructions, architecture notes, key decisions, and the v2 path), with a committed screenshot-capture script (`e2e/capture-readme-screenshots.mjs`).
 
 [Unreleased]: https://keepachangelog.com/en/1.1.0/
+[0.1.1]: https://keepachangelog.com/en/1.1.0/
+[0.1.0]: https://keepachangelog.com/en/1.1.0/

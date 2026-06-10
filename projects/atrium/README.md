@@ -10,9 +10,9 @@ This is project number seven, and it is itself the strongest visual piece in the
 
 ## Demo
 
-**Not yet deployed.** Atrium runs locally per [Run locally](#run-locally) — `pnpm -F atrium-web build` then `pnpm -F atrium-web start` on [http://localhost:3080](http://localhost:3080). It is intended as the eventual portfolio root (a root domain pointing at this page), and is built and measured against that ambition; the Fly deploy (single Machine, Next.js 15 standalone, the razors-edge web-only pattern) is the next step. The screenshots below are captured from the production build. The six projects it presents are each live — their demo links resolve to their own deployments.
+**Live: [atrium-demo.fly.dev](https://atrium-demo.fly.dev)** (Fly.io, region `fra`, single-Machine Next.js 15 standalone — the razors-edge/apex web-only pattern; deployed 2026-06-10). The bare `atrium` Fly name was taken, so the app is `atrium-demo`. Atrium is intended as the eventual portfolio root (a root domain pointing at this page) and is built and measured against that ambition. The six projects it presents are each live too — their demo links resolve to their own deployments. To run locally instead, see [Run locally](#run-locally) — `pnpm -F atrium-web build` then `pnpm -F atrium-web start` on [http://localhost:3080](http://localhost:3080). The screenshots below are captured from the production build. Deploy runbook: [`DEPLOY.md`](./DEPLOY.md).
 
-The canonical origin is wired through `NEXT_PUBLIC_SITE_URL` (it backs `metadataBase`, the canonical tag, the Open Graph image, `robots.txt`, `sitemap.xml`, and the JSON-LD); it falls back to a documented placeholder until a real origin exists. See [`.env.example`](./web/.env.example).
+The canonical origin is wired through `NEXT_PUBLIC_SITE_URL` (it backs `metadataBase`, the canonical tag, the Open Graph image, `robots.txt`, `sitemap.xml`, and the JSON-LD), baked into the image at build time as `https://atrium-demo.fly.dev`; it falls back to a documented placeholder for local runs. See [`.env.example`](./web/.env.example).
 
 ## Screenshots
 
@@ -155,7 +155,7 @@ Full ADR text in [`DECISIONS.md`](./DECISIONS.md). Spec, audience, and the phase
 
 ## Not shipped in v1 (deferred)
 
-- **Deployment.** Atrium is not yet deployed. The Fly single-Machine Next.js standalone deploy (the razors-edge web-only pattern), and the eventual decision to host it at the portfolio's conceptual root domain, are the next steps. v1 ships as a self-contained `projects/atrium/` app consistent with every sibling; it does not restructure the monorepo.
+- **Root-domain hosting.** Atrium is deployed (Fly single-Machine Next.js standalone — see [Demo](#demo) / [`DEPLOY.md`](./DEPLOY.md)), but the eventual decision to host it at the portfolio's conceptual root domain rather than at `atrium-demo.fly.dev` is still open. v1 ships as a self-contained `projects/atrium/` app consistent with every sibling; it does not restructure the monorepo.
 - **Real GitHub links.** The repo has no remote, so `repoUrl` derives from a single `GITHUB_BASE` placeholder and the repo affordances render as disabled "coming soon" controls. Flipping `NEXT_PUBLIC_GITHUB_BASE` to a real base makes all six links live with no other change.
 - **Per-bay preview stills.** Each bay reserves a no-reflow media slot and the schema carries an optional `previewImage`; sourcing six optimised AVIF preview stills of the showcases (captured, optimised, and never the LCP) is the v2 enrichment. The type-and-light composition is the v1 floor and reads complete without them.
 - **Any real backend, database, or CMS.** The six entries are a typed `src/data/projects.ts` module; adding a seventh project is a one-line array edit. There is nothing to fetch and nothing to administer.

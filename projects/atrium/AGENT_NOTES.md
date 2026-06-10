@@ -551,16 +551,16 @@ style (badge-free; the "Portfolio root: ../../README.md" + MIT-license footer; t
 the production-surface run instructions). Root README updated. v1 is now complete through docs;
 deploy is the only remaining work.
 
-### Demo honesty (load-bearing — do NOT regress)
+### Demo honesty (UPDATED 2026-06-10 — atrium is now DEPLOYED)
 
-- **atrium is NOT deployed.** The README "Demo" section says so plainly and links the LOCAL prod
-  surface (`pnpm -F atrium-web build && start` on :3080) — NO invented Fly URL. The root README demo
-  cell is `local / not yet deployed` (the other six siblings keep their real Fly URLs).
+- **atrium is LIVE at https://atrium-demo.fly.dev** (deployed 2026-06-10; the bare `atrium` Fly name
+  was taken). The README "Demo" section, the root README demo cell, and the CHANGELOG all reflect this;
+  the `[Unreleased]` deploy bullet was promoted to a dated `[0.1.1] — 2026-06-10` release.
 - **The internal "Fly demos stopped to control cost" status is NOT surfaced** anywhere in atrium's
-  public docs — only the project's own non-deployment is stated. The six siblings' demo links read
-  as normal/live.
-- On deploy: set `NEXT_PUBLIC_SITE_URL`, then remove "not yet deployed" from BOTH the README Demo
-  section and the root README demo cell, and refresh the CHANGELOG `[Unreleased]` → a dated release.
+  public docs (the deliberate owner policy — demo links read as normal/live for all seven).
+- `NEXT_PUBLIC_SITE_URL=https://atrium-demo.fly.dev` is baked at BUILD time via the Dockerfile ARG /
+  the `--build-arg` (Next inlines `NEXT_PUBLIC_*` at build). The site-config fallback was updated to
+  match (`atrium-demo.fly.dev`).
 
 ### Screenshots — committed, reproducible
 
@@ -584,15 +584,12 @@ deploy is the only remaining work.
 
 ### Root-doc updates done by doc-writer
 
-- **Root `README.md`:** added the `atrium` row to the Projects table (pitch + `Next 15 + React 19 +
-Tailwind v4 + GSAP (scroll) + Zod (web-only, no backend)` + `local / not yet deployed`); updated the
-  Philosophy paragraph from "Six projects… four api-heavy… two web-only" → **"Seven projects… four
-  api-heavy… three web-only (razors-edge, apex, atrium)"**, framing atrium as the front door (built,
-  not yet deployed; the other six live).
-- **Root `PROGRESS.md` — NOT edited by doc-writer; FLAGGED for the main thread.** The slot-7 TABLE
-  ROW is already present (`| 7 | atrium | web-only (landing page) | — (none) |`), but the surrounding
-  PROSE (lines ~7, ~57, ~79) still calls atrium "in planning" — it is now v1-complete. The main thread
-  should refresh that prose (composition narrative is main-thread-owned, not a per-project file).
+- **Root `README.md`:** the `atrium` row demo cell now reads the live `atrium-demo.fly.dev` link (was
+  `local / not yet deployed`); the Philosophy paragraph reads "Seven projects… four api-heavy… three
+  web-only" and "all seven projects are deployed and live" (updated on deploy, 2026-06-10).
+- **Root `PROGRESS.md` — refreshed by the main thread on deploy (2026-06-10).** Prose, the slot-7 table
+  row, the deployment-status table (atrium row added), and the composition status all now read atrium
+  as v1-complete + deployed.
 
 ## frontend-engineer — strict ROOT eslint gate (the pre-commit reality) (2026-06-09)
 
