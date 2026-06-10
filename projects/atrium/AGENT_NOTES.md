@@ -706,3 +706,172 @@ GITHUB_PLACEHOLDER)` (true under either base), and the single-seam GUARD ("githu
   `next start` warns `"next start" does not work with "output: standalone"` yet still serves :3080
   correctly — the landing.spec CSP gate passed with zero violations against it. Both are the existing
   `pnpm -F atrium-web start` behaviour the README already uses for the E2E surface; not introduced here.
+
+## designer-critic — polish pass on the DEPLOYED site (2026-06-10)
+
+Judged the live production build (https://atrium-demo.fly.dev), NOT the dev server,
+per the owner's instruction (dev is unoptimised/janky). Headless Playwright +
+chromium (1440x900 desktop + 390x844 mobile, reducedMotion no-preference,
+networkidle + 2.5s settle — 7 pin-spacers confirmed so the full cinema ran), both
+themes, all seven sections. Driver: `e2e/capture-critique-polish.mjs` (committed,
+reproducible; `BASE_URL` overridable, defaults to the Fly URL). Shots:
+`docs/critique-polish-shots/`. Full defect list: `docs/critique-polish.md`
+(4 blocker, 9 high, 9 medium, 1 low). Owner verdict operationalised:
+"slabo to dziala, niech bedzie bardziej spojnie i ladniej."
+
+RECURRING PATTERNS the frontend-engineer should pre-empt, not one-off patch
+(these are the root causes behind the "weak / not cohesive" read):
+
+- **One shared component rendering N showcases = N identical screens, which reads
+  as sameness, not cohesion (B-01).** `project-bay.tsx` renders all six bays from
+  one grid + one light geometry + one reveal timeline, so the only delta per bay is
+  the word and the hue. The "six distinct showcases / variance is the point" thesis
+  REQUIRES per-instance compositional variation (alternating column sides, varied
+  light-source position, 2-3 layout variants) bound by a shared SYSTEM — not one
+  template recoloured. Whenever a "tour of N rooms" is built off one component,
+  budget for intentional per-room variation from the start, or it will read as a
+  loop. This is the single biggest lever on "make it cohesive."
+
+- **A "the hue lights the room" claim must be VERIFIED on the deployed pixels, not
+  asserted from token contrast (B-02 / D-10).** The Phase-5.2 note said each bay
+  "reads as a distinctly-lit room"; on the live build the wash gradients
+  (`transparent 60-72%` falloff, top-corner + faint floor pool) leave the centre
+  type band on near-pure background — edge-lit/haloed, not bathed. Contrast tables
+  prove text legibility, NOT that the atmosphere reads. Always re-shoot the
+  deployed frame and check the hue reaches the headline.
+
+- **D-02 (dead scroll in a pinned timeline) regressed because the FIX measured the
+  wrong thing (B-03 / D-13).** Phase 5.2 made the camera Z "mathematically
+  continuous" (translateZ 0->camZ over the whole pin) and traced the numbers as
+  proof — but under a fixed `perspective`, equal Z steps near the far plane move
+  far fewer pixels than near the camera, so the back third is PERCEPTUALLY frozen
+  even though the number keeps changing. Lesson: judge pinned-scrub liveness by the
+  rendered frame delta (shoot 3 frames across the back third and diff them), not by
+  the tweened-property trace. The pin length must equal the PERCEIVED choreography,
+  and a linear `ease: 'none'` camera on a perspective stage needs an accelerating
+  ease to keep the back half alive.
+
+- **The light theme is still the weakest surface and it keeps regressing (B-04 /
+  D-12 / D-21).** This is now the THIRD critique to flag light (5.1 D-03, this pass
+  B-04). The pattern: light tokens are re-tuned for contrast numbers but the
+  COMPOSITION is never authored for cream ground, so the wordmark bleaches (~2:1
+  perceptual) and the six saturated dark-theme hues all collapse to one warm haze
+  on white. Every atmospheric surface needs a light-theme composition designed in
+  its own right (a tinted floor the type sits ON, an ink wordmark, a visible warm
+  shaft core) — not a re-tuned vignette that desaturates to nothing. Treat light as
+  a first-class comp per surface, judged on its own screenshots, every milestone.
+
+- **When the mobile branch of a responsive comp is STRONGER than desktop, that is a
+  desktop defect, not a mobile win (B-05 / D-20).** The mobile hero
+  (`08-m-hero-dark.png`) is the best frame on the whole site (raking shaft, deep
+  hall, crisp lit wordmark); the desktop hero is timid (small wordmark, dead
+  margins, dim hall). The better composition already exists — desktop just
+  under-commits. Check both breakpoints against each other; the stronger one is the
+  target, not an accident to leave alone.
+
+What is GOOD and must NOT be "fixed" into blandness: the directory
+(`05-directory-dark.png`) and about (`06-about-dark.png`) are first-class
+(Klim/Linear restraint, real hierarchy, ruled rows). They are the proof the bar is
+reachable; the bays should inherit THEIR type discipline (D-07/D-17), not the
+reverse.
+
+## frontend-engineer — polish pass: the "cohesive and prettier" critique implemented (2026-06-10)
+
+Implemented `docs/critique-polish.md` lead-5 BLOCKERS/HIGH + the cheap MEDIUMs.
+Governing idea honoured: cohesion = ONE shared system (rhythm, light language,
+palette arc) with each bay its own distinctly-composed room — NOT making the bays
+more alike. Directory + about left UNTOUCHED (exempt — they are the bar). All
+inside the ADRs: GSAP-only (no Motion), strict eval-free CSP, no new deps, both
+themes AA, reduced-motion lands on a clean composed frame, 320px no overflow.
+
+### Files changed
+
+- `web/src/app/globals.css` — six bay hues re-keyed for D-09 separation + a new
+  `--bay-*-floor` token per hue (the deep alpha-carrying "bathe" colour, both
+  themes); light `--color-fg` deepened (D-21) + a `.light [data-descent-wordmark]`
+  heavier-resting rule; light `--shaft-*` re-keyed to a VISIBLE warm core (B-04);
+  `--text-display` clamp opened (B-05); `[data-colonnade]` resting opacity lifted
+  - `--colonnade-*` / `--floor-*` deepened (B-05/D-20); `[data-bay] :focus-visible`
+    hue-tint (D-23).
+- `web/src/components/bays/project-bay.tsx` — REWRITTEN. `compositionFor(index)`
+  picks layout (left/right/centre) + light dir (tr/tl/top) deterministically
+  (B-01); the four-layer bathe light-field (B-02/D-10/D-12); tightened rhythm +
+  ruled tagline tick (D-07/D-17); promoted hue-ruled wow pull-quote (D-18); the
+  Klim ruled hue-ticked stack spec list (D-19). The `right` layout uses
+  `lg:order-*` so the `<h2>` stays FIRST in the DOM (SR/source order) while it
+  paints right.
+- `web/src/components/bays/bays-sequence.tsx` — `buildBayTimeline(bay, i, scrub)`
+  now varies per bay (D-16: wipe direction, reveal axis y/x, stagger off `i`); the
+  title settle is a visible 320→600 weight gesture with a per-bay clip direction
+  (D-15); eases tuned. Both call sites pass the index.
+- `web/src/components/hero/hero-descent.tsx` — camera Z on `power2.in` + pin
+  shortened (1.0/0.8vh) + the `[data-descent-handoff]` second beat blooming up in
+  the back third (B-03/D-13/D-08); `power4.out`/`expo.out` eased sub-curves under
+  the scrub (D-14); the hand-off threshold element added to the hero JSX.
+- `web/src/components/hero/hero-content.tsx` — layered warm wordmark glow (D-20).
+- `web/src/components/atmosphere/threshold.tsx` — the major seam carries an atrium
+  floor-pool echo so the bays read as INSIDE the atrium (D-08).
+- `e2e/capture-critique-polish.mjs` — default BASE_URL → localhost:3080, OUT_DIR →
+  `docs/critique-polish-after/` (overridable). `e2e/verify-polish.mjs` — NEW
+  prod-build verification driver (pins / CSP / errors / reduced-motion / 320px).
+
+### Re-keyed hue contrast (WCAG 2.1 relative-luminance, both themes)
+
+Only meld + razors-edge values changed from the Phase-5.2 table (D-09); the others
+are unchanged and re-verified. `-text` target ≥ 4.5, base (UI) ≥ 3. The `-floor`
+token is decorative illumination (a translucent wash, never text/UI-boundary
+load-bearing), so it is NOT held to a contrast target — type always sits on
+`--color-fg`/`--bay-text` over the bathed ground, which is what AA must (and does)
+clear. Format: DARK (text vs bg / vs surf | base vs bg) | LIGHT (same).
+
+| hue         | DARK text (bg/surf) | DARK base | LIGHT text (bg/surf) | LIGHT base |
+| ----------- | ------------------- | --------- | -------------------- | ---------- |
+| tape (230)  | 11.75 / 10.73       | 8.64      | 5.10 / 4.66          | 4.14       |
+| meld (38)   | 11.05 / 10.09       | 7.39      | 5.82 / 5.32          | 4.26       |
+| razors (96) | 13.57 / 12.39       | 11.93     | 4.96 / 4.54          | 3.54       |
+| pulse (150) | 12.92 / 11.79       | 10.31     | 5.55 / 5.08          | 4.51       |
+| atlas (195) | 13.17 / 12.03       | 10.53     | 5.62 / 5.13          | 4.50       |
+| apex (285)  | 10.32 / 9.43        | 7.03      | 7.44 / 6.80          | 6.19       |
+
+meld↔razors now separate in LIGHTNESS (0.72 vs 0.84 dark base) AND chroma (0.15 vs
+0.115) AND hue (38 vs 96) — no longer twin browns. Light `--color-fg` 0.22 ink vs
+cream bg = 15.4:1 (the perceptual "~2:1" the critique saw was a thin-weight-on-cream
+read, fixed by the heavier resting weight + the lit shaft, not a raw-contrast miss).
+
+### Verification (judged the PRODUCTION build, not next dev)
+
+`pnpm -F atrium-web build` (clean; the EPERM standalone-symlink warning is the
+documented Windows-only benign trace) + `next start` :3080, headless chromium via
+`e2e/verify-polish.mjs`: 7 pin-spacers desktop; 0 CSP violations; 0 console/page
+errors; 0 non-favicon req failures; reduced-motion = 0 pins + all six bay titles
+resolved (visibility visible / opacity 1 / clip-path none); 320px scrollW==clientW
+(no overflow). `typecheck` + `lint` clean (project + root strict eslint on the
+touched files). Vitest 54/54. **Playwright 20/20** via the harness-owned flipped-
+GITHUB_BASE webServer build — NOTE: running `BASE_URL=http://localhost:3080 pnpm
+-F atrium-e2e test` against a hand-started NON-flipped build fails the 7 repo-link
+specs (they assert `REPO_LINKS_LIVE`/`codeRepository` live), because Next inlines
+`NEXT_PUBLIC_GITHUB_BASE` at BUILD time and a hand-started `next start` did not bake
+it; let the harness own the build (no BASE_URL) and all 20 pass. This is the env-
+baking seam from the prior State entry, NOT a regression.
+
+### For designer-critic / reviewer to re-examine
+
+- **B-01 layout assignment is by ORDINAL, not by hue/data semantics.** left→right→
+  centre cycles on `(index-1)%3`; light tr→tl→top likewise. Deterministic + clean,
+  but it is a positional rhythm, not a per-project meaning. If a future call wants
+  a specific project in a specific layout (e.g. apex the WebGL piece always
+  centred), thread it off the `Project` instead. Flagged so it is a deliberate
+  choice to revisit, not an accident.
+- **The `-floor` "bathe" mix percentages** (ambient 22/34%, floor pool 64/24%,
+  centre lift 14%) are tuned to read on both grounds without crushing the body
+  contrast. The critic should confirm the type still reads cleanly over the bathed
+  centre at every hue in BOTH themes (it clears AA by construction — type is on
+  `--color-fg`, not on a hue — but verify the perceptual read on apex/atlas light).
+- **B-03 back-third frames** (`02-descent-04/05/06-*`) are now perceptibly
+  different (camera accel + floor bloom + the hand-off rising), but the hand-off
+  bloom peaks near the very end, so its strongest moment is past frame 06's 0.9
+  capture point. If the critic still reads the very-last sliver as quiet, the next
+  lever is shortening the pin further to 0.85vh or starting the hand-off at 0.55.
+- **D-23 hue focus ring** uses `--bay-text` (AA in both themes) so it is safe, but
+  it only applies INSIDE `[data-bay]`; the directory/chrome keep the neutral brand
+  ring. Consistent with "directory untouched."

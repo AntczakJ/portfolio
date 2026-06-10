@@ -96,7 +96,12 @@
   --text-display-bay: clamp(2.75rem, 1.6rem + 5vw, 5.5rem);
   --text-display-bay--line-height: 0.98;
   --text-display-bay--letter-spacing: -0.025em;
-  --text-display: clamp(3rem, 1rem + 10vw, 10rem);
+  /* B-05 / D-20 — the wordmark is a SPECIMEN that must earn five seconds. The
+   * desktop first frame under-committed (ATRIUM ~1/3 the width, dead margins), so
+   * the clamp is opened up: the vw coefficient and the ceiling are raised
+   * (10vw→12vw, 10rem→12.5rem) so on a wide viewport ATRIUM fills the frame the
+   * way the (better) mobile hero already does. */
+  --text-display: clamp(3rem, 0.5rem + 12vw, 12.5rem);
   --text-display--line-height: 0.9;
   --text-display--letter-spacing: -0.03em;
 
@@ -160,19 +165,25 @@
   --bay-tape-text: oklch(0.83 0.1 228);
   --bay-tape-on: oklch(0.18 0.03 238);
 
-  /* meld — collaborative warm orange (multi-user presence, warm paper). */
-  --bay-meld: oklch(0.76 0.135 40);
-  --bay-meld-text: oklch(0.84 0.11 44);
+  /* meld — collaborative warm orange (multi-user presence, warm paper).
+   * D-09: pushed DEEPER + more saturated (L 0.72 / C 0.15) so it separates from
+   * razors-edge in lightness AND chroma, not just hue angle — the two no longer
+   * render as near-identical muddy warm browns. */
+  --bay-meld: oklch(0.72 0.15 38);
+  --bay-meld-text: oklch(0.84 0.115 42);
   --bay-meld-on: oklch(0.2 0.04 38);
 
-  /* razors-edge — brass / warm gold (dark-luxe metallic edge). */
-  --bay-razors-edge: oklch(0.81 0.12 88);
-  --bay-razors-edge-text: oklch(0.86 0.11 90);
-  --bay-razors-edge-on: oklch(0.2 0.03 80);
+  /* razors-edge — brass / bright gold (dark-luxe metallic edge). D-09: lifted to
+   * a BRIGHTER, lower-chroma gold (L 0.84 / C 0.115 / h 96) — distinctly paler +
+   * greener-gold than meld's deep orange, so the meld→razors seam reads as a real
+   * temperature change rather than brown→brown. */
+  --bay-razors-edge: oklch(0.84 0.115 96);
+  --bay-razors-edge-text: oklch(0.88 0.115 95);
+  --bay-razors-edge-on: oklch(0.2 0.03 96);
 
   /* pulse — status green (uptime / incident states). */
   --bay-pulse: oklch(0.78 0.16 150);
-  --bay-pulse-text: oklch(0.85 0.14 152);
+  --bay-pulse-text: oklch(0.85 0.14 150);
   --bay-pulse-on: oklch(0.18 0.04 155);
 
   /* atlas — control-room teal (geospatial ops console). */
@@ -239,30 +250,40 @@
 
   --color-ring: oklch(0.9 0.045 85);
 
-  /* Six bay hues — DARK (D-05 re-spaced wheel; see @theme block above). */
+  /* Six bay hues — DARK (D-05 re-spaced wheel + D-09 meld/razors separation; see
+   * @theme block above for the rationale). Each also ships a `-floor` token: a
+   * deep, low-lightness, alpha-carrying version of the hue used by the bay
+   * light-field to BATHE the whole room in coloured light (B-02 / D-10) — a tinted
+   * floor the type stands on, not a top-edge halo. */
   --bay-tape: oklch(0.74 0.12 230);
   --bay-tape-text: oklch(0.83 0.1 228);
   --bay-tape-on: oklch(0.18 0.03 238);
+  --bay-tape-floor: oklch(0.5 0.14 232);
 
-  --bay-meld: oklch(0.76 0.135 40);
-  --bay-meld-text: oklch(0.84 0.11 44);
+  --bay-meld: oklch(0.72 0.15 38);
+  --bay-meld-text: oklch(0.84 0.115 42);
   --bay-meld-on: oklch(0.2 0.04 38);
+  --bay-meld-floor: oklch(0.52 0.16 36);
 
-  --bay-razors-edge: oklch(0.81 0.12 88);
-  --bay-razors-edge-text: oklch(0.86 0.11 90);
-  --bay-razors-edge-on: oklch(0.2 0.03 80);
+  --bay-razors-edge: oklch(0.84 0.115 96);
+  --bay-razors-edge-text: oklch(0.88 0.115 95);
+  --bay-razors-edge-on: oklch(0.2 0.03 96);
+  --bay-razors-edge-floor: oklch(0.56 0.1 92);
 
   --bay-pulse: oklch(0.78 0.16 150);
-  --bay-pulse-text: oklch(0.85 0.14 152);
+  --bay-pulse-text: oklch(0.85 0.14 150);
   --bay-pulse-on: oklch(0.18 0.04 155);
+  --bay-pulse-floor: oklch(0.5 0.16 152);
 
   --bay-atlas: oklch(0.79 0.12 195);
   --bay-atlas-text: oklch(0.86 0.1 196);
   --bay-atlas-on: oklch(0.18 0.04 198);
+  --bay-atlas-floor: oklch(0.5 0.12 197);
 
   --bay-apex: oklch(0.7 0.13 285);
   --bay-apex-text: oklch(0.81 0.12 286);
   --bay-apex-on: oklch(0.18 0.04 288);
+  --bay-apex-floor: oklch(0.46 0.15 286);
 
   /* ── Volumetric-light / atrium surface hooks (read by Phase 3 chrome + hero;
    *    CSS/SVG gradients + parallax planes, NO WebGL — ADR-001/002). ──────── */
@@ -281,11 +302,13 @@
    *    are slabs of warm light standing on a receding floor; `lit` is the edge
    *    catching the shaft, `shadow` the far side of the round pillar, `edge` the
    *    bright rim. The floor pool is the warm light at the far end of the hall. */
-  --colonnade-lit: oklch(0.82 0.055 84 / 0.62);
-  --colonnade-shadow: oklch(0.4 0.02 78 / 0.05);
-  --colonnade-edge: oklch(0.95 0.05 88 / 0.78);
-  --floor-pool: oklch(0.86 0.06 84 / 0.55);
-  --floor-mid: oklch(0.5 0.03 80 / 0.22);
+  /* B-05 / D-20 — deeper colonnade contrast so the hall reads as real volumetric
+   * depth (the lit edge brighter, the shadow side deeper), not flat trim. */
+  --colonnade-lit: oklch(0.84 0.06 84 / 0.74);
+  --colonnade-shadow: oklch(0.34 0.018 78 / 0.04);
+  --colonnade-edge: oklch(0.97 0.05 88 / 0.9);
+  --floor-pool: oklch(0.88 0.065 84 / 0.62);
+  --floor-mid: oklch(0.5 0.03 80 / 0.24);
   --floor-far: oklch(0.2 0.01 76 / 0);
 }
 
@@ -305,9 +328,14 @@
   --color-border: oklch(0.86 0.012 82);
   --color-border-strong: oklch(0.6 0.016 76);
 
-  --color-fg: oklch(0.27 0.016 70);
-  --color-fg-muted: oklch(0.45 0.016 70);
-  --color-fg-subtle: oklch(0.54 0.015 72);
+  /* D-21 / B-04: the ink is deepened (0.27 → 0.22) so the wordmark reads as a
+   * confident near-black specimen on cream rather than a thin mid-grey — the
+   * perceptual "~2:1 unlit" the critique flagged was a thin-weight-on-cream read,
+   * not a raw-contrast failure (the wordmark also resolves heavier in light, see
+   * the .light .font-display rule below). */
+  --color-fg: oklch(0.22 0.018 68);
+  --color-fg-muted: oklch(0.43 0.016 70);
+  --color-fg-subtle: oklch(0.52 0.015 72);
 
   /* On light, the "light" accent becomes a darkened warm amber so it can read
    * as text / a lit edge against bone. */
@@ -326,31 +354,44 @@
 
   /* Six bay hues — LIGHT (D-05 re-spaced wheel, darkened so each clears AA as
    * text on bone; the text variant is the AA-safe one, the base stays ≥ 3:1 as a
-   * UI boundary). Hue angles track the dark wheel: meld 40 · razors 88 · pulse
-   * 150 · atlas 195 · tape 230 · apex 285. */
+   * UI boundary). Hue angles track the dark wheel: meld 38 · razors 86 · pulse
+   * 152 · atlas 197 · tape 234 · apex 286. D-09: meld is a deep orange, razors a
+   * paler gold — separated in lightness + chroma, not just angle.
+   *
+   * D-12 / B-04: each ships a `-floor` token tuned FOR CREAM — a mid-lightness,
+   * high-chroma version (NOT the desaturating top vignette the old light theme
+   * used) so the bay light-field paints a TINTED FLOOR the type sits on. On a bone
+   * ground the six floors must stay distinguishable, so the floor chroma is kept
+   * high and the hue separation wide. */
   --bay-tape: oklch(0.55 0.13 234);
   --bay-tape-text: oklch(0.5 0.13 236);
   --bay-tape-on: oklch(0.99 0.005 85);
+  --bay-tape-floor: oklch(0.7 0.15 232);
 
-  --bay-meld: oklch(0.57 0.16 42);
-  --bay-meld-text: oklch(0.51 0.17 38);
+  --bay-meld: oklch(0.57 0.16 40);
+  --bay-meld-text: oklch(0.5 0.18 36);
   --bay-meld-on: oklch(0.99 0.005 85);
+  --bay-meld-floor: oklch(0.72 0.17 44);
 
-  --bay-razors-edge: oklch(0.57 0.12 72);
-  --bay-razors-edge-text: oklch(0.51 0.12 68);
-  --bay-razors-edge-on: oklch(0.99 0.005 85);
+  --bay-razors-edge: oklch(0.6 0.12 86);
+  --bay-razors-edge-text: oklch(0.52 0.13 80);
+  --bay-razors-edge-on: oklch(0.2 0.03 96);
+  --bay-razors-edge-floor: oklch(0.82 0.14 92);
 
   --bay-pulse: oklch(0.52 0.15 152);
   --bay-pulse-text: oklch(0.47 0.14 154);
   --bay-pulse-on: oklch(0.99 0.005 85);
+  --bay-pulse-floor: oklch(0.74 0.16 150);
 
   --bay-atlas: oklch(0.52 0.11 197);
   --bay-atlas-text: oklch(0.47 0.1 199);
   --bay-atlas-on: oklch(0.99 0.005 85);
+  --bay-atlas-floor: oklch(0.74 0.12 196);
 
   --bay-apex: oklch(0.48 0.16 286);
   --bay-apex-text: oklch(0.44 0.17 288);
   --bay-apex-on: oklch(0.99 0.005 85);
+  --bay-apex-floor: oklch(0.62 0.16 286);
 
   /* ── Daytime atrium surface (D-03 re-key — architectural daylight, NOT a
    *    flipped dark site). Directional skylight: a warm, slightly off-white core
@@ -359,9 +400,14 @@
    *    floor a warm limestone wash — so the volumetric-light identity survives
    *    the theme, the colonnade reads as a sunlit hall, and the bay hues read as
    *    lit floor rather than floating smudges on white. ──────────────────── */
-  --shaft-core: oklch(0.995 0.018 90 / 0.9);
-  --shaft-mid: oklch(0.95 0.045 82 / 0.55);
-  --shaft-edge: oklch(0.9 0.04 80 / 0);
+  /* D-21 / B-04: the light shaft now has a VISIBLE warm core. The old core was an
+   * almost-white amber that vanished on near-white cream, so the hero read as a
+   * printed (unlit) page. The core is now a saturated warm gold and the mid a real
+   * amber, so a shaft of daylight visibly rakes the wordmark — light reads as LIT,
+   * not bleached. */
+  --shaft-core: oklch(0.92 0.075 84 / 0.85);
+  --shaft-mid: oklch(0.85 0.085 78 / 0.55);
+  --shaft-edge: oklch(0.82 0.06 76 / 0);
   /* The field is a limestone gradient with a brighter daylit top, not flat bone. */
   --field-top: oklch(0.985 0.012 88);
   --field-bottom: oklch(0.9 0.018 78);
@@ -417,6 +463,26 @@
   :focus-visible {
     outline: 2px solid var(--color-light-text) !important;
     outline-offset: 2px !important;
+  }
+
+  /* D-23 — inside a bay (which scopes `--bay-text`), the focus ring ADOPTS the
+   * room's hue, so a focused link in the atlas bay rings teal, in the pulse bay
+   * green. A cohesion win (the focus state joins the per-room light language)
+   * that still clears WCAG 2.2 (every `-text` hue is AA against both grounds). */
+  [data-bay] :focus-visible {
+    outline-color: var(--bay-text) !important;
+  }
+
+  /* D-21 / B-04 — in LIGHT, the hero wordmark resolves HEAVIER at rest. The
+   * thin 440 default that reads fine as glowing light-on-black looks anaemic as
+   * ink-on-cream; a confident 560 makes the specimen hold the page. (Dark keeps
+   * the airy default — the glow carries it there.) The descent still thickens it
+   * to 600 on the drop. */
+  .light [data-descent-wordmark] {
+    font-variation-settings:
+      'opsz' var(--display-opsz),
+      'wght' 560,
+      'SOFT' var(--display-soft) !important;
   }
 
   /* ── Mobile-nav sheet + overlay enter/exit (CSS, keyed off Radix Dialog
@@ -512,16 +578,20 @@
    *    320px stripes sitting right under the wordmark). The full-motion descent
    *    sets its own per-plane opacity via GSAP, overriding this at scrub time. */
   [data-colonnade] {
-    opacity: 0.5;
+    /* B-05 / D-20 — the desktop hall was too dim (0.5) so the payoff frame read
+     * as trim. Lifted to 0.68 so the colonnade reads as real depth behind the
+     * wordmark on desktop, matching the mobile hero's drama. Still dimmed on the
+     * smallest widths so the columns do not crowd the type under ATRIUM (D-11). */
+    opacity: 0.68;
   }
   @media (max-width: 560px) {
     [data-colonnade] {
-      opacity: 0.26;
+      opacity: 0.3;
     }
   }
   @media (max-width: 380px) {
     [data-colonnade] {
-      opacity: 0.16;
+      opacity: 0.18;
     }
   }
 

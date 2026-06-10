@@ -69,6 +69,15 @@ export function Threshold({
         )}
       />
 
+      {/* D-08 — the major seam (the hero→gallery hand-off) carries an ATRIUM ECHO:
+          a faint colonnade-floor glow rising from the bottom so the threshold
+          reads as the lit hall CONTINUING into the bay, not a bare divider. This
+          is the visible doorway the descent's hand-off bloom rises THROUGH, so the
+          bays sit INSIDE the atrium. */}
+      {isMajor ? (
+        <div className="absolute inset-x-0 bottom-0 h-24 bg-[radial-gradient(80%_120%_at_50%_140%,var(--floor-pool),transparent_70%)] opacity-70" />
+      ) : null}
+
       {/* Bay-hue wash — the lit doorway INTO the room carries the room's colour so
           the threshold foreshadows the differently-lit bay ahead (D-04). Stronger
           than before (it was opacity-25 and barely registered), but still resolves

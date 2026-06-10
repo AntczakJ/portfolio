@@ -39,10 +39,12 @@ export function HeroContent(): ReactNode {
         style={{
           fontVariationSettings:
             "'opsz' var(--display-opsz), 'wght' var(--display-wght), 'SOFT' var(--display-soft)",
-          // The wordmark is lit by the shaft: a warm text glow that reads as the
-          // light catching the letterforms. Kept subtle so the type stays sharp.
+          // D-20 — the wordmark stands IN the shaft: a layered warm glow that reads
+          // as the light catching the letterforms (a tight inner catch + a broad
+          // halo), so the desktop hero is lit, not a flat title card. Kept warm and
+          // soft so the type stays sharp.
           textShadow:
-            '0 0 40px color-mix(in oklab, var(--color-light) 35%, transparent)',
+            '0 0 28px color-mix(in oklab, var(--color-light) 50%, transparent), 0 0 90px color-mix(in oklab, var(--color-light) 28%, transparent)',
         }}
       >
         ATRIUM

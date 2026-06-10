@@ -87,8 +87,14 @@ export function BaysSequence({ children }: BaysSequenceProps): ReactNode {
       /**
        * Build one bay's resolve timeline. Used by both the pinned (desktop) and
        * the unpinned reveal (mobile) branches — same composition lands either way.
+       *
+       * D-16: the resolve VARIES per bay (`i`) so the tour reads as authored, not
+       * the same beat six times. The clip-wipe direction alternates (odd bays wipe
+       * from the right), the supporting reveal direction alternates (odd bays rise,
+       * even bays drift in from the side), and the stagger amount alternates — all
+       * derived deterministically from the bay's ordinal (no randomness).
        */
-      const buildBayTimeline = (bay: HTMLElement, scrub: boolean) => {
+      const buildBayTimeline = (bay: HTMLElement, i: number, scrub: boolean) => {
         const ghost = bay.querySelector<HTMLElement>('[data-bay-title-ghost]');
         const final = bay.querySelector<HTMLElement>('[data-bay-title-final]');
         const reveals = gsap.utils.toArray<HTMLElement>(
@@ -96,6 +102,12 @@ export function BaysSequence({ children }: BaysSequenceProps): ReactNode {
           bay,
         );
         const wash = bay.querySelector<HTMLElement>('[data-bay-wash]');
+
+        // Per-bay reveal variation (D-16) — deterministic off the ordinal.
+        const fromLeft = i % 2 === 0; // even bays wipe L→R, odd bays R→L
+        const revealAxis: 'y' | 'x' = i % 2 === 0 ? 'y' : 'x';
+        const revealFrom = i % 2 === 0 ? 18 : i % 4 === 1 ? 28 : -28;
+        const stagger = 0.06 + (i % 3) * 0.03;
 
         // Arm the bay so the ghost starts lit (CSS `[data-bay-armed]`), then set
         // the unresolved START state. Transform/opacity + clip-path + the variable
@@ -110,22 +122,30 @@ export function BaysSequence({ children }: BaysSequenceProps): ReactNode {
         gsap.set(moving, { willChange: 'transform, opacity, clip-path' });
 
         if (ghost) {
-          // The hue ghost starts fully revealed; the scrub wipes it left-to-right.
+          // The hue ghost starts fully revealed; the scrub wipes it away in the
+          // bay's wipe direction (D-16).
           gsap.set(ghost, {
             clipPath: 'inset(0% 0% 0% 0%)',
             autoAlpha: 1,
           });
         }
         if (final) {
-          // The final title resolves IN from a clip on the left + a lighter weight
-          // that settles up to the resting weight.
+          // D-15: the final title starts THIN (light axis, narrow opsz) and
+          // CLIPPED, then settles up to the BOLD resting weight — a 320 → 600
+          // weight gain that is large enough to SEE as a gesture (was 320 → 440, a
+          // near-invisible settle that read as a cross-fade). The clip wipe
+          // direction varies per bay (`fromLeft`), so the resolve reads as authored
+          // motion, not a swap (against Aristide Benoist kinetic type).
           gsap.set(final, {
-            clipPath: 'inset(0% 100% 0% 0%)',
+            clipPath: fromLeft ? 'inset(0% 100% 0% 0%)' : 'inset(0% 0% 0% 100%)',
             fontVariationSettings:
-              "'opsz' 144, 'wght' var(--display-wght-light), 'SOFT' 0",
+              "'opsz' 100, 'wght' var(--display-wght-light), 'SOFT' 0",
           });
         }
-        gsap.set(reveals, { autoAlpha: 0, y: 18 });
+        gsap.set(reveals, {
+          autoAlpha: 0,
+          ...(revealAxis === 'y' ? { y: revealFrom } : { x: revealFrom }),
+        });
         if (wash) gsap.set(wash, { autoAlpha: 0 });
 
         const clearWillChange = () =>
@@ -156,14 +176,17 @@ export function BaysSequence({ children }: BaysSequenceProps): ReactNode {
         if (wash) {
           tl.to(wash, { autoAlpha: 1, ease: 'power1.out', duration: 0.4 }, 0);
         }
-        // The hue ghost wipes away to the right as the final resolves in from the
-        // left — the title "resolves from its stack-coloured signature into a
-        // legible title" (PLAN / ADR-003).
+        // The hue ghost wipes away in the bay's wipe direction as the final
+        // resolves in behind it — the title "resolves from its stack-coloured
+        // signature into a legible title" (PLAN / ADR-003), the wipe direction
+        // alternating per bay (D-16).
         if (ghost) {
           tl.to(
             ghost,
             {
-              clipPath: 'inset(0% 0% 0% 100%)',
+              clipPath: fromLeft
+                ? 'inset(0% 0% 0% 100%)'
+                : 'inset(0% 100% 0% 0%)',
               autoAlpha: 0,
               ease: 'power2.inOut',
               duration: 0.55,
@@ -172,27 +195,31 @@ export function BaysSequence({ children }: BaysSequenceProps): ReactNode {
           );
         }
         if (final) {
+          // Settle the clip open AND the weight up to the BOLD resting axis (the
+          // visible gesture, D-15) — matching the no-JS resting weight so the
+          // cinema and floor agree.
           tl.to(
             final,
             {
               clipPath: 'inset(0% 0% 0% 0%)',
               fontVariationSettings:
-                "'opsz' 144, 'wght' var(--display-wght), 'SOFT' 0",
-              ease: 'power2.out',
-              duration: 0.6,
+                "'opsz' 144, 'wght' var(--display-wght-bold), 'SOFT' 0",
+              ease: 'expo.out',
+              duration: 0.62,
             },
             0.05,
           );
         }
-        // The supporting content reveals in a gentle stagger after the title.
+        // The supporting content reveals in a per-bay stagger + direction (D-16)
+        // after the title — `y` rise on even bays, `x` drift on odd bays.
         tl.to(
           reveals,
           {
             autoAlpha: 1,
-            y: 0,
+            ...(revealAxis === 'y' ? { y: 0 } : { x: 0 }),
             ease: 'power2.out',
             duration: 0.5,
-            stagger: 0.08,
+            stagger,
           },
           0.25,
         );
@@ -242,8 +269,8 @@ export function BaysSequence({ children }: BaysSequenceProps): ReactNode {
       mm.add(
         '(prefers-reduced-motion: no-preference) and (min-width: 768px)',
         () => {
-          bays.forEach((bay) => {
-            buildBayTimeline(bay, true);
+          bays.forEach((bay, i) => {
+            buildBayTimeline(bay, i, true);
           });
           buildThresholdParallax();
         },
@@ -254,8 +281,8 @@ export function BaysSequence({ children }: BaysSequenceProps): ReactNode {
       mm.add(
         '(prefers-reduced-motion: no-preference) and (max-width: 767px)',
         () => {
-          bays.forEach((bay) => {
-            buildBayTimeline(bay, false);
+          bays.forEach((bay, i) => {
+            buildBayTimeline(bay, i, false);
           });
         },
       );
