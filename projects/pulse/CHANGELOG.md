@@ -4,6 +4,10 @@ All notable changes to **pulse** are documented here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Security
+
+- Bumped the `pulse-server` dev dependency `vitest` `^2.1.8` → `^4.1.0` to close **GHSA-5xrq-8626-4rwp / CVE-2026-47429** (critical, CVSS 9.8 — arbitrary file read/exec when the Vitest UI server is network-exposed; no patched 2.x exists). This also reconciles the manifest with the lockfile (which already resolved `vitest@4.1.8`). All `pulse-server` tests pass on 4.1.8 (18 files, 189 passed / 1 skipped).
+
 ### Added
 
 - Project README for the shipped v1: live demo link, the wow-moment description, screenshots (the live board and the demo-incident-down beat, light and dark, plus the public page on mobile), the accurate stack, verified run instructions for the three-process model, architecture notes, the key-decision links, and the testing / quality story.
