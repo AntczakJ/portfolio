@@ -209,5 +209,23 @@ flyctl releases revert <number> -a atrium-demo
 
 ## Cost
 
-Single shared-cpu-1x / 512 MB Machine, one warm instance, EU: **~$3-5 /
-month**. No database, no second service. Bandwidth ~$0 at demo traffic.
+Cost-first config (owner directive 2026-06-10): a SINGLE shared-cpu-1x /
+512 MB Machine with `min_machines_running = 0` (scale fully to zero when
+idle). At idle it bills only the tiny stopped-rootfs — effectively **~$0
+compute**; you pay only for the seconds it actually runs while serving a
+visitor, plus a one-time cold start (~3-4 s, verified) on the first hit
+after an idle period. No database, no second service. Bandwidth ~$0 at
+demo traffic.
+
+This deliberately drops the always-warm `min_machines_running = 1` the
+siblings keep (which costs ~$3-5/month to avoid the cold start). If the
+cold start ever matters more than the bill, bump `min_machines_running`
+back to 1 in `fly.toml` and redeploy. Memory stays at 512 MB (not 256)
+to keep the on-demand OG `ImageResponse` (satori) render off the OOM
+line — the razors-edge precedent; at scale-to-zero this costs nothing
+extra at idle.
+
+To realize zero immediately after a deploy (rather than waiting for the
+idle auto-stop), stop the Machine: `fly machine stop <id> -a atrium-demo`
+(`fly machines list -a atrium-demo` for the id). The next request
+auto-starts it (`auto_start_machines = true`).

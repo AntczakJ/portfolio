@@ -20,13 +20,16 @@
 #   - Single external port (443) → Fly edge TLS terminator → container
 #     internal port 3000 (the conventional Next standalone PORT).
 #   - Region `fra` (EU — owner is in Poznań), matching every sibling.
-#   - `auto_stop_machines = 'stop'` + `min_machines_running = 1`: the app
-#     is stateless and could safely scale to zero, but this is THE
-#     PORTFOLIO FRONT DOOR — a recruiter landing here must not hit a
-#     5-10 s cold-start before the "five-second wow" (the scroll descent
-#     through the ATRIUM wordmark into the colonnade of light). min 1
-#     keeps one Machine warm; `auto_stop` still lets Fly reap any extra
-#     Machines a burst spun up.
+#   - COST-FIRST scaling (owner directive 2026-06-10): `auto_stop_machines
+#     = 'stop'` + `min_machines_running = 0` + a SINGLE Machine. The app is
+#     stateless, so it scales fully to zero when idle — at idle it bills
+#     only the tiny stopped-rootfs, ~$0 compute. The first hit after an
+#     idle period pays a one-time cold start (a few seconds) while Fly
+#     auto-starts the Machine (`auto_start_machines = true`); subsequent
+#     hits are warm. This deliberately trades the "always-warm five-second
+#     wow" the siblings keep (min 1) for the lowest possible bill — the
+#     owner asked for cheapest. Bump `min_machines_running` back to 1 if
+#     the cold start ever matters more than the cost.
 
 app = 'atrium-demo'
 primary_region = 'fra'
@@ -63,12 +66,12 @@ primary_region = 'fra'
   # image, the static assets) is served from it.
   internal_port = 3000
   force_https = true
-  # Keep one Machine warm so the front door loads instantly. `auto_stop`
-  # reaps extras; `min_machines_running = 1` guarantees no cold start on
-  # the canonical demo URL.
+  # Cost-first: scale fully to zero when idle (`min_machines_running = 0`),
+  # auto-start on the first request. ~$0 at idle; one-time cold start after
+  # idle. See the posture note in the header for the trade-off.
   auto_stop_machines = 'stop'
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
   processes = ['app']
 
   [http_service.concurrency]
