@@ -52,15 +52,15 @@ jobs:
       MELD_E2E_TARGET_URL: ${{ github.event.inputs.target_url || 'https://meld-demo.fly.dev' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 11
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -76,7 +76,7 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: meld-e2e-report-${{ github.run_id }}
           path: projects/meld/e2e/playwright-report
@@ -115,15 +115,15 @@ jobs:
           --health-retries 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 11
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -187,7 +187,7 @@ jobs:
 
       - name: Upload meld-server log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: meld-server-log-${{ github.run_id }}
           path: /tmp/meld-server.log
@@ -195,7 +195,7 @@ jobs:
 
       - name: Upload meld-web log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: meld-web-log-${{ github.run_id }}
           path: /tmp/meld-web.log
@@ -203,7 +203,7 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: meld-e2e-report-${{ github.run_id }}
           path: projects/meld/e2e/playwright-report

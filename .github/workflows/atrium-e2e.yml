@@ -52,15 +52,15 @@ jobs:
       BASE_URL: ${{ github.event.inputs.target_url || 'http://localhost:3080' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 11
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -105,7 +105,7 @@ jobs:
 
       - name: Upload web log on failure
         if: failure() && github.event.inputs.target_url == ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: atrium-web-log-${{ github.run_id }}
           path: /tmp/atrium-web.log
@@ -113,7 +113,7 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: atrium-e2e-report-${{ github.run_id }}
           path: projects/atrium/e2e/playwright-report
