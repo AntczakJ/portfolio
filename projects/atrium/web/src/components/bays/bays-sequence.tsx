@@ -97,6 +97,7 @@ export function BaysSequence({ children }: BaysSequenceProps): ReactNode {
       const buildBayTimeline = (bay: HTMLElement, i: number, scrub: boolean) => {
         const ghost = bay.querySelector<HTMLElement>('[data-bay-title-ghost]');
         const final = bay.querySelector<HTMLElement>('[data-bay-title-final]');
+        const edge = bay.querySelector<HTMLElement>('[data-bay-title-edge]');
         const reveals = gsap.utils.toArray<HTMLElement>(
           '[data-bay-reveal]',
           bay,
@@ -109,6 +110,25 @@ export function BaysSequence({ children }: BaysSequenceProps): ReactNode {
         const revealFrom = i % 2 === 0 ? 18 : i % 4 === 1 ? 28 : -28;
         const stagger = 0.06 + (i % 3) * 0.03;
 
+        // D-15: the title's compositional layout drives the wipe AXIS so the
+        // gesture reads with the room, not against it. The centred-specimen bays
+        // (razors-edge/atlas, ordinal cycle index 2) wipe VERTICALLY (a curtain
+        // rising); the left/right wall bays wipe HORIZONTALLY in their reveal
+        // direction. Deterministic off the same ordinal the layout selector uses.
+        const cycle = i % 3; // 0 left · 1 right · 2 centre
+        const wipeAxis: 'x' | 'y' = cycle === 2 ? 'y' : 'x';
+        // The clip-path the FINAL title starts fully clipped at, and the matching
+        // start/end edge positions for the travelling wipe band, per axis +
+        // direction. Horizontal wall bays reveal in their `fromLeft` direction; the
+        // centred curtain always rises (bottom → top).
+        const clipHidden =
+          wipeAxis === 'y'
+            ? 'inset(0% 0% 100% 0%)' // hidden = clipped from the bottom (rises up)
+            : fromLeft
+              ? 'inset(0% 100% 0% 0%)' // hidden = clipped from the right (reveals L→R)
+              : 'inset(0% 0% 0% 100%)'; // hidden = clipped from the left (reveals R→L)
+        const clipOpen = 'inset(0% 0% 0% 0%)';
+
         // Arm the bay so the ghost starts lit (CSS `[data-bay-armed]`), then set
         // the unresolved START state. Transform/opacity + clip-path + the variable
         // font axis only — no layout property animates (CLS-safe).
@@ -117,29 +137,45 @@ export function BaysSequence({ children }: BaysSequenceProps): ReactNode {
         const moving: HTMLElement[] = [];
         if (ghost) moving.push(ghost);
         if (final) moving.push(final);
+        if (edge) moving.push(edge);
         moving.push(...reveals);
         if (wash) moving.push(wash);
         gsap.set(moving, { willChange: 'transform, opacity, clip-path' });
 
         if (ghost) {
-          // The hue ghost starts fully revealed; the scrub wipes it away in the
-          // bay's wipe direction (D-16).
+          // D-15: the hue ghost is the title in its signature colour, fully shown
+          // and UN-clipped at the unresolved start. It is wiped away along the SAME
+          // axis the final reveals along, so the eye reads ONE continuous clip wipe
+          // (hue swept off → legible title swept in) rather than two competing
+          // crossfades. (Was: ghost wiped on `fromLeft` only, decoupled from the
+          // final's clip — which read as a tint swap, not a gesture.)
           gsap.set(ghost, {
-            clipPath: 'inset(0% 0% 0% 0%)',
+            clipPath: clipOpen,
             autoAlpha: 1,
           });
         }
         if (final) {
-          // D-15: the final title starts THIN (light axis, narrow opsz) and
-          // CLIPPED, then settles up to the BOLD resting weight — a 320 → 600
-          // weight gain that is large enough to SEE as a gesture (was 320 → 440, a
-          // near-invisible settle that read as a cross-fade). The clip wipe
-          // direction varies per bay (`fromLeft`), so the resolve reads as authored
-          // motion, not a swap (against Aristide Benoist kinetic type).
+          // D-15: the final title starts THIN (light axis, narrow opsz) and FULLY
+          // CLIPPED along the wipe axis, then the clip travels fully open while the
+          // weight settles up to the BOLD resting axis — a committed clip WIPE
+          // (the leading edge sweeps the whole word) layered with the 320 → 600
+          // weight/opsz settle, so each bay resolves with an unmistakable gesture
+          // (Aristide Benoist kinetic type), not a near-invisible tint settle.
           gsap.set(final, {
-            clipPath: fromLeft ? 'inset(0% 100% 0% 0%)' : 'inset(0% 0% 0% 100%)',
+            clipPath: clipHidden,
             fontVariationSettings:
               "'opsz' 100, 'wght' var(--display-wght-light), 'SOFT' 0",
+          });
+        }
+        if (edge) {
+          // The travelling WIPE EDGE — a thin bright hue band that rides the clip
+          // front across the word as it resolves, so the wipe is legible as MOTION
+          // even at display scale (the gesture the eye locks onto). It starts at
+          // the leading edge (clip front) and sweeps to the trailing edge, fading
+          // out as the title finishes. Same axis/direction as the title clip.
+          gsap.set(edge, {
+            clipPath: clipHidden,
+            autoAlpha: 0,
           });
         }
         gsap.set(reveals, {
@@ -176,38 +212,62 @@ export function BaysSequence({ children }: BaysSequenceProps): ReactNode {
         if (wash) {
           tl.to(wash, { autoAlpha: 1, ease: 'power1.out', duration: 0.4 }, 0);
         }
-        // The hue ghost wipes away in the bay's wipe direction as the final
-        // resolves in behind it — the title "resolves from its stack-coloured
-        // signature into a legible title" (PLAN / ADR-003), the wipe direction
-        // alternating per bay (D-16).
+        // D-15 — the committed clip WIPE. The hue ghost is swept OFF along the wipe
+        // axis (its clip closing to the trailing edge — the inverse of the final's
+        // opening clip) so the hue retreats exactly as the legible title arrives,
+        // reading as one wipe front travelling across the word, not two crossfades.
         if (ghost) {
+          // The ghost's "off" clip is the COMPLEMENT of the final's hidden clip:
+          // wherever the final is still clipped, the ghost still shows (the hue),
+          // and the moving boundary is shared — one front.
+          const ghostOff =
+            wipeAxis === 'y'
+              ? 'inset(100% 0% 0% 0%)' // swept up off the top
+              : fromLeft
+                ? 'inset(0% 0% 0% 100%)' // swept off to the right (L→R front)
+                : 'inset(0% 100% 0% 0%)'; // swept off to the left (R→L front)
           tl.to(
             ghost,
             {
-              clipPath: fromLeft
-                ? 'inset(0% 0% 0% 100%)'
-                : 'inset(0% 100% 0% 0%)',
-              autoAlpha: 0,
+              clipPath: ghostOff,
               ease: 'power2.inOut',
-              duration: 0.55,
+              duration: 0.58,
             },
             0.05,
           );
         }
         if (final) {
-          // Settle the clip open AND the weight up to the BOLD resting axis (the
-          // visible gesture, D-15) — matching the no-JS resting weight so the
-          // cinema and floor agree.
+          // Settle the clip fully OPEN (the wipe front sweeps the whole word) AND
+          // the weight up to the BOLD resting axis — the clip wipe layered with the
+          // 320 → 600 weight/opsz settle (D-15). Matches the no-JS resting weight so
+          // the cinema and the floor agree on the resolved frame.
           tl.to(
             final,
             {
-              clipPath: 'inset(0% 0% 0% 0%)',
+              clipPath: clipOpen,
               fontVariationSettings:
                 "'opsz' 144, 'wght' var(--display-wght-bold), 'SOFT' 0",
               ease: 'expo.out',
               duration: 0.62,
             },
             0.05,
+          );
+        }
+        // The travelling WIPE EDGE band rides the shared front: it appears at the
+        // leading edge, sweeps fully across as the title resolves, and fades out as
+        // it reaches the trailing edge — the bright hue line the eye reads as the
+        // gesture. Slightly faster than the title clip so it leads the front.
+        if (edge) {
+          tl.to(edge, { autoAlpha: 1, ease: 'power1.out', duration: 0.14 }, 0.05);
+          tl.to(
+            edge,
+            { clipPath: clipOpen, ease: 'expo.out', duration: 0.56 },
+            0.05,
+          );
+          tl.to(
+            edge,
+            { autoAlpha: 0, ease: 'power1.in', duration: 0.16 },
+            0.5,
           );
         }
         // The supporting content reveals in a per-bay stagger + direction (D-16)

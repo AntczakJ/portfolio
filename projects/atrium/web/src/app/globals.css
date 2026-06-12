@@ -616,6 +616,17 @@
     opacity: 1;
   }
 
+  /* D-15 — the travelling wipe-edge band (a bright-hue copy of the title that
+   * rides the clip front). It must be INVISIBLE at the resting frame (no-JS /
+   * reduced-motion: nothing frozen mid-wipe, the <h2> alone reads), so it is
+   * hidden by default and only the armed cinema's GSAP timeline reveals + sweeps
+   * it. GSAP drives `autoAlpha` (opacity + visibility) once armed, overriding
+   * this resting hide. */
+  [data-bay-title-edge] {
+    opacity: 0;
+    visibility: hidden;
+  }
+
   /* Reduced-motion floor; GSAP sites add their own `gsap.matchMedia()` reduced
    * branches on top of this (ADR-002/003 three-tier contract). */
   @media (prefers-reduced-motion: reduce) {

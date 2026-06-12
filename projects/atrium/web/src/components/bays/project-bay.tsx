@@ -177,6 +177,27 @@ export function ProjectBay({ project, index }: ProjectBayProps): ReactNode {
         >
           {project.name}
         </span>
+        {/* D-15 — the travelling WIPE EDGE. A third layered copy of the word in
+            the BRIGHT signature hue with a hue glow; the sequence clips it to ride
+            the wipe front across the title as it resolves, so the resolve reads as
+            an unmistakable clip wipe (a bright leading edge sweeping the word) and
+            not a tint settle. aria-hidden (the <h2> below is the only a11y copy);
+            invisible at the resting frame (no-JS / reduced-motion) — only the armed
+            cinema reveals it. */}
+        <span
+          aria-hidden
+          data-bay-title-edge
+          className="font-display text-display-bay pointer-events-none absolute inset-0 leading-[0.98] tracking-tight select-none"
+          style={{
+            color: 'var(--bay)',
+            fontVariationSettings:
+              "'opsz' 144, 'wght' var(--display-wght-bold), 'SOFT' 0",
+            textShadow:
+              '0 0 24px color-mix(in oklab, var(--bay) 80%, transparent)',
+          }}
+        >
+          {project.name}
+        </span>
         <h2
           id={`${bayId(project.slug)}-title`}
           data-bay-title-final

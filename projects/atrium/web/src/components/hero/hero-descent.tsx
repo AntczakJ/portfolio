@@ -114,24 +114,33 @@ export function HeroDescent({ children }: HeroDescentProps): ReactNode {
           },
         });
 
-        // ── B-03 / D-13 re-choreography. The back third was DEAD SCROLL: under a
-        // fixed 1100px perspective, a LINEAR camera Z made the far-Z steps move
-        // almost no pixels, so frames 04/05/06 looked identical while the user kept
-        // scrolling. Two fixes: (1) the camera Z now rides `power2.in` — equal
-        // scroll buys MORE visual travel late, so the back third reads as
-        // accelerating into the hall instead of freezing; (2) the pin is shortened
-        // (opts.pin, 1.0vh desktop) so it ends nearer the perceived end of the
-        // choreography; (3) a genuine SECOND BEAT — the bay-1 threshold blooming up
-        // from below (`[data-descent-handoff]`) — fills the back third, so even
-        // where the camera delta is smallest something new is arriving.
+        // ── B-03 / D-13 / N-01 re-choreography. The back third was DEAD SCROLL:
+        // under a fixed 1100px perspective, a LINEAR camera Z made the far-Z steps
+        // move almost no pixels, so frames 04/05/06 looked identical while the user
+        // kept scrolling. The first pass eased + shortened it; the VERIFICATION
+        // judged the back third "still gentle" (N-01). This pass commits to the
+        // back third specifically — front + middle are good and untouched: (1) the
+        // camera Z rides `power3.in` (steeper accel) — equal scroll buys clearly
+        // MORE visual travel late; (2) the pin is trimmed further (opts.pin, 0.85vh
+        // desktop) so there is no soft tail; (3) the SECOND BEAT — the bay-1
+        // threshold blooming up from below (`[data-descent-handoff]`) — is
+        // strengthened to OWN the back third (more travel + a scale-up, starting at
+        // 0.56), so even where the camera delta is smallest the lit doorway is
+        // visibly sweeping up into frame.
 
         // The CAMERA — the colonnade stage pushes forward in Z across the FULL
-        // scrub. `power2.in` front-loads less and accelerates the late travel, so
-        // the perspective-foreshortened back end still reads as motion (B-03).
+        // scrub. The back third was VERIFIED as "still gentle" (N-01): under the
+        // fixed 1100px perspective, a `power2.in` Z still spent too little of its
+        // pixel-travel late. Stepped to `power3.in` (a steeper cubic accel) so the
+        // FRONT + MIDDLE stay exactly as good as before (the curve is still gentle
+        // early) while the LATE third buys clearly more visual travel — the camera
+        // visibly rushes the last stretch into the hall instead of drifting. The
+        // camZ reach is also lifted a touch on each branch so the steeper curve
+        // does not net out to less total late motion.
         tl.fromTo(
           '[data-colonnade-stage]',
           { z: 0 },
-          { z: opts.camZ, duration: 1, ease: 'power2.in' },
+          { z: opts.camZ, duration: 1, ease: 'power3.in' },
           0,
         );
 
@@ -191,12 +200,17 @@ export function HeroDescent({ children }: HeroDescentProps): ReactNode {
         );
 
         // Phase B — the floor light POOL blooms up through the back half: the warm
-        // light at the end of the hall rises as the camera approaches it.
+        // light at the end of the hall rises as the camera approaches it. NOTE the
+        // floor owns a CSS-3D `rotateX(80deg)` placement transform, so the descent
+        // must only animate its OPACITY here (a GSAP `scale`/translate would
+        // decompose and clobber the rotateX, the same trap the columns warn about).
+        // The back-third strengthening is carried by the camera accel + the
+        // hand-off below (both transform-safe), not by the floor.
         tl.fromTo(
           '[data-colonnade-floor]',
           { autoAlpha: 0.2 },
-          { autoAlpha: 1, ease: 'power2.inOut', duration: 0.7 },
-          0.35,
+          { autoAlpha: 1, ease: 'power2.inOut', duration: 0.72 },
+          0.32,
         );
 
         // Phase B — the single shaft widens into the lit hall, resolving late so
@@ -209,17 +223,27 @@ export function HeroDescent({ children }: HeroDescentProps): ReactNode {
         );
 
         // ── B-03 SECOND BEAT — the bay-1 threshold blooms UP FROM BELOW through
-        // the back third (0.62 → 1). This is the new event the critique asked for:
-        // even where the camera's far-Z delta is smallest, the hand-off doorway is
-        // rising into frame, so the descent never reads finished. It is the
-        // hero→gallery threshold echo (D-08) anchored to the hero so the bays feel
-        // INSIDE the atrium — the lit doorway arriving as the hall fully opens.
-        // Transform/opacity only; the element is hero-local and aria-hidden.
+        // the back third. This is the new event that fills the perceptually-quiet
+        // late camera window. The VERIFICATION flagged the back third as still
+        // gentle (N-01), with the old hand-off peaking past the captured end, so it
+        // is strengthened to OWN the back third: it starts a touch earlier (0.56),
+        // travels further (yPercent 64 → 0 — a clearly perceptible rise) AND scales
+        // up as it arrives (1 → 1.08), so the lit doorway visibly sweeps up into
+        // frame across the last third instead of barely peeking in at the very end.
+        // The doorway is the hero→gallery threshold echo (D-08) anchored to the
+        // hero so the bays feel INSIDE the atrium. Transform/opacity only; the
+        // element is hero-local and aria-hidden.
         tl.fromTo(
           '[data-descent-handoff]',
-          { autoAlpha: 0, yPercent: 40 },
-          { autoAlpha: 1, yPercent: 0, ease: 'power2.out', duration: 0.42 },
-          0.62,
+          { autoAlpha: 0, yPercent: 64, scale: 1 },
+          {
+            autoAlpha: 1,
+            yPercent: 0,
+            scale: 1.08,
+            ease: 'power2.out',
+            duration: 0.48,
+          },
+          0.56,
         );
 
         if (!opts.farPlane) {
@@ -243,12 +267,14 @@ export function HeroDescent({ children }: HeroDescentProps): ReactNode {
         () => {
           buildDescent({
             scale: 3.4,
-            // B-03: pin shortened 1.2 → 1.0vh so it ends nearer the perceived end
-            // of the choreography; combined with the power2.in camera + the
-            // hand-off second beat, the back third is no longer dead scroll.
-            pin: 1.0,
+            // B-03 / N-01: pin trimmed further 1.0 → 0.85vh so there is no soft
+            // tail — the pin now ends right at the perceived end of the
+            // choreography. Combined with the steeper power3.in camera, the deeper
+            // camZ reach, and the strengthened hand-off rising through the back
+            // third, late scroll now produces clearly perceptible change.
+            pin: 0.85,
             farPlane: true,
-            camZ: 900,
+            camZ: 1000,
             restHint: 1,
           });
         },
@@ -262,9 +288,11 @@ export function HeroDescent({ children }: HeroDescentProps): ReactNode {
         () => {
           buildDescent({
             scale: 2.4,
-            pin: 0.8,
+            // N-01 on mobile too: a slightly shorter pin + deeper camZ so the
+            // lighter phone descent also lands its motion in the back third.
+            pin: 0.7,
             farPlane: false,
-            camZ: 620,
+            camZ: 720,
             restHint: 0.4,
           });
         },
@@ -306,10 +334,10 @@ export function HeroDescent({ children }: HeroDescentProps): ReactNode {
           data-descent-handoff
           data-descent-move
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-0 -z-0 h-[34vh] opacity-0"
+          className="pointer-events-none absolute inset-x-0 bottom-0 -z-0 h-[42vh] opacity-0"
         >
-          <div className="absolute inset-x-0 bottom-0 h-px bg-[linear-gradient(90deg,transparent,var(--shaft-core)_42%,var(--shaft-core)_58%,transparent)]" />
-          <div className="absolute inset-x-0 bottom-0 h-40 bg-[radial-gradient(60%_100%_at_50%_100%,var(--shaft-mid),transparent_72%)]" />
+          <div className="absolute inset-x-0 bottom-0 h-px bg-[linear-gradient(90deg,transparent,var(--shaft-core)_40%,var(--shaft-core)_60%,transparent)]" />
+          <div className="absolute inset-x-0 bottom-0 h-56 bg-[radial-gradient(64%_100%_at_50%_100%,var(--shaft-mid),transparent_72%)]" />
         </div>
 
         {/* The composed content — REAL DOM (LCP + reduced-motion + no-JS floor).
