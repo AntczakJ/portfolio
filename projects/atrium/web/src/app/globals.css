@@ -616,6 +616,27 @@
     opacity: 1;
   }
 
+  /* ── The per-bay PREVIEW STILL theme swap (atrium v2 / Task 4.5) ──────────
+   * Both the dark and the light still render in the DOM; this swaps which is
+   * visible against the `.dark` / `.light` class next-themes writes on <html>
+   * — the same class strategy the rest of the site themes against. The :root is
+   * dark-canonical, so the DARK still shows on the SSR first paint (no theme
+   * flash) and the swap needs no JS (works under the no-JS / reduced-motion
+   * floor too). The light still is always aria-hidden=""; the dark still always
+   * carries the accessible alt, so the a11y name is stable across themes. */
+  [data-preview-still-light] {
+    display: none;
+  }
+  [data-preview-still-dark] {
+    display: block;
+  }
+  .light [data-preview-still-light] {
+    display: block;
+  }
+  .light [data-preview-still-dark] {
+    display: none;
+  }
+
   /* D-15 — the travelling wipe-edge band (a bright-hue copy of the title that
    * rides the clip front). It must be INVISIBLE at the resting frame (no-JS /
    * reduced-motion: nothing frozen mid-wipe, the <h2> alone reads), so it is

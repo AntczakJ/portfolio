@@ -5,7 +5,19 @@ All notable changes to **atrium** are documented here. The format follows [Keep 
 ## [Unreleased]
 
 - **Host at the portfolio root domain.** atrium is deployed at `atrium-demo.fly.dev`; the eventual decision to point a root domain at it (rather than the per-project demo subdomain) is still open.
-- **Per-bay preview stills.** Each bay reserves a no-reflow media slot and the `Project` schema carries an optional `previewImage`; sourcing six optimised AVIF preview stills (captured, optimised, never the LCP) is the planned enrichment.
+
+## [0.2.0] — 2026-06-12
+
+### Added
+
+- **Per-bay preview stills (the long-reserved Task 4.5 / ADR-003 enrichment).** Each bay now carries a recruiter-legible PREVIEW STILL of the actual showcase, dropped into the reserved no-reflow `data-bay-media` slot, so the tour shows what each project IS at a glance. One representative hero frame per project, theme-matched (a dark still in the dark theme, a light still in the light theme): tape's live footprint/orderflow chart, meld's collaborative whiteboard, razor's edge's cinematic hero, pulse's live status board, apex's WebGL car configurator, atlas's MapLibre control-room map — every source is the portfolio's own committed screenshot of that project.
+- **A committed, reproducible optimizer (`web/scripts/optimize-preview-stills.mjs`, sharp — already a devDependency).** Reads the chosen source PNGs, crops each to one consistent 16:10 frame at 1120px width, and emits optimized AVIF into `src/assets/preview-stills/` (12 stills, ~242 KB total). The stills are STATIC-IMPORTED by `next/image` so they emit into `.next/static` — atrium stays without a `public/` dir (no Dockerfile change). They are served `unoptimized` (already AVIF) so there is no `/_next/image` round-trip and no runtime image dependency on the Fly machine; `img-src 'self'` covers them with no CSP change.
+- **The `PreviewStill` component (`web/src/components/bays/preview-still.tsx`).** A server component that renders the theme-matched pair (both stills in the DOM; a CSS class swap against the `.dark` / `.light` class shows one per theme, so it works on the SSR first paint and under no-JS). It sits in a hue-tinted inset frame lit by the bay's `--bay` token (a thin hue border + soft glow + a faint top-light sheen) so it reads as a framed plate lit by the room, secondary to the title. It is NEVER the LCP (lazy-loaded; the hero wordmark stays the LCP), reserves its box (no CLS), and carries no still-specific motion (present + static under reduced motion). It composes in all three bay layouts (wall-left, wall-right/mirrored, centred-specimen).
+- The `Project` schema's optional `previewImage` field is now populated for all six projects (the slug key the `PreviewStill` resolves to its AVIF pair); the v1 type-and-light floor still reads complete for any project without it.
+
+### Notes
+
+- Provenance recorded in the optimizer script + `docs/preview-stills-shots/` (the new integrated frames). Verified on the production build: 7 pin-spacers, 0 CSP violations, 0 console/page/request errors (no 404 on the stills), the LCP is still the `ATRIUM` wordmark (text), reduced-motion stays clean (0 pins, all six titles resolved, the stills present + static), and 320px has zero horizontal overflow. Vitest 61/61, Playwright 20/20, typecheck + lint clean. B-01..B-05 did not regress; the directory and about were untouched.
 
 ## [0.1.1] — 2026-06-10
 
@@ -68,5 +80,6 @@ Initial build of atrium: the portfolio's front door — a single, scroll-driven 
 - This `CHANGELOG.md`, and the end-user-facing `README.md` (pitch, demo status, screenshots of the descent and the bays in both themes and on mobile, stack, run instructions, architecture notes, key decisions, and the v2 path), with a committed screenshot-capture script (`e2e/capture-readme-screenshots.mjs`).
 
 [Unreleased]: https://keepachangelog.com/en/1.1.0/
+[0.2.0]: https://keepachangelog.com/en/1.1.0/
 [0.1.1]: https://keepachangelog.com/en/1.1.0/
 [0.1.0]: https://keepachangelog.com/en/1.1.0/

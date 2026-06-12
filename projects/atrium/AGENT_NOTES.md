@@ -915,3 +915,44 @@ The two OPTIONAL LOW residuals the live-site verification logged (`docs/verify-p
 - **The edge band uses `var(--bay)` (the bright base hue), NOT `--bay-text`.** It is decorative (aria-hidden, transient, never text the user reads as content), so it is not held to the 4.5:1 text target — the legible title is always the `<h2>` on `--color-fg`. If a future critic wants the wipe edge brighter/dimmer per theme, tune the textShadow mix or swap to `--bay-text`; both are safe.
 - **N-01 is closed but there is headroom if a future pass wants MORE drama:** the camera could go `power4.in` and/or the pin trim to 0.8vh, but I stopped at power3.in + 0.85vh deliberately — pushing further risks the "overshoot into jarring" the brief warned against (the front+middle must stay calm). Judge on the frames before steepening more.
 - **No CSP/eval surface added** — the edge is pure DOM + GSAP transform/opacity/clip-path, the same clean posture as the existing ghost/final. The strict production CSP (no unsafe-eval) and the dev-only NODE_ENV branch in `next.config.ts` were not touched.
+
+## frontend-engineer — v2 PREVIEW STILLS (Task 4.5, the reserved data-bay-media slot completed) (2026-06-12)
+
+The long-deferred per-bay PREVIEW STILL enrichment shipped — completing the original ADR-003 design (the `data-bay-media` no-reflow slot + the optional `previewImage` field), not adding new scope. Each bay now shows a recruiter-legible hero still of the actual showcase, theme-matched + hue-lit, secondary to the title.
+
+### Source shots (from EXISTING committed sibling screenshots — no deployed app woken)
+
+One strongest hero frame per project, dark + light pair, chosen for "this is what the project IS at a glance":
+
+- **tape** — `tape/docs/screenshots/live-render-3.3-3.4.png` (dark) + `live-render-light.png` (light): the live Canvas2D footprint/orderflow chart.
+- **meld** — `meld/docs/screenshots/board-dark.png` + `board-light.png`: the collaborative whiteboard (shapes + presence).
+- **razors-edge** — `razors-edge/docs/screenshots/hero-dark.png` + `hero-light.png`: the cinematic dark-luxe hero wordmark (the blade-sweep showpiece frame).
+- **pulse** — `pulse/docs/screenshots/board-dark.png` + `board-light.png`: the live status board (monitor card + the "back up" toast).
+- **apex** — `apex/docs/screenshots/configurator-desktop-dark.png` + `configurator-desktop-light.png`: the WebGL 3D car configurator (chosen over the marketing hero — apex IS the configurator). NOTE the configurator stage is a LIGHT canvas even in the dark-theme app shell, so apex-dark reads as a light plate; it frames fine on the dark ground via the hue inset.
+- **atlas** — `atlas/docs/screenshots/dashboard-dark.png` + `dashboard-light.png`: the MapLibre control-room fleet map.
+
+### Pipeline / assets (committed, reproducible)
+
+- `web/scripts/optimize-preview-stills.mjs` (sharp — already a devDep, build-time only) crops every source to ONE 16:10 frame at 1120px (cover, centre) and emits AVIF (q52, effort6, 4:2:0) into `web/src/assets/preview-stills/<slug>-{dark,light}.avif`. 12 stills, **~242 KB total**. Re-run with `node scripts/optimize-preview-stills.mjs` from `web/`. Provenance (own screenshots) recorded in the script header.
+- **STATIC-IMPORTED** by `next/image` in `preview-still.tsx` (`import x from '@/assets/preview-stills/...avif'`), so they emit into `.next/static/media` (confirmed 12 files) — atrium stays WITHOUT a `public/` dir (the Dockerfile has NO `web/public` COPY; static imports need none — do NOT add one). Served `unoptimized` because the asset is ALREADY AVIF at the target width: no `/_next/image` round-trip, no runtime sharp on the Fly machine, and `img-src 'self'` covers `.next/static` with NO CSP change (no remote host added).
+- AVIF only (no webp/png fallback) — the evergreen target supports AVIF universally; a fallback would only add weight. Judgement call per the brief.
+
+### Component + integration
+
+- `web/src/components/bays/preview-still.tsx` (SERVER) — renders BOTH the dark + light `StaticImageData` via `next/image`; a CSS class swap (`globals.css`: `[data-preview-still-light]{display:none}` by default, `.light` flips it) shows one per theme. `:root` is dark-canonical so the DARK still shows on the SSR first paint with no flash and the swap needs NO JS (works under the no-JS / reduced-motion floor). The light still is always `aria-hidden=""`; the dark still always carries the accessible alt — stable a11y name across themes.
+- Lit by the bay hue: a thin `--bay` border + a soft outer hue glow + a faint top-light sheen, so it reads as a framed plate LIT by the room, not a bare rectangle. Quiet — never out-ranks the `<h2>` (the D-06 lesson).
+- `loading="lazy"` (NEVER `priority`) so it is never the LCP; box reserved by the static intrinsic ratio (`aspect-[16/10]`) so it adds NO CLS; NO still-specific motion (present + static; the one gentle `data-bay-reveal` entrance it shares is fully neutralised by the sequence's `reduced` matchMedia branch).
+- Wired into the reserved `data-bay-media` slot in `project-bay.tsx`. It composes in ALL THREE layouts: wall-left (tops the right rail), wall-right/mirrored (the left plate), centred-specimen (spans full-width below the centred text — the inner wow-note/stack grid sits beneath). `previewImage` gates it; absent → the v1 type-and-light floor still reads complete.
+- `data/projects.ts`: `previewImage` populated for all six = the slug key (the component's `STILLS` map resolves slug → AVIF pair). `projects.test.ts` asserts presence (+7 tests). The single-seam github guard was NOT touched.
+
+### Verification (PRODUCTION build, `next start` :3080, `e2e/verify-preview-stills.mjs`)
+
+7 pin-spacers desktop · 0 CSP violations · 0 console/page errors · 0 non-favicon req failures · 0 HTTP >=400 (no 404 on stills) · all 6 stills load + lazy in BOTH themes · **LCP = the H1 "ATRIUM" wordmark (text LCP, `url:""`, size 389368) — NOT a still** · reduced-motion = 0 pins + all 6 titles resolved + 6 stills present/visible/loaded (static) · 320px scrollW==clientW. `verify-polish.mjs` re-run = ALL CHECKS PASS (B-01..B-05 no regression). Vitest 61/61, Playwright 20/20, typecheck + lint clean.
+
+### Gotchas / for reviewer + designer-critic
+
+- **`page.addInitScript` MUST be awaited in the .mjs drivers** — an un-awaited call races the navigation and the init script (CSP + LCP observers) silently never registers (the LCP observer then never fires → `window.__lcp` stays null, a false "LCP is a still" failure). `verify-preview-stills.mjs` awaits it; cost me a debugging loop.
+- **LCP discriminator = the entry's `url`.** A TEXT LCP (the wordmark) has `url:""`; an IMAGE LCP carries the source URL. In headless the `.element` ref is sometimes omitted for a text LCP, so do NOT rely on `.element` — assert on empty `url` (+ tag != IMG when present). This is the robust "the still is never the LCP" check.
+- **One transient Playwright flake on the first full harness run** — the theme-toggle "no CSP eval" test timed out on `click` with the toggle "outside of the viewport" (a scroll-settle race during `revealHeader`), NOT a CSP/assertion failure and NOT stills-related (the fixed header + toggle are far above the stills). Re-ran green twice. Hardened `revealHeader` (`tests/theme-toggle.spec.ts`) with a 250 ms settle + `scrollIntoViewIfNeeded()` so it self-heals; in CI `retries:1` already covered it.
+- **apex-dark is a light-canvas plate** (the configurator stage is light even in the dark app) — intentional, frames fine on the dark ground via the hue inset. If a future critic wants a darker apex-dark, swap the source to `hero-desktop-dark.png` and re-run the optimizer.
+- **No new runtime dep, no public/ dir, CSP untouched, dev-only NODE_ENV CSP branch untouched, GITHUB_BASE/repo behaviour untouched** — only `previewImage` populated. The frames are in `docs/preview-stills-shots/`.

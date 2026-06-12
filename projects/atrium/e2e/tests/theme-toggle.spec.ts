@@ -26,7 +26,12 @@ async function revealHeader(landing: LandingPage): Promise<void> {
     }, y);
     await landing.page.waitForTimeout(120);
   }
+  // Settle the scroll so the fixed header is stable in the viewport before the
+  // click (without this beat the toggle could be mid-scroll "outside of the
+  // viewport" when Playwright retries the click — a timing flake, not a defect).
+  await landing.page.waitForTimeout(250);
   await expect(landing.themeToggle()).toBeVisible();
+  await landing.themeToggle().scrollIntoViewIfNeeded();
 }
 
 test.describe('theme toggle — both themes, persistence, no FOUC', () => {

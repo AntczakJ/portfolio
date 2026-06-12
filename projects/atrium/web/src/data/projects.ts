@@ -26,6 +26,15 @@ import {
  *     bay renders the U2 disabled affordance (gated on `REPO_LINKS_LIVE`), never
  *     navigating to the placeholder.
  *   - `wowMoment` is authored from each project's own five-second hook.
+ *   - `previewImage` is the bay's PREVIEW STILL key (the atrium v2 enrichment,
+ *     the long-reserved Task 4.5). It is the project SLUG; the bay's
+ *     `PreviewStill` component resolves it to a theme-matched dark+light AVIF
+ *     pair (static-imported from `src/assets/preview-stills/<slug>-{dark,light}.avif`,
+ *     so the stills emit into `.next/static` and atrium needs NO `public/` dir).
+ *     Each still is the portfolio's OWN committed screenshot of that project,
+ *     cropped + optimised by `scripts/optimize-preview-stills.mjs` (provenance in
+ *     that script + `docs/preview-stills-shots/`). The still is NEVER the LCP and
+ *     is lazy-loaded (the hero wordmark stays the LCP).
  *   - `year` is a fixed field (determinism — no `Date.now()`).
  */
 
@@ -60,6 +69,7 @@ const rawProjects = [
       'A live Canvas2D footprint chart redrawing the order book in real time, fed by a Rust aggregation worker over MessagePack.',
     demoUrl: 'https://tape-demo.fly.dev',
     repoUrl: repoUrlFor('tape'),
+    previewImage: 'tape',
     year: 2026,
   },
   {
@@ -85,6 +95,7 @@ const rawProjects = [
       'Sub-100 ms multi-user presence, with CRDT auto-merge silently reconciling every edit made offline the instant a peer reconnects.',
     demoUrl: 'https://meld-demo.fly.dev',
     repoUrl: repoUrlFor('meld'),
+    previewImage: 'meld',
     year: 2026,
   },
   {
@@ -109,6 +120,7 @@ const rawProjects = [
       'A scroll-driven straight-razor blade sweeps across the wordmark and slices it open to reveal the portrait beneath.',
     demoUrl: 'https://razors-edge-demo.fly.dev',
     repoUrl: repoUrlFor('razors-edge'),
+    previewImage: 'razors-edge',
     year: 2026,
   },
   {
@@ -135,6 +147,7 @@ const rawProjects = [
       'A self-driving incident state machine that opens, escalates, and resolves incidents on its own, pushed live to the status board over SSE.',
     demoUrl: 'https://pulse-demo-web.fly.dev',
     repoUrl: repoUrlFor('pulse'),
+    previewImage: 'pulse',
     year: 2026,
   },
   {
@@ -160,6 +173,7 @@ const rawProjects = [
       'A genuine WebGL 3D car configurator with live colour and wheel swaps, degrading cleanly across four hardware tiers.',
     demoUrl: 'https://apex-rentals.fly.dev',
     repoUrl: repoUrlFor('apex'),
+    previewImage: 'apex',
     year: 2026,
   },
   {
@@ -186,6 +200,7 @@ const rawProjects = [
       'A MapLibre control-room map gliding the whole fleet at 60 fps between 1 Hz telemetry ticks, with live ETAs and geofence events.',
     demoUrl: 'https://atlas-ops.fly.dev',
     repoUrl: repoUrlFor('atlas'),
+    previewImage: 'atlas',
     year: 2026,
   },
 ];

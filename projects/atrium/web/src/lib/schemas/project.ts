@@ -93,7 +93,11 @@ export const projectSchema = z
     demoUrl: z.url(),
     /** Derived from `GITHUB_BASE` — never inline. Validated as a URL. */
     repoUrl: z.url(),
-    /** Optional AVIF preview thumbnail (Task 4.5, non-blocking; never the LCP). */
+    /**
+     * Optional preview-still KEY (Task 4.5, the atrium v2 enrichment). When set,
+     * it is the project slug; the bay's `PreviewStill` resolves it to a
+     * theme-matched dark+light AVIF pair (static-imported, lazy, never the LCP).
+     */
     previewImage: z.string().optional(),
     /** Fixed year (deterministic — not computed). */
     year: z.number().int(),

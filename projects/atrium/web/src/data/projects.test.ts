@@ -137,6 +137,23 @@ describe('PROJECTS — accent token matches slug', () => {
   });
 });
 
+describe('PROJECTS — preview still (atrium v2 / Task 4.5)', () => {
+  // Every bay now carries a per-bay PREVIEW STILL key. The key is the slug; the
+  // bay's `PreviewStill` resolves it to a theme-matched dark+light AVIF pair
+  // static-imported from `src/assets/preview-stills/`.
+  it.each(CANONICAL_ORDER)('%s carries a previewImage key equal to its slug', (slug) => {
+    const project = PROJECTS.find((p) => p.slug === slug);
+    expect(project?.previewImage).toBe(slug);
+  });
+
+  it('every project has a previewImage set (the v2 enrichment is complete)', () => {
+    for (const project of PROJECTS) {
+      expect(typeof project.previewImage).toBe('string');
+      expect(project.previewImage?.length).toBeGreaterThan(0);
+    }
+  });
+});
+
 /**
  * THE GUARD (ADR-001 / ADR-003 / AGENT_NOTES): there must be exactly ONE
  * hardcoded `github.com` literal in actual CODE across the whole `src/` tree —

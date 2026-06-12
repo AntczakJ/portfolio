@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 
+import { PreviewStill } from '@/components/bays/preview-still';
 import { ProjectLinks } from '@/components/directory/repo-affordance';
 import type { Project } from '@/lib/schemas/project';
 import { bayId } from '@/lib/site-nav';
@@ -28,6 +29,16 @@ import { bayId } from '@/lib/site-nav';
  * The light source ALSO moves per room (top-right / top-left / overhead), so no
  * two adjacent rooms are lit from the same direction. All bound by the same hue
  * system, rhythm, and type — clearly the same atrium, six distinct bays.
+ *
+ * ── atrium v2: the per-bay PREVIEW STILL (Task 4.5, now completed) ──────────
+ * The reserved `data-bay-media` slot now carries a theme-matched, hue-lit
+ * PREVIEW STILL of the actual showcase (the `PreviewStill` component), gated on
+ * the project's `previewImage` key. It enriches the bay — showing what each
+ * project IS at a glance — without out-ranking the title (D-06) or fighting the
+ * lit-room composition. It is NEVER the LCP (lazy, the hero wordmark stays the
+ * LCP), reserves its box so it adds no CLS, and carries no still-specific motion
+ * (present + static under reduced motion). A bay with no `previewImage` still
+ * reads complete on the type-and-light floor (the v1 behaviour).
  *
  * ── B-02 / D-10: the hue BATHES the room (it does not halo it) ──────────────
  * The light-field now floods the WHOLE bay with the hue: a broad ambient tint
@@ -255,17 +266,29 @@ export function ProjectBay({ project, index }: ProjectBayProps): ReactNode {
     </div>
   );
 
-  // ── The detail column — wow-note (promoted, D-18) + the ruled stack spec
-  //    (D-19). Reserved as the slot a Task-4.5 preview still would drop into.
+  // ── The PREVIEW STILL (atrium v2 / Task 4.5) — the recruiter-legible hero
+  //    frame of the actual showcase, theme-matched + lit by the bay hue. It is
+  //    secondary to the title (never the LCP, lazy, no still-specific motion);
+  //    it drops into the RESERVED `data-bay-media` slot. The `previewImage` key
+  //    on the project gates it (present for all six in v2; absent reads complete
+  //    on the type-and-light floor, the v1 behaviour). Shares the bay's gentle
+  //    `data-bay-reveal` entrance (fully neutralised under reduced motion).
+  const previewStill = project.previewImage ? (
+    <div data-bay-reveal>
+      <PreviewStill slug={project.slug} name={project.name} />
+    </div>
+  ) : null;
+
+  // ── The detail column — the preview still (atrium v2) + wow-note (promoted,
+  //    D-18) + the ruled stack spec (D-19), in the reserved `data-bay-media`
+  //    slot. On the wall layouts (left/right) the still tops a vertical stack;
+  //    on the centred-specimen layout it spans the full row above the two-column
+  //    wow-note/stack split, so it composes in every layout (no overflow, no
+  //    broken grid).
   const detailColumn = (
-    <div
-      data-bay-media
-      className={
-        isCentre
-          ? 'grid gap-x-12 gap-y-8 sm:grid-cols-2'
-          : 'flex flex-col gap-9'
-      }
-    >
+    <div data-bay-media className="flex flex-col gap-9">
+      {previewStill}
+      <div className={isCentre ? 'grid gap-x-12 gap-y-8 sm:grid-cols-2' : 'flex flex-col gap-9'}>
       {/* D-18 — the wow-moment is PROMOTED to a clear secondary, out-ranking the
           stack. It was over-demoted to a tiny far-right label the eye never
           reached; now it is the largest supporting text on the bay — a hue-ruled
@@ -308,6 +331,7 @@ export function ProjectBay({ project, index }: ProjectBayProps): ReactNode {
             </li>
           ))}
         </ul>
+      </div>
       </div>
     </div>
   );
