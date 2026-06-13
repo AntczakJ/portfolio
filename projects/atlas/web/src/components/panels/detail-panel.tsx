@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Gauge, MapPin, Route as RouteIcon, Timer, X } from 'lucide-react';
-import { type ReactNode } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 
 import { FleetSummary } from '@/components/panels/fleet-summary';
 import { PanelShell } from '@/components/panels/panel-shell';
@@ -89,6 +89,12 @@ function DetailBody({ vehicleId }: { vehicleId: string }): ReactNode {
   const route = useTelemetryStore((s) => (def ? s.routes[def.routeId] : undefined));
   const zones = useTelemetryStore((s) => s.zones);
   const events = useEventsStore((s) => s.events);
+  // The relative-time reference clock. Reading `Date.now()` during render is an
+  // impurity (react-hooks/purity): the value is unstable across renders the rule
+  // cannot reason about. We instead snapshot the clock in state and advance it on
+  // a 1 s interval, so the "Xm ago" labels stay accurate while render stays pure.
+  // Hoisted above the early return to honour the rules-of-hooks ordering.
+  const nowMs = useNowMs();
 
   if (!def) {
     return <p className="text-fg-subtle text-sm">This vehicle is no longer in the fleet.</p>;
@@ -98,7 +104,6 @@ function DetailBody({ vehicleId }: { vehicleId: string }): ReactNode {
   const zoneName = t?.currentZoneId ? (zones[t.currentZoneId]?.name ?? null) : null;
   const pct = progressPercent(t?.progress ?? 0);
   const recent = selectVehicleEvents(events, vehicleId, 5);
-  const nowMs = Date.now();
 
   return (
     <div className="flex flex-col gap-4">
@@ -186,6 +191,26 @@ function DetailBody({ vehicleId }: { vehicleId: string }): ReactNode {
       </div>
     </div>
   );
+}
+
+/**
+ * A render-pure "now" clock: snapshots `Date.now()` into state and re-snapshots
+ * once per second. Keeps the relative-time labels accurate without reading the
+ * impure `Date.now()` during render (react-hooks/purity). The lazy initializer
+ * seeds the first value; the interval advances it. SSR renders a stable seed and
+ * the post-hydration interval takes over.
+ */
+function useNowMs(): number {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => {
+      clearInterval(id);
+    };
+  }, []);
+  return nowMs;
 }
 
 function Metric({

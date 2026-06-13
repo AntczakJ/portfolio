@@ -591,3 +591,39 @@ Sources the planner consulted while authoring `PLAN.md` and `DECISIONS.md` ADR-0
 - **`connection-banner.tsx` lost `exitTransition`.** The old `transition={isVisible ? enterTransition : exitTransition}` was dead on the false arm (`isVisible` is always true inside the `{isVisible ? (...)` branch), so the AnimatePresence exit was ALREADY using `enterTransition` at runtime — removing the ternary + the unused `exitTransition` is behavior-preserving, NOT a timing change. If a future designer wants a distinct exit easing, attach it via the `exit` variant's own `transition` (a real behavior change, needs a visual sign-off) — do not just resurrect the old ternary, it never worked.
 
 - **`use-overrun-handler.ts` reconnect `.catch` is deliberate, not papering-over.** `provider.connect()` is `Promise<unknown>` and CAN reject (server still saturated / transient drop). The `.catch` dev-warns and is a prod no-op ON PURPOSE: the provider keeps its own status/retry machinery and a persistent failure surfaces through the host connection-status mirror → offline banner. Do not change it to bare `void` — on the public demo a rejected reconnect would become an unhandled rejection (and the asymmetric `unhandledRejection` server policy is a SERVER backstop; this is the CLIENT path).
+
+## frontend-engineer — Next.js 16 framework bump (2026-06-13)
+
+`meld-web` migrated 15 → 16 (manifest pre-bumped by orchestrator: `next` + `eslint-config-next` `^16.2.9`, `build`/`dev` carry `--webpack`, `lint` = `eslint .`). Three migration seams, all proven on atrium first:
+
+1. **Webpack kept via `--webpack`.** Turbopack is Next 16's default build engine and mis-infers the workspace root in this pnpm monorepo; the `--webpack` flag (already in scripts) keeps the known-good build. Do not strip it.
+2. **`eslint.config.mjs` rewritten** to import the NATIVE flat configs (`eslint-config-next/core-web-vitals`, `eslint-config-next/typescript`) and spread them directly. The old `FlatCompat.extends('next/...')` bridge crashes with "Converting circular structure to JSON" under ESLint 9 because it double-wraps an already-flat config. Dropped `@eslint/eslintrc` + the `FlatCompat`/`compat` setup; preserved the project's `ignores` block verbatim. (`@eslint/eslintrc` is now an unused devDep — harmless, left in place; a future cleanup could drop it.)
+3. **react-hooks plugin v6** (shipped by eslint-config-next 16) added stricter rules. 15 violations across 6 files. **13 were genuine false-positives → scoped per-file rule exceptions** in eslint.config.mjs (never global); **2 were genuine and fixed in code.**
+
+   Scoped `react-hooks/refs` exceptions (idempotent latest-value ref-sync written each render, concurrent-safe, never read during the same render to compute JSX):
+   - `src/components/board/board-canvas-host.tsx:138` — `onUnknownControlFrameRef.current = onUnknownControlFrame`
+   - `src/lib/yjs/use-overrun-handler.ts:68` — `providerRef.current = provider`
+
+   Scoped `react-hooks/set-state-in-effect` exceptions (guarded one-shot setState synchronizing React state with an EXTERNAL system transition — the rule's own docs permit this):
+   - `src/components/chrome/theme-toggle.tsx:64` — next-themes post-hydration `setMounted(true)`
+   - `src/components/board/board-canvas-host.tsx:339` — offline→live shape-crossfade dip (transition-guarded)
+   - `src/components/chrome/offline-aria-live-region.tsx:80` — aria-live announcement copy (transition-guarded)
+   - `src/lib/yjs/use-reconciliation-count.ts:100,139` — Y.Map observer reset on doc swap + offline→live baseline reset (both guarded, external-sync)
+
+   **Genuine fixes in `src/components/chrome/identity-badge-client.tsx` (NOT exempted):**
+   - `react-hooks/preserve-manual-memoization` (line 104): the `useMemo` deps used optional chaining (`identity?.color`) while the body read `identity.color`, so the React Compiler inferred a different dependency than declared and SKIPPED optimizing the component. Hoisted both OKLCH triples into locals (`identityColor`, `identityColorDark`) so body and deps reference identical expressions — the compiler now memoizes it.
+   - `react-hooks/refs` (lines 136-138, 203): a `beatFiredRef` latch was READ and WRITTEN during render to fire the welcome scale-beat once. Unlike the idempotent latest-value syncs above, a stateful render-phase ref read+write is genuinely unsafe under concurrent rendering. Replaced with the React-sanctioned "adjust state while rendering" idiom (`useState` + guarded `setBeatFired(true)` during render). Behavior preserved (beat still fires exactly once per null→resolved transition; the badge test 205/205 still green). `useRef` import dropped, `useState` added.
+
+### Deprecation warning (non-blocking, flagged for a future pass)
+
+Next 16 build prints: `The "middleware" file convention is deprecated. Please use "proxy" instead.` meld ships a `middleware.ts`; it still works in 16 but the convention is on a deprecation path. A future task should rename `middleware.ts` → `proxy.ts` per https://nextjs.org/docs/messages/middleware-to-proxy. NOT done here to keep the framework-bump diff scoped to the lint/compiler seams.
+
+### Verification (all green)
+
+- `pnpm -F meld-web lint` — clean (0 errors/warnings)
+- `pnpm -F meld-web typecheck` — clean
+- `pnpm -F meld-web build` — compiles (`next build --webpack`, ~103s). `output: 'standalone'` layout INTACT: `web/.next/standalone/web/server.js` exists (the exact path the Dockerfile depends on). Also smoke-ran the standalone runtime itself (staged `.next/static` in, `node .next/standalone/web/server.js` on :3061) — served 200, identical render.
+- `pnpm -F meld-web test` — **205/205 unit tests pass** (20 files)
+- Runtime smoke (headless chromium @1.60 from the e2e package, 1280x800, both `next start` AND the standalone server on :3061): `/` returns 200, full body renders (TopBar + CanvasPlaceholder + 8 interactive elements), **0 pageerrors**. The only 2 console errors are the pre-existing `api-status-dot` `/health` probe to `localhost:3001` being correctly CSP-blocked (`connect-src 'self' wss: ws:` excludes the cross-origin dev backend) — expected "backend absent" signal for a framework-bump smoke, NOT a migration regression (source: `lib/hooks/use-api-health.ts`). Full backend-connected board E2E not run (out of scope for the bump; build + render + unit tests are the signal).
+
+DID NOT commit, DID NOT `pnpm install`. Touched files: `web/eslint.config.mjs`, `web/src/components/chrome/identity-badge-client.tsx` (+ `web/next-env.d.ts` auto-regenerated by `next build`). `next-config.ts`, CSP, `output: standalone`, and `outputFileTracingRoot` UNTOUCHED.

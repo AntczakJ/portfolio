@@ -1,7 +1,14 @@
 'use client';
 
+/* eslint-disable jsx-a11y/no-noninteractive-tabindex -- the identity badge is a
+   focusable Radix `TooltipTrigger asChild` rendered on a `role="status"` span;
+   keyboard users must be able to tab to it to surface the identity tooltip, so
+   the `tabIndex={0}` is deliberate. The root jsx-a11y ruleset that
+   eslint-config-next 16 ships flags non-interactive-role tab stops; scoped to
+   this one rule for this single-trigger file. */
+
 import { motion, useReducedMotion } from 'motion/react';
-import { type ReactNode, useMemo, useRef } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 
 import {
   Tooltip,
@@ -96,23 +103,33 @@ export function IdentityBadgeClient({
   const identity = useIdentity(initial);
   const reduceMotion = useReducedMotion();
 
+  // Hoist the two OKLCH triples into locals so the `useMemo` body and
+  // its dependency array reference the SAME expressions. With the deps
+  // written as `identity?.color` (optional chain) while the body read
+  // `identity.color`, the React Compiler inferred a different dependency
+  // than the source array and skipped optimizing the component
+  // (`react-hooks/preserve-manual-memoization`). Reading the values once
+  // up front makes the inferred and declared deps identical.
+  const identityColor = identity?.color ?? null;
+  const identityColorDark = identity?.colorDark ?? null;
+
   // Pre-compute the ring color the wrapper element renders. CSS handles
   // the light/dark theme switch via a `--badge-ring` custom property
   // that we set on the wrapper itself; light theme reads from `color`,
   // dark theme reads from `colorDark` via the `data-theme="dark"`
   // override at the bottom of this file's class composition.
   const ringStyle = useMemo<Record<string, string>>(() => {
-    if (!identity?.color || !identity.colorDark) {
+    if (!identityColor || !identityColorDark) {
       return {
         '--badge-ring': 'var(--color-fg-muted)',
         '--badge-ring-dark': 'var(--color-fg-muted)',
       };
     }
     return {
-      '--badge-ring': oklchString(identity.color),
-      '--badge-ring-dark': oklchString(identity.colorDark),
+      '--badge-ring': oklchString(identityColor),
+      '--badge-ring-dark': oklchString(identityColorDark),
     };
-  }, [identity?.color, identity?.colorDark]);
+  }, [identityColor, identityColorDark]);
 
   // Light-mode resolved color for the Motion `borderColor` ramp.
   // Motion interpolates between OKLCH strings frame-by-frame, so the
@@ -122,20 +139,25 @@ export function IdentityBadgeClient({
   // composition below — Motion does NOT animate the dark variant
   // directly (it would require subscribing to next-themes from inside
   // this component, which the hydration model rejects).
-  const ringColorResolved = identity?.color
-    ? oklchString(identity.color)
+  const ringColorResolved = identityColor
+    ? oklchString(identityColor)
     : NEUTRAL_BORDER;
 
-  // Track the previous color-resolved state so the welcome-arrival
-  // beat fires exactly once per `null → resolved` transition. Without
-  // this, Motion re-animates on every render where `animate` changes
-  // referentially, which is fine for borderColor but would re-pulse
-  // the scale beat every time the consumer re-renders.
-  const beatFiredRef = useRef(false);
-  const hasColor = identity?.color !== null && identity?.color !== undefined;
-  const shouldFireBeat = hasColor && !beatFiredRef.current;
-  if (hasColor) {
-    beatFiredRef.current = true;
+  // Fire the welcome-arrival scale beat exactly once per `null →
+  // resolved` transition. We track whether the beat has already fired
+  // in render-phase STATE (not a ref): the React-sanctioned "adjust
+  // state while rendering" idiom (https://react.dev/reference/react/
+  // useState#storing-information-from-previous-renders). Reading or
+  // writing a ref during render is what `react-hooks/refs` (new in the
+  // react-hooks v6 plugin eslint-config-next 16 ships) correctly flags
+  // as unsafe under concurrent rendering — state is the safe carrier.
+  // `setBeatFired` during render with a guard re-renders synchronously
+  // before paint, so the badge never visibly re-pulses.
+  const hasColor = identityColor !== null;
+  const [beatFired, setBeatFired] = useState(false);
+  const shouldFireBeat = hasColor && !beatFired;
+  if (hasColor && !beatFired) {
+    setBeatFired(true);
   }
 
   // Anonymous fallback render — `initial === null` AND no welcome.

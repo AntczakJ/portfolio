@@ -2,6 +2,19 @@
 
 > Read on start. Write on end.
 
+## Next 16 migration (web) — DONE (2026-06-13, frontend-engineer)
+
+`projects/pulse/web` migrated Next 15 -> 16.2.9 (`pulse-web`). Manifest/install were pre-bumped; this pass did the code-level work and verified.
+
+- **eslint.config.mjs rewritten** off the `FlatCompat.extends('next/...')` bridge (which crashes with "Converting circular structure to JSON" under ESLint 9) onto the native flat configs: `import coreWebVitals from 'eslint-config-next/core-web-vitals'` + `import typescript from 'eslint-config-next/typescript'`, spread directly. `@eslint/eslintrc` + FlatCompat dropped from the config (the devDep is still listed in package.json but unused — harmless; can be pruned later). Project `ignores` preserved and EXTENDED with `.review/**` (gitignored scratch Playwright capture scripts + screenshots, same status as `scripts/**`).
+- **react-hooks v6 (shipped by eslint-config-next 16) scoped exceptions** — all were the canonical idioms, NOT bugs:
+  - `react-hooks/refs` off for `status-board.tsx`, `monitor-detail-view.tsx`, `response-time-chart.tsx`, `lib/sse/use-live-board.ts`, `lib/sse/use-public-status-live.ts` — the "latest-value ref sync during render" pattern (`ref.current = latestValue`) that keeps a STABLE effect/callback reading fresh props without re-opening the EventSource / recreating the uPlot instance / re-binding the alert-toast callback.
+  - `react-hooks/set-state-in-effect` off for `theme-toggle.tsx` (next-themes anti-FOUC `setMounted(true)`), `monitor-card.tsx` (one-shot fresh-result ring pulse off an incrementing pulse token), `monitor-detail-view.tsx` (live-checks reset + synthetic live-row prepend off SSE pulse tokens).
+- **One real cleanup:** removed a now-unused `// eslint-disable-next-line jsx-a11y/label-has-associated-control` in `components/ui/label.tsx` (the flat config no longer fires that rule there; the directive became a warning).
+- **Two residual lint WARNINGS (exit 0, not errors):** `react-hooks/incompatible-library` on the two RHF `watch()` call sites (`create-alert-channel-dialog.tsx:74`, `create-monitor-dialog.tsx:111`). These are React Compiler "skipped memoization" notices for RHF's non-memoizable `watch()` — informational, not a bug. Left UN-silenced deliberately so a future genuine stale-UI issue at that boundary stays visible. If a reviewer wants lint warning-free, scope `react-hooks/incompatible-library` off for those two files.
+- **Verification:** lint clean (exit 0, 2 warnings above); `tsc --noEmit` clean; `next build --webpack` compiles; standalone emit present at `web/.next/standalone/web/server.js` (matches `outputFileTracingRoot` = `projects/pulse/`); 131 unit tests pass (15 files); headless smoke of `/` on :3062 = HTTP 200, correct title/H1, 0 page errors. The 2 console errors + 2 failed RSC requests in the smoke are backend-absence artifacts (CSP blocks the cross-origin better-auth `get-session` to :3080, and the `/status/demo` RSC prefetch aborts) — NOT migration regressions; both resolve once `pulse-api` is reachable / the single-origin proxy is in play.
+- **Build engine:** kept on webpack via `--webpack` (Turbopack mis-infers the workspace root in this pnpm monorepo) — unchanged, as instructed.
+
 ## Deployment status (INTERNAL — 2026-06-06)
 
 - **Deployed:** https://pulse-demo-web.fly.dev (Fly.io, region `fra`). Apps: `pulse-demo-db2` (Postgres), `pulse-demo-api` (NestJS image, web + worker processes, 4 machines), `pulse-demo-web` (Next proxy). Redis is **Upstash (managed, always-on)** — not a Fly machine.
