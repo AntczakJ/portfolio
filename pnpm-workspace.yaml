@@ -11,6 +11,14 @@ allowBuilds:
   unrs-resolver: true
 minimumReleaseAgeExclude:
   - zustand@5.0.14
+  - '@better-auth/core@1.6.18'
+  - '@better-auth/drizzle-adapter@1.6.18'
+  - '@better-auth/kysely-adapter@1.6.18'
+  - '@better-auth/memory-adapter@1.6.18'
+  - '@better-auth/mongo-adapter@1.6.18'
+  - '@better-auth/prisma-adapter@1.6.18'
+  - '@better-auth/telemetry@1.6.18'
+  - better-auth@1.6.18
 # Security overrides (Dependabot alerts). All are dev/build-time or transitive —
 # none reach the deployed production images. Patched versions pinned repo-wide.
 overrides:

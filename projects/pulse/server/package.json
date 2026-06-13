@@ -35,10 +35,10 @@
   },
   "dependencies": {
     "@nestjs/bullmq": "^11.0.4",
-    "@nestjs/common": "^11.1.24",
+    "@nestjs/common": "^11.1.26",
     "@nestjs/config": "^4.0.4",
-    "@nestjs/core": "^11.1.24",
-    "@nestjs/platform-express": "^11.1.24",
+    "@nestjs/core": "^11.1.26",
+    "@nestjs/platform-express": "^11.1.26",
     "bullmq": "^5.78.0",
     "drizzle-orm": "^0.45.2",
     "drizzle-zod": "^0.8.3",
@@ -48,12 +48,12 @@
     "rxjs": "^7.8.2",
     "undici": "^6.26.0",
     "zod": "^4.4.3",
-    "better-auth": "^1.6.14"
+    "better-auth": "^1.6.18"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
     "drizzle-kit": "^0.31.10",
-    "tsx": "^4.19.2",
+    "tsx": "^4.22.4",
     "typescript": "^5.6.3",
     "vitest": "^4.1.0"
   }
