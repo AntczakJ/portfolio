@@ -25,7 +25,7 @@ import { z } from 'zod';
 /**
  * Session id — UUID v4 in canonical 8-4-4-4-12 lowercase form.
  *
- * Zod's `.uuid()` matches any UUID version; we want strict v4 because
+ * Zod's `z.uuid()` matches any UUID version; we want strict v4 because
  * that's what `node:crypto.randomUUID()` emits and what the cookie
  * middleware's `UUID_V4_REGEX` accepts on the way IN. Keeping the
  * inbound and outbound shapes symmetric prevents an "I parsed an

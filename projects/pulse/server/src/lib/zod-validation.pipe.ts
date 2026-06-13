@@ -1,5 +1,5 @@
 import { BadRequestException, type PipeTransform } from '@nestjs/common';
-import type { ZodTypeAny, z } from 'zod';
+import type { z } from 'zod';
 
 /**
  * A NestJS pipe that validates a value against a Zod schema (conventions § 5
@@ -9,7 +9,7 @@ import type { ZodTypeAny, z } from 'zod';
  * On failure it throws a 400 with the flattened field errors, so the client
  * gets a typed, actionable error shape rather than a stack trace.
  */
-export class ZodValidationPipe<T extends ZodTypeAny> implements PipeTransform {
+export class ZodValidationPipe<T extends z.ZodType> implements PipeTransform {
   constructor(private readonly schema: T) {}
 
   transform(value: unknown): z.infer<T> {
@@ -24,6 +24,6 @@ export class ZodValidationPipe<T extends ZodTypeAny> implements PipeTransform {
         })),
       });
     }
-    return result.data as z.infer<T>;
+    return result.data;
   }
 }

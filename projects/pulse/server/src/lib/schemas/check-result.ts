@@ -30,8 +30,8 @@ export type CheckErrorClass = z.infer<typeof checkErrorClassSchema>;
  */
 export const checkResultSchema = z.object({
   id: z.string(),
-  monitorId: z.string().uuid(),
-  checkedAt: z.string().datetime(),
+  monitorId: z.uuid(),
+  checkedAt: z.iso.datetime(),
   status: monitorStatusSchema,
   statusCode: z.number().int().nullable(),
   responseTimeMs: z.number().int().nonnegative().nullable(),

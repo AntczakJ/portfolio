@@ -61,11 +61,11 @@ import { z } from 'zod';
 export const replayCellRowSchema = z.object({
   symbol: z.string().min(1),
   bucketTs: z.number().int().positive(),
-  priceBucket: z.number().finite(),
-  bidVolume: z.number().nonnegative().finite(),
-  askVolume: z.number().nonnegative().finite(),
+  priceBucket: z.number(),
+  bidVolume: z.number().nonnegative(),
+  askVolume: z.number().nonnegative(),
   trades: z.number().int().nonnegative(),
-  delta: z.number().finite(),
+  delta: z.number(),
 });
 
 export type ReplayCellRow = z.infer<typeof replayCellRowSchema>;

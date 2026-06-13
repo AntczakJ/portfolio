@@ -86,9 +86,9 @@ import { z } from 'zod';
 export const wsCellDeltaPayloadSchema = z.object({
   tsMs: z.number().int().positive(),
   bucketTs: z.number().int().positive(),
-  priceBucket: z.number().finite(),
-  bidVolumeDelta: z.number().nonnegative().finite(),
-  askVolumeDelta: z.number().nonnegative().finite(),
+  priceBucket: z.number(),
+  bidVolumeDelta: z.number().nonnegative(),
+  askVolumeDelta: z.number().nonnegative(),
   tradesDelta: z.number().int().nonnegative(),
 });
 
@@ -125,9 +125,9 @@ export type WSCellDeltaPayload = z.infer<typeof wsCellDeltaPayloadSchema>;
 export const wsCellClosePayloadSchema = z.object({
   symbol: z.string().min(1),
   bucketTs: z.number().int().positive(),
-  priceBucket: z.number().finite(),
-  bidVolume: z.number().nonnegative().finite(),
-  askVolume: z.number().nonnegative().finite(),
+  priceBucket: z.number(),
+  bidVolume: z.number().nonnegative(),
+  askVolume: z.number().nonnegative(),
   trades: z.number().int().nonnegative(),
 });
 
@@ -164,11 +164,11 @@ export type WSCellClosePayload = z.infer<typeof wsCellClosePayloadSchema>;
  *                  query returns them).
  */
 export const wsReplayBarCellSchema = z.object({
-  priceBucket: z.number().finite(),
-  bidVolume: z.number().nonnegative().finite(),
-  askVolume: z.number().nonnegative().finite(),
+  priceBucket: z.number(),
+  bidVolume: z.number().nonnegative(),
+  askVolume: z.number().nonnegative(),
   trades: z.number().int().nonnegative(),
-  delta: z.number().finite(),
+  delta: z.number(),
 });
 
 export type WSReplayBarCell = z.infer<typeof wsReplayBarCellSchema>;

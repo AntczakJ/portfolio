@@ -42,7 +42,7 @@ export const envSchema = z.object({
   // API origin (dev http://localhost:3080; prod the deployed API origin behind
   // the pulse-web single-origin proxy).
   BETTER_AUTH_SECRET: z.string().min(1).optional(),
-  BETTER_AUTH_URL: z.string().url().optional(),
+  BETTER_AUTH_URL: z.url().optional(),
 
   // --- Phase 5: alerting (HMAC webhook signing) — optional until Phase 5 ---
   WEBHOOK_SIGNING_KEY: z.string().min(1).optional(),

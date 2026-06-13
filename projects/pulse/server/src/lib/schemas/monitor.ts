@@ -42,7 +42,7 @@ export const probeUrlSchema = z
   .trim()
   .min(1, 'target URL is required')
   .max(2048, 'target URL is too long')
-  .url('target URL must be a valid absolute URL')
+  .pipe(z.url('target URL must be a valid absolute URL'))
   .refine(
     (raw) => {
       try {
@@ -105,7 +105,7 @@ export type UpdateMonitor = z.infer<typeof updateMonitorSchema>;
 
 /** The canonical monitor read shape returned by every monitor endpoint. */
 export const monitorResponseSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   name: z.string(),
   targetUrl: z.string(),
   method: monitorMethodSchema,
@@ -125,8 +125,8 @@ export const monitorResponseSchema = z.object({
   // the persisted status instantly instead of showing `unknown` for ~1 interval
   // until the SSE stream corrects it.
   currentStatus: monitorStatusSchema.nullable(),
-  lastCheckedAt: z.string().datetime().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  lastCheckedAt: z.iso.datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 });
 export type MonitorResponse = z.infer<typeof monitorResponseSchema>;

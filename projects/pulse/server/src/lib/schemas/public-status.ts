@@ -34,7 +34,7 @@ export type PublicOverallStatus = z.infer<typeof publicOverallStatusSchema>;
  */
 export const publicMonitorSchema = z.object({
   /** A stable id so the UI can key the row (the monitor id; not sensitive). */
-  id: z.string().uuid(),
+  id: z.uuid(),
   name: z.string(),
   /** current up / degraded / down (null = never checked / unknown). */
   status: monitorStatusSchema.nullable(),
@@ -50,13 +50,13 @@ export type PublicMonitor = z.infer<typeof publicMonitorSchema>;
  * checks") — safe public text, no internal detail.
  */
 export const publicIncidentSchema = z.object({
-  id: z.string().uuid(),
-  monitorId: z.string().uuid(),
+  id: z.uuid(),
+  monitorId: z.uuid(),
   monitorName: z.string(),
   status: incidentStatusSchema,
   severity: incidentSeveritySchema,
-  startedAt: z.string().datetime(),
-  resolvedAt: z.string().datetime().nullable(),
+  startedAt: z.iso.datetime(),
+  resolvedAt: z.iso.datetime().nullable(),
   durationMs: z.number().int().nonnegative(),
   cause: z.string(),
 });
@@ -70,7 +70,7 @@ export const publicStatusPageSchema = z.object({
   /** Derived from the worst current monitor status (the banner). */
   overall: publicOverallStatusSchema,
   /** Server time the snapshot was computed (for "updated Ns ago"). */
-  generatedAt: z.string().datetime(),
+  generatedAt: z.iso.datetime(),
   monitors: z.array(publicMonitorSchema),
   /** Recent incidents across the page's public monitors, newest first. */
   incidents: z.array(publicIncidentSchema),

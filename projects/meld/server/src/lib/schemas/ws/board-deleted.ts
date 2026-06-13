@@ -41,7 +41,7 @@ export type WSBoardDeletedReason = z.infer<typeof wsBoardDeletedReasonSchema>;
 
 export const wsBoardDeletedFrameSchema = z.object({
   kind: z.literal('control.board-deleted'),
-  boardId: z.string().uuid(),
+  boardId: z.uuid(),
   reason: wsBoardDeletedReasonSchema,
 });
 

@@ -69,11 +69,13 @@ import { z } from 'zod';
  * **Zod `coerce` choice.** We use `z.coerce.number()` rather than
  * `z.string().transform(parseFloat)` because (a) the wire is reliably
  * decimal-string and JS `Number(...)` handles every representable form
- * (including `'71234.50'`, `'1e5'`, `'1.5e-3'`), (b) Zod's coerce path
- * surfaces NaN / Infinity as a `.finite()` check failure, which we then
- * gate via the same `.finite()` constraint, so a malformed string
- * surfaces as a clean schema error rather than a silent `NaN` in the
- * tick ring.
+ * (including `'71234.50'`, `'1e5'`, `'1.5e-3'`), (b) on Zod 4 a bare
+ * `z.number()` (and therefore `z.coerce.number()`) rejects `NaN` /
+ * `Infinity` / `-Infinity` by default — no explicit `.finite()` needed —
+ * so a malformed string that coerces to `NaN` (e.g. `'abc'`) surfaces as
+ * a clean schema error rather than a silent `NaN` in the tick ring. (On
+ * Zod 3 this guarantee required an explicit `.finite()`; the v4 default
+ * makes it intrinsic, and `.finite()` is a deprecated no-op there.)
  *
  * **`.strict()` is intentionally NOT used.** Binance has historically
  * added new fields to event payloads (`r` for liquidation-related
@@ -88,8 +90,8 @@ export const binanceAggTradeSchema = z.object({
   E: z.number().int().positive(),
   s: z.string().min(1),
   a: z.number().int().nonnegative(),
-  p: z.coerce.number().positive().finite(),
-  q: z.coerce.number().positive().finite(),
+  p: z.coerce.number().positive(),
+  q: z.coerce.number().positive(),
   f: z.number().int().nonnegative(),
   l: z.number().int().nonnegative(),
   T: z.number().int().positive(),

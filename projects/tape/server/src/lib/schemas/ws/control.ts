@@ -97,7 +97,7 @@ export type WSControlOverrunPayload = z.infer<
  */
 export const wsControlHeartbeatPayloadSchema = z.object({
   serverTsMs: z.number().int().positive(),
-  framesPerSecOut: z.number().nonnegative().finite(),
+  framesPerSecOut: z.number().nonnegative(),
 });
 
 export type WSControlHeartbeatPayload = z.infer<

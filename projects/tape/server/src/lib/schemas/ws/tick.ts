@@ -44,8 +44,8 @@ import { z } from 'zod';
  */
 export const wsTickPayloadSchema = z.object({
   tsMs: z.number().int().positive(),
-  price: z.number().positive().finite(),
-  qty: z.number().positive().finite(),
+  price: z.number().positive(),
+  qty: z.number().positive(),
   aggressor: z.enum(['buy', 'sell']),
 });
 

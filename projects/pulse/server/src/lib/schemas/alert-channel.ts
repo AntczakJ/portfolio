@@ -26,14 +26,14 @@ export const createAlertChannelSchema = z
       const ok = /^https?:\/\//.test(value.target);
       if (!ok) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           path: ['target'],
           message: 'webhook target must be an http(s) URL',
         });
       }
-    } else if (!z.string().email().safeParse(value.target).success) {
+    } else if (!z.email().safeParse(value.target).success) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['target'],
         message: 'email target must be a valid email address',
       });
@@ -43,10 +43,10 @@ export type CreateAlertChannel = z.infer<typeof createAlertChannelSchema>;
 
 /** The read shape. `secret` is NEVER returned — it stays server-side. */
 export const alertChannelResponseSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   type: alertChannelTypeSchema,
   target: z.string(),
   isEnabled: z.boolean(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 });
 export type AlertChannelResponse = z.infer<typeof alertChannelResponseSchema>;

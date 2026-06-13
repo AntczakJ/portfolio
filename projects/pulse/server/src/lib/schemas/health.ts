@@ -20,7 +20,7 @@ export type DependencyHealth = z.infer<typeof dependencyHealthSchema>;
 export const healthResponseSchema = z.object({
   status: z.enum(['ok', 'degraded']),
   commit: z.string(),
-  ts: z.string().datetime(),
+  ts: z.iso.datetime(),
   db: dependencyHealthSchema,
   redis: dependencyHealthSchema,
 });

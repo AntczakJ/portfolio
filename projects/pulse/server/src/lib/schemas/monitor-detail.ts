@@ -72,7 +72,7 @@ export type UptimeBreakdown = z.infer<typeof uptimeBreakdownSchema>;
  * it a partial window.
  */
 export const uptimeResponseSchema = z.object({
-  monitorId: z.string().uuid(),
+  monitorId: z.uuid(),
   window: monitorWindowSchema,
   uptimePercent: z.number().min(0).max(100).nullable(),
   windowSeconds: z.number().nonnegative(),
@@ -109,7 +109,7 @@ export type UptimeResponse = z.infer<typeof uptimeResponseSchema>;
  * present only when `resolution = 'raw'`. The frontend switches on `resolution`.
  */
 export const seriesResponseSchema = z.object({
-  monitorId: z.string().uuid(),
+  monitorId: z.uuid(),
   window: monitorWindowSchema,
   resolution: z.enum(['raw', 'hourly']),
   /** UNIX-SECONDS x-values (uPlot's native x scale), ascending. */
@@ -135,7 +135,7 @@ export type SeriesResponse = z.infer<typeof seriesResponseSchema>;
  * a not-yet-observed slice for a young monitor). The classic Statuspage bar.
  */
 export const historyBucketSchema = z.object({
-  bucketStart: z.string().datetime(),
+  bucketStart: z.iso.datetime(),
   status: z.enum(['up', 'degraded', 'down', 'unknown']),
   /** Counts behind the bar (for a tooltip). All zero when `unknown`. */
   upCount: z.number().int().nonnegative(),
@@ -145,7 +145,7 @@ export const historyBucketSchema = z.object({
 export type HistoryBucket = z.infer<typeof historyBucketSchema>;
 
 export const historyResponseSchema = z.object({
-  monitorId: z.string().uuid(),
+  monitorId: z.uuid(),
   window: monitorWindowSchema,
   bucketSeconds: z.number().int().positive(),
   buckets: z.array(historyBucketSchema),
@@ -165,7 +165,7 @@ export type RecentChecksQuery = z.infer<typeof recentChecksQuerySchema>;
 /** One row of the recent-activity list (latest first). */
 export const recentCheckSchema = z.object({
   id: z.string(),
-  checkedAt: z.string().datetime(),
+  checkedAt: z.iso.datetime(),
   status: monitorStatusSchema,
   statusCode: z.number().int().nullable(),
   responseTimeMs: z.number().int().nonnegative().nullable(),
@@ -174,7 +174,7 @@ export const recentCheckSchema = z.object({
 export type RecentCheck = z.infer<typeof recentCheckSchema>;
 
 export const recentChecksResponseSchema = z.object({
-  monitorId: z.string().uuid(),
+  monitorId: z.uuid(),
   checks: z.array(recentCheckSchema),
 });
 export type RecentChecksResponse = z.infer<typeof recentChecksResponseSchema>;

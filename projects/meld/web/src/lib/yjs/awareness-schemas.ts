@@ -65,7 +65,7 @@ const oklchColorSchema = z.object({
  * (that's HTTP-side metadata, not on-the-wire awareness state).
  */
 export const awarenessIdentitySchema = z.object({
-  sessionId: z.string().uuid(),
+  sessionId: z.uuid(),
   emojiChar: z.string().min(1),
   emojiName: z.string().min(1),
   color: oklchColorSchema,

@@ -194,7 +194,7 @@ export type WorkerHealth = z.infer<typeof workerHealthSchema>;
  */
 export const wsHealthSchema = z.object({
   connectedClients: z.number().int().nonnegative(),
-  framesPerSecOut: z.number().nonnegative().finite(),
+  framesPerSecOut: z.number().nonnegative(),
   droppedFrameCount: z.number().int().nonnegative(),
   overrunDisconnectCount: z.number().int().nonnegative(),
   snapshotCacheHitRate: z.number().min(0).max(1).nullable(),

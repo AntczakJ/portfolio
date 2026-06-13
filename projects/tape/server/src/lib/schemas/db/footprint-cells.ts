@@ -16,8 +16,9 @@ import type {
  *
  * Row TS types come from Drizzle's `$inferSelect` / `$inferInsert`
  * (`FootprintCell` / `NewFootprintCell`) re-exported here — see the
- * `ticks` schema sibling for the Zod 3 vs Zod 4 rationale behind not
- * going through `z.output<typeof schema>`.
+ * `ticks` schema sibling for why the row types are sourced from Drizzle
+ * rather than `z.output<typeof schema>` (the old Zod 3/4 friction is
+ * gone now that the package is on Zod 4; the policy stays).
  */
 export const footprintCellSelectSchema = createSelectSchema(footprintCells);
 export const footprintCellInsertSchema = createInsertSchema(footprintCells);

@@ -26,7 +26,13 @@ function makeBridge(): EventsBridgeService {
 
 const SCOPE_A = 'dashboard:owner-a';
 const SCOPE_B = 'dashboard:owner-b';
-const MON = '11111111-1111-1111-1111-111111111111';
+// A valid RFC 9562 UUID (v4 nibble + `8` variant). zod 4's `z.uuid()` (and the
+// deprecated `z.string().uuid()`) validate the version/variant bits, unlike
+// zod 3 which accepted any 8-4-4-4-12 hex shape; the prior all-`1` fixture is
+// not a real UUID. Production ids come from `randomUUID()` / `gen_random_uuid()`
+// which always carry valid variant bits, so this keeps the fixture realistic
+// while exercising the same ring-buffer / scope-filter paths.
+const MON = '11111111-1111-4111-8111-111111111111';
 
 function envelope(id: number, scope: string): SseEvent {
   return {

@@ -44,15 +44,15 @@ export type IncidentsListQuery = z.infer<typeof incidentsListQuerySchema>;
  * knows the monitor) but keep the contract uniform.
  */
 export const incidentListItemSchema = z.object({
-  id: z.string().uuid(),
-  monitorId: z.string().uuid(),
+  id: z.uuid(),
+  monitorId: z.uuid(),
   monitorName: z.string(),
   monitorUrl: z.string(),
   status: incidentStatusSchema,
   severity: incidentSeveritySchema,
-  startedAt: z.string().datetime(),
+  startedAt: z.iso.datetime(),
   /** `null` while the incident is open. */
-  resolvedAt: z.string().datetime().nullable(),
+  resolvedAt: z.iso.datetime().nullable(),
   /**
    * Duration in ms: resolved duration for a closed incident; the duration so
    * far (started_at -> response time) for an open one, so the live row counts
@@ -71,7 +71,7 @@ export type IncidentListItem = z.infer<typeof incidentListItemSchema>;
  */
 export const incidentsListResponseSchema = z.object({
   /** The monitor the list is scoped to, or `null` for the cross-monitor list. */
-  monitorId: z.string().uuid().nullable(),
+  monitorId: z.uuid().nullable(),
   items: z.array(incidentListItemSchema),
 });
 export type IncidentsListResponse = z.infer<typeof incidentsListResponseSchema>;

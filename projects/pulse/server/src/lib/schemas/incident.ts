@@ -12,12 +12,12 @@ export const incidentStatusSchema = z.enum(['open', 'resolved']);
 export type IncidentStatus = z.infer<typeof incidentStatusSchema>;
 
 export const incidentResponseSchema = z.object({
-  id: z.string().uuid(),
-  monitorId: z.string().uuid(),
+  id: z.uuid(),
+  monitorId: z.uuid(),
   status: incidentStatusSchema,
   severity: incidentSeveritySchema,
-  startedAt: z.string().datetime(),
-  resolvedAt: z.string().datetime().nullable(),
+  startedAt: z.iso.datetime(),
+  resolvedAt: z.iso.datetime().nullable(),
   durationMs: z.number().int().nonnegative().nullable(),
   cause: z.string(),
 });

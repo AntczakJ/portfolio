@@ -70,7 +70,7 @@ export type CreateBoardRequest = z.infer<typeof createBoardRequestSchema>;
  * the WS for it. The next `GET /api/boards/:boardId` reports it.
  */
 export const createBoardResponseSchema = z.object({
-  boardId: z.string().uuid(),
+  boardId: z.uuid(),
   name: z.string().min(1).max(80),
   createdAt: z.number().int().positive(),
 });
@@ -114,7 +114,7 @@ export type BoardIdParam = z.infer<typeof boardIdParamSchema>;
  * the WS layer will see plus the connecting tab.
  */
 export const getBoardResponseSchema = z.object({
-  boardId: z.string().uuid(),
+  boardId: z.uuid(),
   name: z.string().min(1).max(80),
   createdAt: z.number().int().positive(),
   lastActiveAt: z.number().int().positive(),

@@ -2,6 +2,24 @@
 
 > Read on start. Write on end.
 
+## Zod 3 -> 4 migration (server) — DONE (2026-06-13, backend-engineer)
+
+`projects/pulse/server` migrated off the zod-3 deprecated API surface to zod 4. Manifest (`zod ^4.4.3`, `drizzle-zod ^0.8.3`) + install were pre-done; this pass adapted every zod call site in `server/src`, preserving EXACT validation semantics. NOT committed.
+
+- **The whole change was the deprecated string-format + issue-code API surface** flagged by `@typescript-eslint/no-deprecated` (the root strictTypeChecked rule). 51 lint errors across 11 files, all fixed:
+  - `z.string().uuid()` -> `z.uuid()` (events, monitor, monitor-detail, incident, incidents-list, check-result, public-status, alert-channel).
+  - `z.string().datetime()` -> `z.iso.datetime()` (same files + health).
+  - `z.string().url(msg)` -> mid-chain `.pipe(z.url(msg))` in `monitor.ts probeUrlSchema` (preserves the trailing `.refine()` http/https-scheme check — same pattern the web side adopted); standalone `z.string().url()` -> `z.url()` in `env.schema.ts BETTER_AUTH_URL`.
+  - `z.string().email()` -> `z.email()` (alert-channel superRefine email branch).
+  - `z.ZodIssueCode.custom` -> the string literal `'custom'` (alert-channel superRefine, x2 — `z.ZodIssueCode` is gone in zod 4; `ctx.addIssue({ code: 'custom', ... })` is the v4 form).
+  - `ZodTypeAny` -> `z.ZodType` in `zod-validation.pipe.ts` generic bound; dropped the now-unnecessary `as z.infer<T>` on `result.data` (it is already the output type — also cleared a `no-unnecessary-type-assertion`).
+- **Error access was ALREADY zod-4-shaped** — `zod-validation.pipe.ts` and `env.schema.ts` already read `error.issues` (not `.errors`), no `.flatten()`/`.format()` anywhere. No NestJS pipe / formatter change needed beyond the generic bound.
+- **NO drizzle-zod call sites exist** in `server/src` (no `createInsertSchema`/`createSelectSchema`) — the dep bump only had to type-check transitively, which it does. No `z.record`, `nativeEnum`, `.strict/.passthrough/.strip`, `required_error`/`invalid_type_error` anywhere.
+- **The SSRF guard (`server/src/probe/ssrf-guard.ts`) uses NO zod** (pure `node:net` + WHATWG `URL`); it was not touched. Its 39 tests stay green and unchanged — the byte-for-byte IP/host/scheme behavior is preserved by construction.
+- **One pre-existing zod-3->4 bump artifact fixed in a TEST FIXTURE (not a schema):** `events-bridge.test.ts` fed `sseEventSchema.safeParse` a fixture monitor id `11111111-1111-1111-1111-111111111111`, whose variant nibble is invalid under zod 4's stricter RFC-9562 `z.uuid()`. PROVEN this rejection is identical for BOTH the deprecated `z.string().uuid()` AND `z.uuid()` under zod 4 (so it was already failing on the pre-migration zod-4 baseline — NOT caused by my API-surface change, and NOT a production-schema loosening/tightening I introduced). Fixed the fixture to a valid UUID (`...-4111-8111-...`); every assertion (256-ring cap, scope isolation, replay order, drop-malformed) is unchanged. Production schemas keep zod-4-canonical UUID validation (the only honest option — loosening to accept non-RFC UUIDs is forbidden).
+- **Semantics PROVEN byte-identical** (node harness, deprecated form vs new form under zod 4): `probeUrlSchema` 12 cases (incl. credentialed-URL reject, scheme, trim, IPv6 literal); email 9 cases; url 6 cases; datetime 10 cases (incl. offset-reject, no-Z, ms-precision). All identical accept/reject + parsed value.
+- **Verification (all green):** `pnpm -F pulse-server typecheck` clean; `build` (tsc --noEmit) clean; `lint` (eslint) clean (0 errors, was 51); `test` **189 passed / 1 skipped (190)** — matches the zod-3 baseline exactly; SSRF-guard suite 39/39 green. NO install, NO commit run.
+
 ## Next 16 migration (web) — DONE (2026-06-13, frontend-engineer)
 
 `projects/pulse/web` migrated Next 15 -> 16.2.9 (`pulse-web`). Manifest/install were pre-bumped; this pass did the code-level work and verified.

@@ -50,11 +50,11 @@ export type AlertTransition = z.infer<typeof alertTransitionSchema>;
  * (ADR-003), so a slow consumer drops intermediate points.
  */
 export const checkResultEventSchema = z.object({
-  monitorId: z.string().uuid(),
+  monitorId: z.uuid(),
   status: monitorStatusSchema,
   statusCode: z.number().int().nullable(),
   responseTimeMs: z.number().int().nonnegative().nullable(),
-  checkedAt: z.string().datetime(),
+  checkedAt: z.iso.datetime(),
 });
 export type CheckResultEvent = z.infer<typeof checkResultEventSchema>;
 
@@ -63,29 +63,29 @@ export type CheckResultEvent = z.infer<typeof checkResultEventSchema>;
  * so the board can pulse the dot without diffing every `check.result`.
  */
 export const statusChangeEventSchema = z.object({
-  monitorId: z.string().uuid(),
+  monitorId: z.uuid(),
   from: monitorStatusSchema,
   to: monitorStatusSchema,
-  at: z.string().datetime(),
+  at: z.iso.datetime(),
 });
 export type StatusChangeEvent = z.infer<typeof statusChangeEventSchema>;
 
 /** `incident.open` — an incident materialised on the board. */
 export const incidentOpenEventSchema = z.object({
-  incidentId: z.string().uuid(),
-  monitorId: z.string().uuid(),
+  incidentId: z.uuid(),
+  monitorId: z.uuid(),
   severity: incidentSeveritySchema,
-  startedAt: z.string().datetime(),
+  startedAt: z.iso.datetime(),
   cause: z.string(),
 });
 export type IncidentOpenEvent = z.infer<typeof incidentOpenEventSchema>;
 
 /** `incident.close` — an incident auto-resolved; carries the final duration. */
 export const incidentCloseEventSchema = z.object({
-  incidentId: z.string().uuid(),
-  monitorId: z.string().uuid(),
-  startedAt: z.string().datetime(),
-  resolvedAt: z.string().datetime(),
+  incidentId: z.uuid(),
+  monitorId: z.uuid(),
+  startedAt: z.iso.datetime(),
+  resolvedAt: z.iso.datetime(),
   durationMs: z.number().int().nonnegative(),
 });
 export type IncidentCloseEvent = z.infer<typeof incidentCloseEventSchema>;
@@ -95,11 +95,11 @@ export type IncidentCloseEvent = z.infer<typeof incidentCloseEventSchema>;
  * (ADR-003); only the metadata the board needs to confirm a delivery.
  */
 export const alertFiredEventSchema = z.object({
-  incidentId: z.string().uuid(),
-  monitorId: z.string().uuid(),
+  incidentId: z.uuid(),
+  monitorId: z.uuid(),
   channelType: z.enum(['webhook', 'email']),
   transition: alertTransitionSchema,
-  deliveredAt: z.string().datetime(),
+  deliveredAt: z.iso.datetime(),
   status: z.enum(['sent', 'failed']),
 });
 export type AlertFiredEvent = z.infer<typeof alertFiredEventSchema>;

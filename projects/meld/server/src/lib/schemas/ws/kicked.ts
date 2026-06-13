@@ -27,7 +27,7 @@ import { z } from 'zod';
 
 export const wsKickedFrameSchema = z.object({
   kind: z.literal('control.kicked-for-name-collision'),
-  replacedBySessionId: z.string().uuid(),
+  replacedBySessionId: z.uuid(),
 });
 
 export type WSControlKickedFramePayload = z.infer<typeof wsKickedFrameSchema>;

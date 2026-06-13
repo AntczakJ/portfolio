@@ -102,7 +102,7 @@ export type WSOklchColor = z.infer<typeof wsOklchColorSchema>;
  * deployment regression where HTTP middleware is not firing).
  */
 export const wsSessionIdentitySchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   emojiChar: z.string().min(1),
   emojiName: z.string().min(1),
   color: wsOklchColorSchema,
@@ -119,7 +119,7 @@ export type WSSessionIdentity = z.infer<typeof wsSessionIdentitySchema>;
  * frame for the same information).
  */
 export const wsBoardMetadataSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   createdAt: z.number().int(),
   connectionCount: z.number().int().nonnegative(),
 });
