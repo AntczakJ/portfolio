@@ -6,18 +6,12 @@
     "types": ["node"],
     "noEmit": true,
     "rootDir": ".",
-    "baseUrl": ".",
     "paths": {
-      "@helpers/*": ["helpers/*"]
+      "@helpers/*": ["./helpers/*"]
     },
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "preserve"
   },
-  "include": [
-    "playwright.config.ts",
-    "tests/**/*.ts",
-    "helpers/**/*.ts",
-    "env.d.ts"
-  ],
+  "include": ["playwright.config.ts", "tests/**/*.ts", "helpers/**/*.ts", "env.d.ts"],
   "exclude": ["node_modules", "playwright-report", "test-results"]
 }

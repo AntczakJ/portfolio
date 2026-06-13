@@ -6,9 +6,8 @@
     "types": ["node"],
     "noEmit": true,
     "rootDir": ".",
-    "baseUrl": ".",
     "paths": {
-      "@helpers/*": ["helpers/*"]
+      "@helpers/*": ["./helpers/*"]
     },
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "preserve"
