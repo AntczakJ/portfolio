@@ -29,9 +29,9 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
-    "@hocuspocus/server": "^4.1.0",
+    "@hocuspocus/server": "^4.2.0",
     "@hono/node-server": "^1.13.7",
-    "@hono/zod-validator": "^0.4.3",
+    "@hono/zod-validator": "^0.8.0",
     "drizzle-orm": "^0.45.2",
     "drizzle-zod": "^0.8.3",
     "hono": "^4.12.25",
@@ -42,7 +42,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@hocuspocus/provider": "^4.1.0",
+    "@hocuspocus/provider": "^4.2.0",
     "@types/node": "^22.9.0",
     "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.10",

@@ -27,7 +27,7 @@
     "pulse-server": "workspace:*",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-hook-form": "^7.78.0",
+    "react-hook-form": "^7.79.0",
     "tailwind-merge": "^3.6.0",
     "uplot": "^1.6.32",
     "zod": "^4.4.3",
