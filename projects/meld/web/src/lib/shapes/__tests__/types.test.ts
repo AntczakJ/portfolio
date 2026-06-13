@@ -268,7 +268,8 @@ describe('createShape — freehand', () => {
     expect(points).not.toBeNull();
     if (points === null) return;
     expect(points.length).toBe(3);
-    expect(points.get(2)?.pressure).toBe(0.7);
+    const third = points.get(2);
+    expect(third.pressure).toBe(0.7);
   });
 
   it("admits an empty initialPoints array", () => {

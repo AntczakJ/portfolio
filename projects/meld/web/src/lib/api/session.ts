@@ -74,7 +74,7 @@ export const getInitialIdentity = cache(
     }
 
     try {
-      const body = (await res.json()) as ServerSessionResponse;
+      const body = (await res.json());
       return body;
     } catch {
       return null;

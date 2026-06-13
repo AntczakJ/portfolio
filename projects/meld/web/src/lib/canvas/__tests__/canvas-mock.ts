@@ -91,7 +91,7 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 if (typeof globalThis.requestAnimationFrame === 'undefined') {
   (globalThis as { requestAnimationFrame: typeof requestAnimationFrame }).requestAnimationFrame =
     ((cb: FrameRequestCallback): number => {
-      return setTimeout(() => cb(performance.now()), 16) as unknown as number;
+      return setTimeout(() => { cb(performance.now()); }, 16) as unknown as number;
     }) as typeof requestAnimationFrame;
   (globalThis as { cancelAnimationFrame: typeof cancelAnimationFrame }).cancelAnimationFrame =
     ((handle: number): void => {

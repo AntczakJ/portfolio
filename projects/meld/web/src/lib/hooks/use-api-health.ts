@@ -67,14 +67,18 @@ async function probeHealth(signal: AbortSignal): Promise<ProbeResult> {
   if (!res.ok) {
     throw new Error(`health probe returned HTTP ${String(res.status)}`);
   }
-  const body = (await res.json()) as HealthResponse;
-  // Sanity-check the literal status field — if the server changes the
-  // contract so that `status` is no longer present (or is no longer
-  // typed as the literal 'ok'), this line fails `pnpm typecheck` at
-  // exactly the boundary where the drift entered. The Task 2.2
-  // contract experiment exercises this guarantee.
-  if (body.status !== 'ok') {
-    throw new Error(`health probe reported status ${String(body.status)}`);
+  const body: HealthResponse = await res.json();
+  // Sanity-check the literal status field at runtime. The RPC type
+  // narrows `status` to the literal 'ok', so we widen to `string`
+  // here before comparing — otherwise the typed view makes the guard
+  // look dead. If the server changes the contract so that `status` is
+  // no longer present, the InferResponseType drift surfaces in
+  // `pnpm typecheck`; this guard catches a same-shape value drift the
+  // type system cannot see. The Task 2.2 contract experiment exercises
+  // this guarantee.
+  const reportedStatus: string = body.status;
+  if (reportedStatus !== 'ok') {
+    throw new Error(`health probe reported status ${reportedStatus}`);
   }
   return { body, latencyMs, tick: Date.now() };
 }

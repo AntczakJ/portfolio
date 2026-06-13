@@ -159,7 +159,7 @@ describe('BoardEngine — subscribe-once contract', () => {
     expect(engine._testGetState().shapeMapBound).toBe(true);
     // Calling start() again throws — the engine is
     // constructed-bound-disposed exactly once per ADR-008.
-    expect(() => engine.start()).toThrow();
+    expect(() => { engine.start(); }).toThrow();
     // Settle to a clean baseline before stop() so the "no flip
     // after stop" assertion below is meaningful (start() seeds
     // dirty=true so the first paint runs).
@@ -179,7 +179,7 @@ describe('BoardEngine — subscribe-once contract', () => {
     expect(awareness.getStates().size).toBe(1); // local state seeded
     engine.start();
     // Re-binding throws — same subscribe-once contract as Y.Map.
-    expect(() => engine.start()).toThrow();
+    expect(() => { engine.start(); }).toThrow();
     engine.stop();
   });
 

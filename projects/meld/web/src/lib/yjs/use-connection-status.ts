@@ -53,7 +53,7 @@ export function useConnectionStatus(
     if (
       typeof navigator !== 'undefined' &&
       typeof navigator.onLine === 'boolean' &&
-      navigator.onLine === false
+      !navigator.onLine
     ) {
       return 'offline';
     }
@@ -76,7 +76,7 @@ export function useConnectionStatus(
     let osOffline =
       typeof navigator !== 'undefined' &&
       typeof navigator.onLine === 'boolean'
-        ? navigator.onLine === false
+        ? !navigator.onLine
         : false;
 
     // Resolve the most recent provider status. We mirror it locally

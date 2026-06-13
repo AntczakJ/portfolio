@@ -241,7 +241,9 @@ export class ThemeTokensBridge {
  * that legitimately exercises them under `useSyncExternalStore`'s
  * SSR pass.
  */
-const SSR_NOOP_UNSUBSCRIBE = (): void => {};
+const SSR_NOOP_UNSUBSCRIBE = (): void => {
+  // No-op: nothing is subscribed on the server, so unsubscribe is empty.
+};
 
 class ThemeTokensBridgeStub {
   current(): ThemeTokensSnapshot {
@@ -253,8 +255,12 @@ class ThemeTokensBridgeStub {
   subscribe(): () => void {
     return SSR_NOOP_UNSUBSCRIBE;
   }
-  refresh(): void {}
-  dispose(): void {}
+  refresh(): void {
+    // No-op on the server: there is no live CSS to re-read.
+  }
+  dispose(): void {
+    // No-op on the server: the stub holds no listeners or timers to tear down.
+  }
 }
 
 let cached: ThemeTokensBridge | ThemeTokensBridgeStub | null = null;

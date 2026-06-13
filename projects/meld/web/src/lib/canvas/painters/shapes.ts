@@ -39,6 +39,20 @@ import type { Viewport } from '../viewport';
  * Both plug into the same dispatch loop in Phase 3.2b.
  */
 
+/**
+ * Bounds-safe element read for a `Y.Array`. Yjs types `Y.Array.get`
+ * as returning `T` (never `undefined`), but the runtime returns
+ * `undefined` for an out-of-bounds index. This wrapper restores the
+ * honest `T | undefined` type so the defensive guards at each call
+ * site are meaningful to the type-checker rather than dead.
+ */
+function pointAt(
+  points: Y.Array<FreehandPoint>,
+  index: number,
+): FreehandPoint | undefined {
+  return points.get(index);
+}
+
 export interface ShapesPalette {
   /** Foreground color — used by text labels. */
   readonly fg: string;
@@ -187,7 +201,7 @@ function paintFreehand(
   // resists per-frame jitter and reads as a confident pen line rather
   // than a connect-the-dots polyline. For very short strokes (1 or
   // 2 points) fall back to a straight segment.
-  const first = points.get(0);
+  const first = pointAt(points, 0);
   if (first === undefined) return;
   let prevX = baseX + first.x;
   let prevY = baseY + first.y;
@@ -202,8 +216,8 @@ function paintFreehand(
   }
 
   for (let i = 1; i < points.length - 1; i += 1) {
-    const p = points.get(i);
-    const next = points.get(i + 1);
+    const p = pointAt(points, i);
+    const next = pointAt(points, i + 1);
     if (p === undefined || next === undefined) continue;
     const px = baseX + p.x;
     const py = baseY + p.y;
@@ -214,7 +228,7 @@ function paintFreehand(
     prevY = midY;
   }
 
-  const last = points.get(points.length - 1);
+  const last = pointAt(points, points.length - 1);
   if (last !== undefined) {
     ctx.lineTo(baseX + last.x, baseY + last.y);
   }
@@ -248,7 +262,7 @@ function paintText(
   // System font stack — matches `--font-sans` from globals.css verbatim
   // so the painted text aligns with the DOM-rendered text input the
   // toolbar pops up while the user types.
-  ctx.font = `${fontSize}px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+  ctx.font = `${String(fontSize)}px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
   ctx.textBaseline = 'top';
   ctx.fillText(text, x + 8, y);
 }
@@ -317,8 +331,8 @@ export function hitTestShape(
       const baseY = readNumber(map, 'y', 0);
       const tolerance = 6;
       for (let i = 0; i < points.length - 1; i += 1) {
-        const a = points.get(i);
-        const b = points.get(i + 1);
+        const a = pointAt(points, i);
+        const b = pointAt(points, i + 1);
         if (a === undefined || b === undefined) continue;
         const ax = baseX + a.x;
         const ay = baseY + a.y;
@@ -330,7 +344,7 @@ export function hitTestShape(
       }
       // Single-point freehand — hit if within tolerance of the dot.
       if (points.length === 1) {
-        const p = points.get(0);
+        const p = pointAt(points, 0);
         if (p === undefined) return false;
         const dx = px - (baseX + p.x);
         const dy = py - (baseY + p.y);

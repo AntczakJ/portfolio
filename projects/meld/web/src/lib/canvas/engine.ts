@@ -299,7 +299,7 @@ export class BoardEngine {
   // Per-peer cursor render state. Keyed by Yjs `clientID` (the
   // numeric per-connection id, NOT sessionId — two browser tabs share
   // sessionId but have distinct clientIDs).
-  #cursors: Map<number, CursorState> = new Map();
+  #cursors = new Map<number, CursorState>();
   #lastCursorTickMs = 0;
   #cursorTickCount = 0;
 
@@ -494,12 +494,13 @@ export class BoardEngine {
     const nowMs =
       typeof performance !== 'undefined' ? performance.now() : Date.now();
 
-    states.forEach((state, clientId) => {
+    states.forEach((rawState: unknown, clientId) => {
       if (clientId === localClientId) return;
-      if (state === null || typeof state !== 'object') return;
+      if (rawState === null || typeof rawState !== 'object') return;
+      const state: Record<string, unknown> = rawState as Record<string, unknown>;
       if (!('identity' in state)) return;
 
-      const identityRaw = (state as { identity: unknown }).identity;
+      const identityRaw = state.identity;
       const identity = parseAwarenessIdentity(identityRaw);
       if (!identity.ok) return;
 
@@ -518,7 +519,7 @@ export class BoardEngine {
       }
 
       const cursorRaw =
-        'cursor' in state ? (state as { cursor: unknown }).cursor : null;
+        'cursor' in state ? state.cursor : null;
       const cursor = parseAwarenessCursor(cursorRaw);
       const colorSlot = colorSlotFor(identity.value.sessionId, this.#boardId);
 
@@ -809,12 +810,12 @@ export class BoardEngine {
     console.log(
       `[meld-engine] shape avg=${shape.avgPaintMs.toFixed(2)}ms ` +
         `p99=${shape.p99PaintMs.toFixed(2)}ms ` +
-        `frames=${shape.paintCount} skipped=${shape.framesSkipped}`,
+        `frames=${String(shape.paintCount)} skipped=${String(shape.framesSkipped)}`,
     );
     console.log(
       `[meld-engine] cursor avg=${cursor.avgPaintMs.toFixed(2)}ms ` +
         `p99=${cursor.p99PaintMs.toFixed(2)}ms ` +
-        `frames=${cursor.paintCount} skipped=${cursor.framesSkipped}`,
+        `frames=${String(cursor.paintCount)} skipped=${String(cursor.framesSkipped)}`,
     );
   }
 
@@ -856,7 +857,7 @@ export class BoardEngine {
   }
 
   /** @internal — snapshot of the cursor render map for assertions. */
-  _testCursors(): ReadonlyArray<{
+  _testCursors(): readonly {
     clientId: number;
     sessionId: string;
     targetX: number | null;
@@ -867,7 +868,7 @@ export class BoardEngine {
     opacityTarget: number;
     colorSlot: number;
     emojiName: string;
-  }> {
+  }[] {
     return Array.from(this.#cursors.values()).map((e) => ({
       clientId: e.clientId,
       sessionId: e.sessionId,

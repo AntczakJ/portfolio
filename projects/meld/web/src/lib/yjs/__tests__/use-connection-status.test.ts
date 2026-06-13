@@ -46,7 +46,7 @@ class MockProvider {
 
   emitStatus(status: MockStatus): void {
     this.status = status;
-    this.#listeners.get('status')?.forEach((cb) => cb({ status }));
+    this.#listeners.get('status')?.forEach((cb) => { cb({ status }); });
   }
 }
 

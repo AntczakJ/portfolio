@@ -95,7 +95,7 @@ function ConflictVizOverlayImpl({
   // overlay is dev-only and the awareness set is small (5-10 peers
   // typical for a demo), so per-event re-render is fine.
   const [awarenessSummary, setAwarenessSummary] = useState<
-    ReadonlyArray<{ clientId: number; sessionId: string | null }>
+    readonly { clientId: number; sessionId: string | null }[]
   >([]);
 
   useEffect(() => {

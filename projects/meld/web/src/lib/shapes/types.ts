@@ -402,7 +402,7 @@ function generateShapeId(): string {
     `${hexBytes.slice(4, 6).join('')}-` +
     `${hexBytes.slice(6, 8).join('')}-` +
     `${hexBytes.slice(8, 10).join('')}-` +
-    `${hexBytes.slice(10, 16).join('')}`
+    hexBytes.slice(10, 16).join('')
   );
 }
 

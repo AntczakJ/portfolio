@@ -2,6 +2,8 @@
 import { createElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as MotionReact from 'motion/react';
+
 import { IdentityBadgeClient } from '../identity-badge-client';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { InitialIdentity } from '@/lib/identity/use-identity';
@@ -37,11 +39,21 @@ interface CapturedMotionProps {
   transition?: unknown;
 }
 
+/**
+ * Props handed to the mocked `motion.<tag>` factory. Motion-only keys
+ * are picked out for capture / stripping; everything else is forwarded
+ * to the underlying DOM element via `createElement`.
+ */
+interface MotionTagProps extends CapturedMotionProps {
+  'aria-hidden'?: string;
+  [key: string]: unknown;
+}
+
 const capturedRingProps: CapturedMotionProps[] = [];
 
 vi.mock('motion/react', async () => {
   const actual =
-    await vi.importActual<typeof import('motion/react')>('motion/react');
+    await vi.importActual<typeof MotionReact>('motion/react');
   return {
     ...actual,
     useReducedMotion: vi.fn(() => false),
@@ -49,8 +61,7 @@ vi.mock('motion/react', async () => {
       {},
       {
         get(_target, tag: string) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return function MotionTag(props: any): ReactElement {
+          return function MotionTag(props: MotionTagProps): ReactElement {
             // Only the ring carries the welcome-arrival beat. The
             // ring uses `motion.span` with `aria-hidden="true"`.
             if (tag === 'span' && props['aria-hidden'] === 'true') {
@@ -64,11 +75,8 @@ vi.mock('motion/react', async () => {
             // plain DOM element so Testing Library sees a normal
             // tree.
             const {
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
               initial: _initial,
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
               animate: _animate,
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
               transition: _transition,
               ...rest
             } = props;

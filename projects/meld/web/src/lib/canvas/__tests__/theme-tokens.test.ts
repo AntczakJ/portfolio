@@ -17,6 +17,7 @@ import {
   readThemeTokens,
   THEME_TOKENS,
   ThemeTokensBridge,
+  type ThemeTokensSubscriber,
 } from '../theme-tokens';
 
 function setTokens(values: Partial<Record<(typeof THEME_TOKENS)[number], string>>): void {
@@ -93,13 +94,13 @@ describe('ThemeTokensBridge.subscribe', () => {
 
   it('fires subscriber once when a tracked token changes', () => {
     const bridge = new ThemeTokensBridge();
-    const cb = vi.fn();
+    const cb = vi.fn<ThemeTokensSubscriber>();
     bridge.subscribe(cb);
     setTokens({ '--color-bg': 'oklch(0.18 0.012 285)' });
     bridge.refresh();
     expect(cb).toHaveBeenCalledTimes(1);
     const snap = cb.mock.calls[0]?.[0];
-    expect(snap['--color-bg']).toBe('oklch(0.18 0.012 285)');
+    expect(snap?.['--color-bg']).toBe('oklch(0.18 0.012 285)');
     bridge.dispose();
   });
 

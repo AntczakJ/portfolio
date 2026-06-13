@@ -159,7 +159,7 @@ const PILL_BORDER_ALPHA = 0.55;
 export function paintCursors(
   ctx: CanvasRenderingContext2D,
   vp: Viewport,
-  cursors: ReadonlyArray<CursorRenderState>,
+  cursors: readonly CursorRenderState[],
   palette: CursorsPalette,
 ): void {
   if (cursors.length === 0) return;

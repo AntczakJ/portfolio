@@ -68,12 +68,12 @@ import {
 
 interface AwarenessSnapshot {
   local: AwarenessIdentity | null;
-  remote: ReadonlyArray<AwarenessPeer>;
+  remote: readonly AwarenessPeer[];
   /** Stable signature for snapshot reuse across `getSnapshot()` calls. */
   signature: string;
 }
 
-const EMPTY_REMOTE: ReadonlyArray<AwarenessPeer> = Object.freeze([]);
+const EMPTY_REMOTE: readonly AwarenessPeer[] = Object.freeze([]);
 
 function cursorSig(c: AwarenessCursor): string {
   // Cursor x/y are floats; rounding to one decimal keeps the signature
@@ -87,7 +87,7 @@ function cursorSig(c: AwarenessCursor): string {
 
 function buildSignature(
   local: AwarenessIdentity | null,
-  remote: ReadonlyArray<AwarenessPeer>,
+  remote: readonly AwarenessPeer[],
 ): string {
   // The signature collapses identity fields into a short hash-key. We
   // include every field the consumer can render (sessionId, emojiName,
@@ -99,14 +99,14 @@ function buildSignature(
   const local_ =
     local === null
       ? 'none'
-      : `${local.sessionId}|${local.emojiName}|${local.color.H}|${local.colorDark.H}`;
+      : `${local.sessionId}|${local.emojiName}|${String(local.color.H)}|${String(local.colorDark.H)}`;
   if (remote.length === 0) {
     return `L=${local_};R=`;
   }
   const remoteSig = remote
     .map(
       (p) =>
-        `${p.clientId}:${p.identity.sessionId}|${p.identity.emojiName}|${p.identity.color.H}|${p.identity.colorDark.H}|${cursorSig(p.cursor)}`,
+        `${String(p.clientId)}:${p.identity.sessionId}|${p.identity.emojiName}|${String(p.identity.color.H)}|${String(p.identity.colorDark.H)}|${cursorSig(p.cursor)}`,
     )
     .join(',');
   return `L=${local_};R=${remoteSig}`;
@@ -123,29 +123,25 @@ function readAwarenessSnapshot(
   // same parse path as remote peers. Falls back to `null` if the local
   // state has not been seeded yet (welcome frame has not landed).
   let local: AwarenessIdentity | null = null;
-  const localRaw = states.get(ownClientId);
+  const localRaw: unknown = states.get(ownClientId);
   if (
     localRaw !== undefined &&
     typeof localRaw === 'object' &&
     localRaw !== null &&
     'identity' in localRaw
   ) {
-    const parsed = parseAwarenessIdentity(
-      (localRaw as { identity: unknown }).identity,
-    );
+    const parsed = parseAwarenessIdentity(localRaw.identity);
     if (parsed.ok) {
       local = parsed.value;
     }
   }
 
   const remote: AwarenessPeer[] = [];
-  states.forEach((state, clientId) => {
+  states.forEach((state: unknown, clientId) => {
     if (clientId === ownClientId) return;
     if (state === null || typeof state !== 'object') return;
     if (!('identity' in state)) return;
-    const parsed = parseAwarenessIdentity(
-      (state as { identity: unknown }).identity,
-    );
+    const parsed = parseAwarenessIdentity(state.identity);
     if (!parsed.ok) {
       if (process.env.NODE_ENV === 'development') {
         console.warn(
@@ -159,7 +155,7 @@ function readAwarenessSnapshot(
     // canvas). A peer with a valid identity but no cursor is still a
     // valid peer — they just aren't pointing at the board right now.
     const cursorRaw =
-      'cursor' in state ? (state as { cursor: unknown }).cursor : null;
+      'cursor' in state ? state.cursor : null;
     const cursor = parseAwarenessCursor(cursorRaw);
     remote.push({
       clientId,
@@ -188,7 +184,7 @@ function readAwarenessSnapshot(
 
 export interface UseAwarenessResult {
   local: AwarenessIdentity | null;
-  remote: ReadonlyArray<AwarenessPeer>;
+  remote: readonly AwarenessPeer[];
 }
 
 /**
@@ -227,8 +223,8 @@ export function useAwareness(awareness: Awareness | null): UseAwarenessResult {
               .map((p) => p.identity.emojiName)
               .join(',');
             console.log(
-              `[meld-awareness] tick=${changeCountRef.current} ` +
-                `local=${localName} remoteCount=${snap.remote.length} ` +
+              `[meld-awareness] tick=${String(changeCountRef.current)} ` +
+                `local=${localName} remoteCount=${String(snap.remote.length)} ` +
                 `peers=[${peerNames}]`,
             );
           }

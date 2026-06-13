@@ -1,5 +1,13 @@
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from 'vitest';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
@@ -77,7 +85,7 @@ const SESSION_REMOTE_B = '6b517a38-9876-4cde-9f01-fedcba987654';
 describe('useAwareness', () => {
   let doc: Y.Doc;
   let awareness: Awareness;
-  let warnSpy: ReturnType<typeof vi.spyOn>;
+  let warnSpy: MockInstance<typeof console.warn>;
 
   beforeEach(() => {
     doc = new Y.Doc();

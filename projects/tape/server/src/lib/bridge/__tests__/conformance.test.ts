@@ -386,7 +386,6 @@ describe('bridge conformance — framing round-trip (payload-agnostic)', () => {
     }
     expect(recovered.length).toBe(payloads.length);
     for (let i = 0; i < payloads.length; i++) {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       expect(Array.from(recovered[i]!)).toEqual(Array.from(payloads[i]!));
     }
     expect(reader.pendingBytes).toBe(0);
@@ -403,9 +402,7 @@ describe('bridge conformance — framing round-trip (payload-agnostic)', () => {
     const recovered = Array.from(reader.frames());
     expect(recovered.length).toBe(expectedPayloads.length);
     for (let i = 0; i < expectedPayloads.length; i++) {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       expect(Array.from(recovered[i]!)).toEqual(
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         Array.from(expectedPayloads[i]!),
       );
     }
