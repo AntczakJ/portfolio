@@ -25,6 +25,7 @@ minimumReleaseAgeExclude:
 # Security overrides (Dependabot alerts). All are dev/build-time or transitive —
 # none reach the deployed production images. Patched versions pinned repo-wide.
 overrides:
+  ioredis: 5.11.1
   vitest: '^4.1.0' # CVE: Vitest UI server arbitrary file read/exec (<4.1.0)
   vite: '^6.4.2' # path traversal in optimized-deps .map handling
   esbuild: '^0.25.0' # dev server cross-origin request/response read
