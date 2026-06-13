@@ -43,7 +43,7 @@
   },
   "devDependencies": {
     "@hocuspocus/provider": "^4.1.0",
-    "@types/node": "^22.9.0",
+    "@types/node": "^25.9.3",
     "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.10",
     "lib0": "^0.2.117",
