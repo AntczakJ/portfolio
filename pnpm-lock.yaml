@@ -538,8 +538,8 @@ importers:
   projects/meld/server:
     dependencies:
       '@hocuspocus/server':
-        specifier: ^4.1.0
-        version: 4.1.0(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
+        specifier: ^4.2.0
+        version: 4.2.0(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
       '@hono/node-server':
         specifier: ^1.13.7
         version: 1.19.14(hono@4.12.25)
@@ -572,8 +572,8 @@ importers:
         version: 4.4.3
     devDependencies:
       '@hocuspocus/provider':
-        specifier: ^4.1.0
-        version: 4.1.0(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
+        specifier: ^4.2.0
+        version: 4.2.0(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
       '@types/node':
         specifier: ^25.9.3
         version: 25.9.3
@@ -596,8 +596,8 @@ importers:
   projects/meld/web:
     dependencies:
       '@hocuspocus/provider':
-        specifier: ^4.1.0
-        version: 4.1.0(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
+        specifier: ^4.2.0
+        version: 4.2.0(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
       '@tanstack/react-query':
         specifier: ^5.101.0
         version: 5.101.0(react@19.2.7)
@@ -1807,17 +1807,17 @@ packages:
       gsap: ^3.12.5
       react: '>=17'
 
-  '@hocuspocus/common@4.1.0':
-    resolution: {integrity: sha512-SOBbu0GcBMbLo7IYRDZC6gvEcoATbEFIC5KqzvLanC6dZZLkv91pYEBli+Exs/G71ELL3iUjSwnaf+gksxcjFA==}
+  '@hocuspocus/common@4.2.0':
+    resolution: {integrity: sha512-031clELz+rW7MpmpFUFN7+vE52Gtk1wkrSVHyqydZgKSLf5AtrorliCf38cH65mGGltLR2/JrydzqOk2bVQhjw==}
 
-  '@hocuspocus/provider@4.1.0':
-    resolution: {integrity: sha512-K80V2yX4AMdpqgjIkexJioyI2Oq8pu8hjdFqY0INXKSpH8TQv9NMaDzJmlrZMYmUeKyRO2t7VhGyFK9jZQPnNw==}
+  '@hocuspocus/provider@4.2.0':
+    resolution: {integrity: sha512-w38vvgYBs4NDonMkxb4R//n+CgBJ+K/03RMXcr8yHx1I3TY8HYpTlRqOUWdIJpmgw2ZyuM9EdbJwwRPrZF7iEA==}
     peerDependencies:
       y-protocols: ^1.0.6
       yjs: ^13.6.8
 
-  '@hocuspocus/server@4.1.0':
-    resolution: {integrity: sha512-mp0Of76kRkK/u+9pKXPLNV4NI2Cyjql/jVnudVb0z6xAd/i7mBDTK88p1I1sNoX9yvCvhY7lQlrvVx6sMcl8Xw==}
+  '@hocuspocus/server@4.2.0':
+    resolution: {integrity: sha512-D3OjjH/62G2M6FDfJMJDtAgV3VdUcq1V4MNLjuVaUpdhWkRy5OdzC6Zwo9hfFmtoolDzAy+WUK+xFPN/FljtYw==}
     engines: {node: '>=22'}
     peerDependencies:
       y-protocols: ^1.0.6
@@ -8550,21 +8550,21 @@ snapshots:
       gsap: 3.15.0
       react: 19.2.7
 
-  '@hocuspocus/common@4.1.0':
+  '@hocuspocus/common@4.2.0':
     dependencies:
       lib0: 0.2.117
 
-  '@hocuspocus/provider@4.1.0(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)':
+  '@hocuspocus/provider@4.2.0(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)':
     dependencies:
-      '@hocuspocus/common': 4.1.0
+      '@hocuspocus/common': 4.2.0
       '@lifeomic/attempt': 3.1.0
       lib0: 0.2.117
       y-protocols: 1.0.7(yjs@13.6.31)
       yjs: 13.6.31
 
-  '@hocuspocus/server@4.1.0(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)':
+  '@hocuspocus/server@4.2.0(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)':
     dependencies:
-      '@hocuspocus/common': 4.1.0
+      '@hocuspocus/common': 4.2.0
       async-mutex: 0.5.0
       crossws: 0.4.5
       kleur: 4.1.5

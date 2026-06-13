@@ -19,6 +19,9 @@ minimumReleaseAgeExclude:
   - '@better-auth/prisma-adapter@1.6.18'
   - '@better-auth/telemetry@1.6.18'
   - better-auth@1.6.18
+  - '@hocuspocus/common@4.2.0'
+  - '@hocuspocus/provider@4.2.0'
+  - '@hocuspocus/server@4.2.0'
 # Security overrides (Dependabot alerts). All are dev/build-time or transitive —
 # none reach the deployed production images. Patched versions pinned repo-wide.
 overrides:
