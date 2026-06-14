@@ -4,17 +4,13 @@ All notable changes to **nocturne** are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-### Added
+- Deferred designer-critic mediums (D-05/07/09/10/11/12 — real-GPU look judgement / art-direction) and the v2 path: a real CC0 track option, recording/export, MIDI input, and `PerformanceMonitor`-to-`ultra` (1M) promotion tuning against the deployed profile.
 
-- Nothing yet.
-
-### Changed
-
-- Nothing yet.
+## [0.1.1] — 2026-06-14
 
 ### Deploy
 
-- Fly.io deploy of the v1 build (single Machine, Next.js standalone, region `fra`, web-only, no secrets) is pending. On deploy the demo URL becomes `https://nocturne-demo.fly.dev` and `NEXT_PUBLIC_SITE_URL` is baked at build time (backing the sitemap, canonical tags, the Open Graph image, and the JSON-LD). ADR-005 (deploy posture) is finalized at deploy.
+- **Deployed to Fly.io: [nocturne-demo.fly.dev](https://nocturne-demo.fly.dev)** (single Machine, Next.js standalone, region `fra`, web-only, no secrets, scale-to-zero — the atrium/apex pattern; ADR-005). Deploy surface added: `Dockerfile` (three-stage; standalone built inside the Linux image to dodge the Windows symlink-EPERM; no `web/public` copy), `fly.toml` (single HTTP service :3000, health check `/`, shared-cpu-1x/512MB, `min_machines_running = 0`), `.dockerignore`, `DEPLOY.md`. The app is `nocturne-demo` (the demo-suffix naming of the web-only siblings); `NEXT_PUBLIC_SITE_URL=https://nocturne-demo.fly.dev` baked at build. Verified live: `/` 200 with the exact eval-free CSP (no `unsafe-eval`; `media-src`/`worker-src 'self' blob:`), `/about` 200, `/opengraph-image` 200 image/png, robots/sitemap reference the canonical origin. The GPU field + Web Audio run client-side in the visitor's browser; the CPU-only Fly Machine just serves the bundle.
 
 ### Deferred (v2 path)
 

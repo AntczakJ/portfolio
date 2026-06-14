@@ -1,0 +1,69 @@
+# Excludes from the Docker build context. Build context: projects/nocturne/.
+# The Dockerfile re-installs + re-builds inside the image, so host install/build
+# artifacts are excluded so a stale host .next / node_modules never shadows the
+# in-image build. The Windows host .next/standalone is emitted with EPERM
+# symlink warnings; excluding **/.next ensures the broken host trace can never
+# leak — the Linux build stage produces a clean one. The apex/atrium precedent.
+
+**/node_modules
+**/.next
+**/.turbo
+**/coverage
+**/dist
+**/out
+**/.cache
+**/tsconfig.tsbuildinfo
+**/.eslintcache
+**/playwright/.cache
+
+# Local env files — secrets. nocturne needs NO runtime secrets (web-only); the
+# only config is the build-time NEXT_PUBLIC_SITE_URL ARG.
+**/.env
+**/.env.*
+!**/.env.example
+
+.vscode/
+.idea/
+**/.DS_Store
+**/Thumbs.db
+**/*.log
+
+# Test + review surfaces — never executed at runtime.
+**/__tests__
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+e2e
+**/playwright.config.ts
+**/playwright-report
+**/test-results
+**/.lighthouseci
+lighthouserc.json
+web/lighthouserc.json
+# Dev-time capture/verify scripts (their outputs are committed under docs/; the
+# scripts do not run at runtime).
+web/scripts
+
+# Per-project docs — readable on GitHub, not needed in the runtime image.
+**/README.md
+**/CHANGELOG.md
+**/PLAN.md
+**/PROGRESS.md
+**/DECISIONS.md
+**/AGENT_NOTES.md
+**/TASKS.md
+**/CRITIQUE-*.md
+**/REVIEW-*.md
+**/DEPLOY.md
+docs
+web/docs
+
+# The build/deploy descriptors themselves.
+fly.toml
+Dockerfile
+.dockerignore
+
+.git
+.gitignore
+.gitattributes

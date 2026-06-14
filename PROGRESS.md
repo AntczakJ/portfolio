@@ -4,7 +4,7 @@
 
 ## State
 
-- **Portfolio status: 7 projects — ALL shipped + deployed to Fly.io, including `atrium` (slot 7, the portfolio landing page), deployed 2026-06-10.** The backend-variance target is met: four api-heavy projects across four distinct backends (tape Elysia/Bun, meld Hono/Node, pulse NestJS/Node, atlas Fastify/Node) plus three web-only showcases (razors-edge, apex, and atrium the landing page). atlas (slot 6, Fastify) completes the backend-variance story; atrium (slot 7) is the front door that frames the whole portfolio.
+- **Portfolio status: 8 projects — ALL shipped + deployed to Fly.io, including `nocturne` (slot 8), deployed 2026-06-14.** The backend-variance target is met: four api-heavy projects across four distinct backends (tape Elysia/Bun, meld Hono/Node, pulse NestJS/Node, atlas Fastify/Node) plus FOUR web-only creative showcases (razors-edge, apex, atrium the landing page, and nocturne the generative GPU piece). atlas (slot 6, Fastify) completes the backend-variance story; atrium (slot 7) is the front door; nocturne (slot 8) is the creative-coding / generative-graphics showcase.
   - `tape` — v1 shipped + deployed, api-heavy orderflow visualizer (Elysia/Bun + Rust worker), slot 1, demo at https://tape-demo.fly.dev
   - `meld` — v1 shipped + deployed, api-heavy local-first whiteboard (Hono/Node + Yjs), slot 2, demo at https://meld-demo.fly.dev
   - `razors-edge` — v1 shipped + deployed, web-only dark-luxe barbershop showcase (GSAP), slot 3, demo at https://razors-edge-demo.fly.dev
@@ -12,14 +12,14 @@
   - `apex` — v1 shipped + deployed, web-only EV car-rental showcase (R3F 3D configurator), slot 5, demo at https://apex-rentals.fly.dev
   - `atlas` — v1 shipped + deployed, api-heavy live geospatial fleet tracking (Fastify + WebSocket + MapLibre, keyless Protomaps basemap), slot 6, demo at https://atlas-ops.fly.dev
   - `atrium` — v1 shipped + deployed, web-only GSAP scroll-driven portfolio landing page / lobby, slot 7, demo at https://atrium-demo.fly.dev (the bare `atrium` Fly name was taken). Lighthouse 99/100/96/100, Vitest 54/54 + Playwright 18/18 green.
-  - `nocturne` — **PLANNED (2026-06-14), not yet built**, web-only creative slot 8: a GPU-accelerated, audio-reactive generative particle experience (GPGPU FBO ping-pong curl-noise field, 100k–1M particles, Web Audio FFT reactivity, cinematic post — bloom/vignette/chromatic-aberration). R3F single-family (R3F + drei + @react-three/postprocessing) + custom GLSL, no GSAP/Motion. Dev port 3100. Deliberate web-only creative piece (backend axis already complete); the portfolio's second R3F project, distinct from apex (abstract generative GPGPU art vs product configurator — the § 14 re-skin gate is argued in its ADR-001). Awaiting the architect's Phase-0 ADRs (ADR-002 GPGPU+R3F/Next+tiers, ADR-003 Web Audio pipeline, ADR-004 reduced-motion+degradation+poster hand-off) before build.
+  - `nocturne` — **v1 shipped + deployed (2026-06-14)**, web-only creative slot 8: a GPU audio-reactive generative particle experience, demo at https://nocturne-demo.fly.dev. GPGPU FBO ping-pong curl-noise field (default 262k particles, runtime-adaptive to 1M), Web Audio FFT reactivity (procedural built-in source + mic + file upload), cinematic post (bloom/vignette/chromatic-aberration), four-tier degradation (poster fallback), auto-dimming cinematic HUD, /about, SEO. R3F single-family + custom GLSL, no GSAP/Motion, eval-free CSP (tighter than apex). Full pipeline complete (planner → architect → 3 FE passes → designer-critic [§ 14 vs-apex PASS] → reviewer [APPROVE, 0 blockers] → must-fix → test-engineer → doc-writer → deploy). 123 Vitest + 29 Playwright E2E green; Lighthouse /about 100/100/96/100. Dev port 3100.
 - **Scaffold:** done (2026-05-28)
 - **CI:** green
 - **First commit:** done (repo has full history)
 
 ## Deployment status (INTERNAL — 2026-06-06)
 
-All seven demos are deployed to Fly.io. **The Fly apps are currently STOPPED to control cost; they are restartable on request.** This pause is internal and cost-driven — it is NOT reflected in any public README or CHANGELOG (the demo links there stay normal/live by deliberate owner policy).
+All eight demos are deployed to Fly.io. **The Fly apps are currently STOPPED to control cost; they are restartable on request.** This pause is internal and cost-driven — it is NOT reflected in any public README or CHANGELOG (the demo links there stay normal/live by deliberate owner policy).
 
 Restart procedure (durable — do not hardcode machine IDs; list them with `fly machines list -a <app>`). Start the database first, then the api/server, then the web. Web-only apps auto-start when the demo URL is hit.
 
@@ -38,6 +38,7 @@ fly machine start <id> -a <app>            # start; DB first, then api/server, t
 | apex        | `apex-rentals` (web only, no DB)                                                                                     | auto-starts on URL hit                                                                                                    |
 | atlas       | `atlas-db-eu` (Postgres) → `atlas-fleet-eu` (Fastify server + engine + WS) → `atlas-ops` (web)                       | the live map runs DB-less; DB is for the persisted events history                                                         |
 | atrium      | `atrium-demo` (web only, no DB)                                                                                      | auto-starts on URL hit; the bare `atrium` Fly name was taken                                                              |
+| nocturne    | `nocturne-demo` (web only, no DB)                                                                                    | auto-starts on URL hit; scale-to-zero (min 0); WebGL runs client-side on the visitor's GPU                                |
 
 ## Done
 
