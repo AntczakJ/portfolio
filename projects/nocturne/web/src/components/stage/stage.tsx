@@ -17,6 +17,7 @@ import { useExperienceStore } from '@/lib/store/experience-store';
 import type { RenderRoute, TierConfig } from '@/lib/schemas';
 
 import { FieldCanvas } from './field-canvas';
+import { HardwareHint } from './hardware-hint';
 import { Hud } from './hud';
 import { IntroOverlay } from './intro-overlay';
 import { useAudioEngine } from './use-audio-engine';
@@ -181,6 +182,12 @@ export function Stage(): ReactNode {
       <p aria-live="polite" className="sr-only">
         {description}
       </p>
+
+      {/* The "enable hardware acceleration" hint (FIX 2) — ONLY when the probe
+          routed to the poster because the renderer is SOFTWARE WebGL (a fixable
+          setting). The ordinary no-WebGL / no-JS poster (no-webgl2 / no-float —
+          a capability floor) gets no hint. */}
+      {config?.posterReason === 'software-webgl' ? <HardwareHint /> : null}
 
       {/* The intro gate (pre-arm) → the HUD (post-arm), ABOVE the page content
           (`z-20`). The wrapper is click-through; its children opt back in. */}

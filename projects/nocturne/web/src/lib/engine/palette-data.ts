@@ -32,27 +32,42 @@ function clampByte(v: number): number {
 }
 
 /**
- * Build `width × 1` RGBA8 data interpolating the ramp stops across the width.
- * Alpha is fully opaque (the particle shader owns opacity).
+ * Write `width × 1` RGBA8 data interpolating the ramp stops across the width
+ * INTO an existing buffer — the allocation-free hot-path variant (FIX 3). The
+ * render loop owns the texture's `image.data` and calls this in place each frame
+ * a transition is active, so the 60 fps hot path allocates NOTHING (it does not
+ * mint a fresh `Uint8Array` per frame). Alpha is fully opaque (the particle
+ * shader owns opacity).
+ *
+ * `out` must be at least `width * 4` bytes (the caller sizes it to match the
+ * texture). Identical byte output to {@link buildPaletteData} for the same ramp.
  */
-export function buildPaletteData(
+export function writePaletteData(
   ramp: readonly Rgb[],
+  out: Uint8Array,
   width: number = PALETTE_TEXTURE_WIDTH,
 ): Uint8Array {
-  const data = new Uint8Array(width * 4);
   if (ramp.length === 0) {
-    for (let x = 0; x < width; x += 1) data[x * 4 + 3] = 255;
-    return data;
+    for (let x = 0; x < width; x += 1) {
+      out[x * 4] = 0;
+      out[x * 4 + 1] = 0;
+      out[x * 4 + 2] = 0;
+      out[x * 4 + 3] = 255;
+    }
+    return out;
   }
   if (ramp.length === 1) {
     const only = ramp[0] ?? RGB_FALLBACK;
+    const r = clampByte(only[0]);
+    const g = clampByte(only[1]);
+    const b = clampByte(only[2]);
     for (let x = 0; x < width; x += 1) {
-      data[x * 4] = clampByte(only[0]);
-      data[x * 4 + 1] = clampByte(only[1]);
-      data[x * 4 + 2] = clampByte(only[2]);
-      data[x * 4 + 3] = 255;
+      out[x * 4] = r;
+      out[x * 4 + 1] = g;
+      out[x * 4 + 2] = b;
+      out[x * 4 + 3] = 255;
     }
-    return data;
+    return out;
   }
 
   const lastIndex = ramp.length - 1;
@@ -64,10 +79,23 @@ export function buildPaletteData(
     const f = pos - lo;
     const a = ramp[lo] ?? RGB_FALLBACK;
     const b = ramp[hi] ?? RGB_FALLBACK;
-    data[x * 4] = clampByte(a[0] + (b[0] - a[0]) * f);
-    data[x * 4 + 1] = clampByte(a[1] + (b[1] - a[1]) * f);
-    data[x * 4 + 2] = clampByte(a[2] + (b[2] - a[2]) * f);
-    data[x * 4 + 3] = 255;
+    out[x * 4] = clampByte(a[0] + (b[0] - a[0]) * f);
+    out[x * 4 + 1] = clampByte(a[1] + (b[1] - a[1]) * f);
+    out[x * 4 + 2] = clampByte(a[2] + (b[2] - a[2]) * f);
+    out[x * 4 + 3] = 255;
   }
-  return data;
+  return out;
+}
+
+/**
+ * Build `width × 1` RGBA8 data interpolating the ramp stops across the width
+ * (allocating a fresh buffer). Used at INIT (the initial palette texture) and in
+ * tests; the per-frame hot path uses {@link writePaletteData} into the texture's
+ * existing buffer instead (FIX 3). Alpha is fully opaque.
+ */
+export function buildPaletteData(
+  ramp: readonly Rgb[],
+  width: number = PALETTE_TEXTURE_WIDTH,
+): Uint8Array {
+  return writePaletteData(ramp, new Uint8Array(width * 4), width);
 }

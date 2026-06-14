@@ -44,6 +44,7 @@ import { GpgpuSim } from '@/lib/engine/gpgpu-sim';
 import {
   buildPaletteData,
   PALETTE_TEXTURE_WIDTH,
+  writePaletteData,
 } from '@/lib/engine/palette-data';
 import {
   crossfadePresets,
@@ -364,12 +365,20 @@ function FieldRender(props: FieldRenderProps): ReactNode {
     );
     bandsRef.current = bands;
 
-    // 2. resolve the cross-faded base uniforms + ramp
+    // 2. resolve the cross-faded base uniforms + ramp. `ramp` is non-null ONLY
+    // while a cross-fade is active (resolveLook returns null on an idle frame).
     const { base, ramp } = resolveLook(presetId, transitionRef, dt);
 
+    // FIX 3: rebuild + re-upload the palette texture ONLY when the ramp actually
+    // changed this frame (a transition is active) — NOT every idle frame. The
+    // ramp is written IN PLACE into the texture's existing buffer (no per-frame
+    // allocation), and `needsUpdate = true` (the GPU upload) is set only then.
+    // On an idle frame the texture already holds the correct ramp (the last
+    // transition frame landed on the target exactly, easeOutExpo(1)===1, or the
+    // init palette), so we skip both the write and the upload.
     const palette = paletteRef.current;
     if (palette && ramp) {
-      (palette.image.data as Uint8Array).set(buildPaletteData(ramp));
+      writePaletteData(ramp, palette.image.data as Uint8Array);
       palette.needsUpdate = true;
     }
 

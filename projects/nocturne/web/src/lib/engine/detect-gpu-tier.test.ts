@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
-import { detectGpuTier, type DetectGpuTierDeps } from './detect-gpu-tier';
+import {
+  decideSoftwareRenderer,
+  detectGpuTier,
+  isSoftwareRendererString,
+  type DetectGpuTierDeps,
+} from './detect-gpu-tier';
 
-/** A capable-desktop baseline: WebGL2 + float, fine pointer, 8 cores, motion OK. */
+/** A capable-desktop baseline: WebGL2 + float, hardware GPU, 8 cores, motion OK. */
 function capableDesktop(over: Partial<DetectGpuTierDeps> = {}): DetectGpuTierDeps {
   return {
     hasWindow: true,
     hasWebgl2: () => true,
     hasColorBufferFloat: () => true,
+    isSoftwareRenderer: () => false, // a real hardware GPU by default
     matchMedia: () => false, // no reduced-motion, no reduced-data, fine pointer
     hardwareConcurrency: 8,
     deviceMemory: 8,
@@ -27,11 +33,13 @@ describe('detectGpuTier — capability gate', () => {
     const config = detectGpuTier({ hasWindow: false });
     expect(config.route).toBe('poster');
     expect(config.particleCount).toBe(0);
+    expect(config.posterReason).toBe('no-window');
   });
 
   it('routes to poster when WebGL2 is unavailable', () => {
     const config = detectGpuTier(capableDesktop({ hasWebgl2: () => false }));
     expect(config.route).toBe('poster');
+    expect(config.posterReason).toBe('no-webgl2');
   });
 
   it('routes to poster when EXT_color_buffer_float is unavailable (the float gate)', () => {
@@ -40,6 +48,7 @@ describe('detectGpuTier — capability gate', () => {
     );
     expect(config.route).toBe('poster');
     expect(config.reason).toMatch(/float/i);
+    expect(config.posterReason).toBe('no-float');
   });
 
   it('checks WebGL2 before the float extension (order)', () => {
@@ -59,11 +68,105 @@ describe('detectGpuTier — capability gate', () => {
   });
 });
 
+describe('detectGpuTier — software-renderer gate (the 0% GPU / 100% CPU fix)', () => {
+  it('routes a software renderer to the poster with reason software-webgl', () => {
+    const config = detectGpuTier(
+      capableDesktop({ isSoftwareRenderer: () => true }),
+    );
+    expect(config.route).toBe('poster');
+    expect(config.posterReason).toBe('software-webgl');
+    expect(config.particleCount).toBe(0);
+    expect(config.reason).toMatch(/software/i);
+  });
+
+  it('keeps a real hardware GPU on the live route (not regressed)', () => {
+    const config = detectGpuTier(
+      capableDesktop({ isSoftwareRenderer: () => false }),
+    );
+    expect(config.route).toBe('live');
+    expect(config.posterReason).toBeNull();
+  });
+
+  it('runs the software gate AFTER the float gate (a no-float client never reaches it)', () => {
+    let softwareProbed = false;
+    const config = detectGpuTier(
+      capableDesktop({
+        hasColorBufferFloat: () => false,
+        isSoftwareRenderer: () => {
+          softwareProbed = true;
+          return true;
+        },
+      }),
+    );
+    // no-float wins (it is checked first); the software probe must not run.
+    expect(config.posterReason).toBe('no-float');
+    expect(softwareProbed).toBe(false);
+  });
+
+  it('detects each known software-renderer string (case-insensitive)', () => {
+    for (const r of [
+      'Google SwiftShader',
+      'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)',
+      'llvmpipe (LLVM 15.0.0, 256 bits)',
+      'Mesa OffScreen',
+      'softpipe',
+      'Microsoft Basic Render Driver',
+      'Software Rasterizer',
+    ]) {
+      expect(isSoftwareRendererString(r)).toBe(true);
+    }
+  });
+
+  it('does not flag a real hardware GPU string', () => {
+    for (const r of [
+      'ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Direct3D11 vs_5_0 ps_5_0, D3D11)',
+      'Apple M2 Pro',
+      'AMD Radeon Pro 5500M OpenGL Engine',
+      'Intel(R) Iris(R) Xe Graphics',
+    ]) {
+      expect(isSoftwareRendererString(r)).toBe(false);
+    }
+  });
+
+  describe('decideSoftwareRenderer (the renderer-string + caveat-context combinator)', () => {
+    it('is software when the renderer string is a software backend', () => {
+      expect(decideSoftwareRenderer('Google SwiftShader', false)).toBe(true);
+    });
+
+    it('is software when the only context is a major-perf-caveat one (caveat-null path)', () => {
+      // The unmasked string is hidden (''), but the no-caveat context was null —
+      // the browser only offered a software/major-caveat context.
+      expect(decideSoftwareRenderer('', true)).toBe(true);
+    });
+
+    it('is software when a HARDWARE string still carries a caveat-only context', () => {
+      // A masked/hidden hardware string but a caveat-only context still routes to
+      // the poster (the caveat is the browser saying "this is slow/software").
+      expect(decideSoftwareRenderer('Apple M2 Pro', true)).toBe(true);
+    });
+
+    it('is NOT software for a hardware string with a clean no-caveat context', () => {
+      expect(
+        decideSoftwareRenderer(
+          'ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Direct3D11 vs_5_0 ps_5_0, D3D11)',
+          false,
+        ),
+      ).toBe(false);
+    });
+
+    it('is NOT software when both signals are clean (no string, no caveat)', () => {
+      // WEBGL_debug_renderer_info hidden AND a clean no-caveat context → trust it.
+      expect(decideSoftwareRenderer('', false)).toBe(false);
+    });
+  });
+});
+
 describe('detectGpuTier — tier heuristic', () => {
   it('defaults a capable desktop to high (262k), never ultra at boot', () => {
     const config = detectGpuTier(capableDesktop());
     expect(config.tier).toBe('high');
     expect(config.route).toBe('live');
+    expect(config.posterReason).toBeNull();
     expect(config.simResolution).toBe(512);
     expect(config.particleCount).toBe(512 * 512);
     expect(config.dprClamp).toEqual([1, 2]);

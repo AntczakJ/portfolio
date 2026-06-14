@@ -1,6 +1,7 @@
 import {
   tierConfigSchema,
   type PostQuality,
+  type PosterReason,
   type RenderRoute,
   type TierConfig,
   type TierName,
@@ -29,10 +30,24 @@ import {
  *   1. no `window` / SSR ─────────────────────────────▶ poster
  *   2. getContext('webgl2') === null ─────────────────▶ poster
  *   3. EXT_color_buffer_float === null ───────────────▶ poster   ← the float gate
+ *   3b. SOFTWARE renderer (SwiftShader/llvmpipe/…) ────▶ poster   ← the software gate
  *   4. prefers-reduced-motion: reduce ────────────────▶ calm (drift, audio muted)
  *   5. prefers-reduced-data: reduce ──────────────────▶ live @ low
  *   6. coarse-pointer AND viewport < 768px ───────────▶ live @ low (mobile floor)
  *   7. cores/deviceMemory heuristic ──────────────────▶ live @ high|mid|low
+ *
+ * The SOFTWARE gate (3b, the fix for the reported 0% GPU / 100% CPU bug): a
+ * software WebGL backend (SwiftShader, llvmpipe, Mesa softpipe, Microsoft Basic
+ * Render, ANGLE-over-SwiftShader, …) PASSES the WebGL2 + float gates, so without
+ * this check the full 262k-particle GPGPU + bloom would run on the CPU. We read
+ * the unmasked renderer string (`WEBGL_debug_renderer_info` →
+ * `UNMASKED_RENDERER_WEBGL`) and ALSO probe a `failIfMajorPerformanceCaveat`
+ * context: if the renderer string is a known software backend, OR a normal
+ * context succeeds while the no-caveat context is null (the only context is a
+ * major-perf-caveat / software one), we route to the poster with
+ * `posterReason: 'software-webgl'` — the SAME outcome as the float gate (the
+ * heavy field NEVER runs on the CPU), but the UI shows a fixable "enable
+ * hardware acceleration" hint (the floors `no-webgl2` / `no-float` do not).
  *
  * Reduced-motion (step 4) governs MOTION/AUDIO; the capability heuristic
  * (steps 5–7) governs COUNT/DPR/POST — they compose: a reduced-motion client
@@ -48,6 +63,13 @@ export interface DetectGpuTierDeps {
   hasWebgl2?: () => boolean;
   /** Whether `EXT_color_buffer_float` is present. Default: probe the context. */
   hasColorBufferFloat?: () => boolean;
+  /**
+   * Whether the WebGL2 renderer is a SOFTWARE backend (SwiftShader / llvmpipe /
+   * Mesa softpipe / Microsoft Basic Render / ANGLE-over-SwiftShader …). Default:
+   * read the unmasked renderer string AND probe a `failIfMajorPerformanceCaveat`
+   * context (caveat-only ⇒ software). Reading the renderer is the software gate.
+   */
+  isSoftwareRenderer?: () => boolean;
   /** `matchMedia(query).matches`. Default: `window.matchMedia`. */
   matchMedia?: (query: string) => boolean;
   /** Logical CPU cores. Default: `navigator.hardwareConcurrency`. */
@@ -89,7 +111,11 @@ function buildConfig(
   tier: TierName,
   route: RenderRoute,
   reason: string,
-  behaviour: { audioReactive: boolean; pointerWake: boolean },
+  behaviour: {
+    audioReactive: boolean;
+    pointerWake: boolean;
+    posterReason?: PosterReason | null;
+  },
 ): TierConfig {
   const spec = TIER_SPECS[tier];
   const particleCount = route === 'poster' ? 0 : spec.simResolution * spec.simResolution;
@@ -103,14 +129,16 @@ function buildConfig(
     audioReactive: behaviour.audioReactive,
     pointerWake: behaviour.pointerWake,
     reason,
+    posterReason: behaviour.posterReason ?? null,
   });
 }
 
-/** The poster config (Tier 4) — no live render. */
-function posterConfig(reason: string): TierConfig {
+/** The poster config (Tier 4) — no live render. `posterReason` is the cause. */
+function posterConfig(reason: string, posterReason: PosterReason): TierConfig {
   return buildConfig('low', 'poster', reason, {
     audioReactive: false,
     pointerWake: false,
+    posterReason,
   });
 }
 
@@ -120,6 +148,13 @@ function posterConfig(reason: string): TierConfig {
  * in normal operation (the real path goes through `detectGpuTier`). When
  * `reducedMotion` is true it still composes the calm route (audio muted, no
  * wake) so the reduced-motion path can be exercised at a fast low tier.
+ *
+ * NOTE: `?tier=` BYPASSES the whole capability probe — including the software
+ * gate (Step 3b). This is deliberate: it lets a verifier force the LIVE field on
+ * headless software-GL (which the software gate would otherwise route to the
+ * poster) so non-poster surfaces can be checked. It is never used on the real
+ * client path; a genuine software-GL visitor goes through `detectGpuTier` and
+ * gets the poster + the hint.
  */
 export function forceTierConfig(
   tier: TierName,
@@ -169,6 +204,89 @@ function realHasColorBufferFloat(): boolean {
   }
 }
 
+/**
+ * Known SOFTWARE-WebGL renderer substrings (matched case-insensitively against
+ * the unmasked `UNMASKED_RENDERER_WEBGL` string). A software backend renders on
+ * the CPU — running the 262k-particle GPGPU + bloom on it pins the CPU (the
+ * reported bug). `'swiftshader'` also catches the ANGLE form
+ * ("ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device …), …)").
+ */
+const SOFTWARE_RENDERER_SUBSTRINGS = [
+  'swiftshader',
+  'llvmpipe',
+  'software',
+  'microsoft basic render',
+  'mesa offscreen',
+  'softpipe',
+] as const;
+
+/** True if the unmasked renderer string names a known software backend. */
+export function isSoftwareRendererString(renderer: string): boolean {
+  const lower = renderer.toLowerCase();
+  return SOFTWARE_RENDERER_SUBSTRINGS.some((s) => lower.includes(s));
+}
+
+/**
+ * The PURE software-decision combinator (unit-testable without a GPU). Software
+ * iff the unmasked renderer string names a known software backend, OR the only
+ * available context is a major-perf-caveat one (`caveatOnly` — a normal context
+ * succeeded but `failIfMajorPerformanceCaveat: true` returned null). `renderer`
+ * may be `''` when `WEBGL_debug_renderer_info` is hidden; then only the caveat
+ * signal decides.
+ */
+export function decideSoftwareRenderer(
+  renderer: string,
+  caveatOnly: boolean,
+): boolean {
+  return (renderer !== '' && isSoftwareRendererString(renderer)) || caveatOnly;
+}
+
+/**
+ * Read the unmasked renderer string from a WebGL2 context via the
+ * `WEBGL_debug_renderer_info` extension. Returns `''` when the extension or the
+ * context is unavailable (some locked-down browsers hide it — then we fall back
+ * to the caveat-context probe only).
+ */
+function readUnmaskedRenderer(gl: WebGL2RenderingContext): string {
+  const ext = gl.getExtension('WEBGL_debug_renderer_info');
+  if (!ext) return '';
+  const value: unknown = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
+  return typeof value === 'string' ? value : '';
+}
+
+/**
+ * The real-browser SOFTWARE-renderer probe (the software gate, fix for the 0%
+ * GPU / 100% CPU bug). Two signals, EITHER of which means software:
+ *   (a) the unmasked renderer string is a known software backend; OR
+ *   (b) a `{ failIfMajorPerformanceCaveat: true }` context is null while a normal
+ *       WebGL2 context succeeds — i.e. the only available context carries a major
+ *       performance caveat (the browser's own "this is software/slow" signal).
+ */
+function realIsSoftwareRenderer(): boolean {
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl2');
+    if (!gl) return false; // no normal context — the no-webgl2 gate owns this.
+
+    const renderer = readUnmaskedRenderer(gl);
+
+    // (b) the no-caveat probe: if a normal context exists but a no-major-caveat
+    // context does not, the only context is a major-perf-caveat (software) one.
+    const noCaveatCanvas = document.createElement('canvas');
+    const noCaveat = noCaveatCanvas.getContext('webgl2', {
+      failIfMajorPerformanceCaveat: true,
+    });
+    const caveatOnly = noCaveat === null;
+
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    noCaveat?.getExtension('WEBGL_lose_context')?.loseContext();
+
+    return decideSoftwareRenderer(renderer, caveatOnly);
+  } catch {
+    return false;
+  }
+}
+
 /** Choose the capability tier (low|mid|high) from cores + memory. */
 function chooseCapabilityTier(
   cores: number,
@@ -194,7 +312,10 @@ export function detectGpuTier(
 ): TierConfig {
   const hasWindow = deps.hasWindow ?? typeof window !== 'undefined';
   if (!hasWindow) {
-    return posterConfig('server / no window — static poster + directory DOM');
+    return posterConfig(
+      'server / no window — static poster + directory DOM',
+      'no-window',
+    );
   }
 
   const mobileWidthThreshold =
@@ -203,6 +324,7 @@ export function detectGpuTier(
     deps.matchMedia ?? ((q: string) => window.matchMedia(q).matches);
   const webgl2 = deps.hasWebgl2 ?? realHasWebgl2;
   const colorBufferFloat = deps.hasColorBufferFloat ?? realHasColorBufferFloat;
+  const softwareRenderer = deps.isSoftwareRenderer ?? realIsSoftwareRenderer;
   // `navigator.hardwareConcurrency` is typed as a required `number` by lib.dom,
   // but it is genuinely absent on some embedded/older browsers; model it as
   // optional so the `?? 0` floor is a real runtime guard, not dead code.
@@ -219,13 +341,30 @@ export function detectGpuTier(
 
   // Step 2: WebGL2 must be available.
   if (!webgl2()) {
-    return posterConfig('no WebGL2 context — static poster + directory DOM');
+    return posterConfig(
+      'no WebGL2 context — static poster + directory DOM',
+      'no-webgl2',
+    );
   }
 
   // Step 3: the float-render-target hard gate.
   if (!colorBufferFloat()) {
     return posterConfig(
       'EXT_color_buffer_float unavailable — no GPGPU float ping-pong; poster',
+      'no-float',
+    );
+  }
+
+  // Step 3b: the SOFTWARE-renderer gate (the 0% GPU / 100% CPU fix). A software
+  // backend passes the WebGL2 + float gates, so without this the heavy GPGPU
+  // field would run on the CPU. Route to the poster — the SAME outcome as the
+  // float gate — but with `posterReason: 'software-webgl'` so the UI can show
+  // the fixable "enable hardware acceleration" hint (the floors cannot be fixed
+  // by the user; this can).
+  if (softwareRenderer()) {
+    return posterConfig(
+      'software WebGL renderer (no hardware acceleration) — poster + hint',
+      'software-webgl',
     );
   }
 

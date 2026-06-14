@@ -23,6 +23,31 @@ export const renderRouteSchema = z.enum([
 ]);
 export type RenderRoute = z.infer<typeof renderRouteSchema>;
 
+/**
+ * WHY a `poster`-route config fell back, as a stable discriminator (so the UI
+ * can show the right message — ADR-002/ADR-004 decision tree). Distinct from the
+ * free-text `reason` (diagnostics copy): this is the machine-readable cause.
+ *
+ *   - `no-window`      — SSR / no `window` (the server floor).
+ *   - `no-webgl2`      — no WebGL2 context at all (a capability FLOOR).
+ *   - `no-float`       — WebGL2 present but `EXT_color_buffer_float` absent
+ *                        (no GPGPU float ping-pong possible — a capability FLOOR).
+ *   - `software-webgl` — WebGL2 + float present but the renderer is SOFTWARE
+ *                        (SwiftShader / llvmpipe / a major-perf-caveat-only
+ *                        context): the heavy GPGPU field would run on the CPU, so
+ *                        we route to the poster. This is the ONE reason the UI
+ *                        offers a fixable "enable hardware acceleration" hint —
+ *                        the floors are not user-fixable.
+ *   - `null`           — not a poster route (live / calm).
+ */
+export const posterReasonSchema = z.enum([
+  'no-window',
+  'no-webgl2',
+  'no-float',
+  'software-webgl',
+]);
+export type PosterReason = z.infer<typeof posterReasonSchema>;
+
 /** The post-processing quality rung the tier permits (ADR-002 §4). */
 export const postQualitySchema = z.enum([
   'bloom-only', // low: bloom, no aberration/vignette
@@ -47,5 +72,11 @@ export const tierConfigSchema = z.object({
   pointerWake: z.boolean(),
   /** Why this route was chosen (diagnostics + the a11y/About copy). */
   reason: z.string().min(1),
+  /**
+   * The machine-readable cause of a `poster` fallback (`null` on live/calm). The
+   * UI shows the hardware-acceleration hint ONLY when this is `software-webgl`.
+   * Defaults to `null` so non-poster configs (and callers that omit it) parse.
+   */
+  posterReason: posterReasonSchema.nullable().default(null),
 });
 export type TierConfig = z.infer<typeof tierConfigSchema>;
