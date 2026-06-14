@@ -38,6 +38,25 @@ export function resolveRenderRoute(
 }
 
 /**
+ * Whether the client is at the genuine CAPABILITY FLOOR (Tier 4) — no WebGL2, no
+ * float render targets, or a software renderer — where the static poster +
+ * scrollable SSR preset directory is the readable surface. This is DISTINCT from
+ * the user choosing "Still" on a capable device: a capability-floor client
+ * `config` is null (probe not yet resolved / SSR) or has `config.route ===
+ * 'poster'`; a Still-mode toggle on a CAPABLE device leaves `config.route` at
+ * 'live' or 'calm' (only the EFFECTIVE/resolved route becomes 'poster').
+ *
+ * The Stage drives the page-overflow LOCK and the `data-armed` attribute off
+ * THIS, not the resolved route: live, calm, AND still on a capable device all
+ * keep the page scroll-locked + the SSR directory hidden (they are the immersive
+ * fullscreen stage). Only the genuine capability floor unlocks scroll + reveals
+ * the directory + (for `software-webgl`) the hardware hint.
+ */
+export function isCapabilityFloor(config: TierConfig | null): boolean {
+  return !config || config.route === 'poster';
+}
+
+/**
  * The default `motionMode` the experience should ADOPT for a given capability
  * config — what the store initialises to before any user toggle (ADR-004 §2):
  *   - poster route → 'still' (nothing to animate)

@@ -8,6 +8,7 @@ import { detectGpuTier, forceTierConfig } from '@/lib/engine/detect-gpu-tier';
 import {
   defaultMotionMode,
   isAudioReactive,
+  isCapabilityFloor,
   isPointerWakeActive,
   resolveRenderRoute,
   shouldRunLoop,
@@ -81,27 +82,37 @@ export function Stage(): ReactNode {
     ? resolveRenderRoute(config, motionMode)
     : 'poster';
 
-  // When the live/calm experience is available, hide the SSR no-JS DOM fallback
-  // (the field + HUD are the experience). On the poster route (Tier 4) the SSR
-  // directory STAYS visible — it is the readable surface. The CSS rule
-  // `[data-armed] [data-nojs-fallback] { display: none }` does the hiding.
+  // The genuine CAPABILITY FLOOR (Tier 4: no WebGL2 / no float / software GL, or
+  // the probe not yet resolved) — DISTINCT from a "Still" toggle on a capable
+  // device. The Stage drives `data-armed` + the page-overflow lock off THIS, not
+  // off the resolved `route`: live, calm, AND still-on-a-capable-device are all
+  // the immersive fullscreen stage and must stay scroll-locked with the SSR
+  // directory hidden. Only the real floor unlocks scroll + reveals the directory.
+  const capabilityFloor = isCapabilityFloor(config);
+
+  // On a capable device hide the SSR no-JS DOM fallback (the field + HUD are the
+  // experience) and lock page overflow. At the capability floor (Tier 4) the SSR
+  // directory STAYS visible + scrollable — it is the readable surface. The CSS
+  // rule `[data-armed] [data-nojs-fallback] { display: none }` does the hiding.
   useEffect(() => {
     const root = document.documentElement;
     const { body } = document;
-    if (route === 'poster') {
-      // Tier-4: the SSR directory is the readable surface — keep scroll.
+    if (capabilityFloor) {
+      // Tier-4: the SSR directory is the readable surface — keep scroll, reveal
+      // the directory (do NOT set `data-armed`).
       root.removeAttribute('data-armed');
       return;
     }
     root.setAttribute('data-armed', '');
-    // The live/calm experience is a FIXED fullscreen stage (the field, the
-    // intro gate, and the HUD are all `fixed` / `absolute inset-0`), so the page
-    // never needs to scroll. Lock page overflow while it is mounted: without
-    // this, a HiDPI device or a classic OS scrollbar can introduce a sub-pixel
-    // horizontal overflow that lets the viewport pan right and pulls the centred
-    // intro wordmark off-centre (the reported bug — not reproducible at DPR 1
-    // without a scrollbar). The poster route keeps its scroll, and `/about` is a
-    // separate route where this island is unmounted (the cleanup restores it).
+    // The live / calm / still experience is a FIXED fullscreen stage (the field,
+    // the intro gate, the HUD, and the frozen poster still are all `fixed` /
+    // `absolute inset-0`), so the page never needs to scroll. Lock page overflow
+    // while it is mounted: without this, a HiDPI device or a classic OS scrollbar
+    // can introduce a sub-pixel horizontal overflow that lets the viewport pan
+    // right and pulls the centred intro wordmark off-centre (the reported bug,
+    // re-triggered by toggling Still when the lock keyed off the resolved route).
+    // The poster FLOOR keeps its scroll, and `/about` is a separate route where
+    // this island is unmounted (the cleanup restores the styles).
     const prevRootOverflow = root.style.overflow;
     const prevBodyOverflow = body.style.overflow;
     root.style.overflow = 'hidden';
@@ -111,7 +122,18 @@ export function Stage(): ReactNode {
       root.style.overflow = prevRootOverflow;
       body.style.overflow = prevBodyOverflow;
     };
-  }, [route]);
+  }, [capabilityFloor]);
+
+  const showField = route !== 'poster';
+
+  // When the field is not the live surface (the Still toggle unmounts it, or a
+  // route flip to calm/poster), drop `fieldReady` so the poster bridges the gap
+  // until the field re-mounts and reports its first frame again. Without this, a
+  // Still→Full toggle would jump straight to a not-yet-rendered (black) field
+  // instead of cross-fading the poster out over the freshly-ready field.
+  useEffect(() => {
+    if (!showField) setFieldReady(false);
+  }, [showField]);
 
   const armed = armState === 'armed';
   const paused = !shouldRunLoop(route, armed, tabHidden);
@@ -130,8 +152,18 @@ export function Stage(): ReactNode {
     setFieldReady(true);
   }, []);
 
-  const showField = route !== 'poster';
+  // `showField` (declared above) mounts + animates the live field ONLY on the
+  // live/calm route. On the Still route (resolved 'poster' but a CAPABLE config)
+  // the field is deliberately UNMOUNTED — no render loop, no animation; that is
+  // the point of Still.
   const revealed = fieldReady && armed;
+  // The poster is the visible surface whenever the live field is NOT (pre-arm,
+  // Still, and the capability floor all show the poster; only a live+revealed
+  // field replaces it). On Still this keeps the FROZEN poster still visible —
+  // never a blank stage — while the live reveal cross-fade on the live route is
+  // unchanged (field fades in over the poster once `revealed`).
+  const fieldIsVisibleSurface = showField && revealed;
+  const posterVisible = !fieldIsVisibleSurface;
 
   const presetName = getPresetOrDefault(transitioningToId ?? presetId).name;
   const description = describeFieldState({
@@ -151,7 +183,7 @@ export function Stage(): ReactNode {
           {/* the designed poster — always present as the LCP/pre-reveal still */}
           <div
             className="absolute inset-0 transition-opacity duration-[1000ms] ease-out"
-            style={{ opacity: revealed ? 0 : 1 }}
+            style={{ opacity: posterVisible ? 1 : 0 }}
             aria-hidden
           >
             <Poster presetId={transitioningToId ?? presetId} />
@@ -190,8 +222,13 @@ export function Stage(): ReactNode {
       {config?.posterReason === 'software-webgl' ? <HardwareHint /> : null}
 
       {/* The intro gate (pre-arm) → the HUD (post-arm), ABOVE the page content
-          (`z-20`). The wrapper is click-through; its children opt back in. */}
-      {config && route !== 'poster' ? (
+          (`z-20`). The wrapper is click-through; its children opt back in. The
+          HUD/gate mount on ANY capable route — live, calm, AND still — so the
+          Still toggle freezes to the poster still with the HUD STILL present (it
+          does not reset `armState`, so it never re-prompts "press to begin").
+          Only the genuine capability floor unmounts it (the SSR directory + hint
+          is that surface). */}
+      {config && !capabilityFloor ? (
         <div className="pointer-events-none fixed inset-0 z-20">
           {armed ? (
             <Hud

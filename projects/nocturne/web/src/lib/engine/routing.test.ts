@@ -5,6 +5,7 @@ import { tierConfigSchema, type TierConfig } from '@/lib/schemas';
 import {
   defaultMotionMode,
   isAudioReactive,
+  isCapabilityFloor,
   isPointerWakeActive,
   resolveRenderRoute,
   shouldRunLoop,
@@ -47,6 +48,60 @@ describe('resolveRenderRoute', () => {
   it('lets a user opt a reduced-motion calm route back into live with explicit full', () => {
     const calm = makeConfig({ route: 'calm', audioReactive: false, pointerWake: false });
     expect(resolveRenderRoute(calm, 'full')).toBe('live');
+  });
+});
+
+describe('isCapabilityFloor', () => {
+  it('is true at the genuine Tier-4 floor (config.route === poster)', () => {
+    const poster = makeConfig({
+      route: 'poster',
+      audioReactive: false,
+      pointerWake: false,
+      posterReason: 'no-webgl2',
+    });
+    expect(isCapabilityFloor(poster)).toBe(true);
+  });
+
+  it('is true while the probe is unresolved (null config / SSR)', () => {
+    expect(isCapabilityFloor(null)).toBe(true);
+  });
+
+  it('is FALSE on a capable device, regardless of the Still toggle', () => {
+    // This is the crux of the fix: a Still toggle (motionMode === "still")
+    // resolves the EFFECTIVE route to "poster", but the CONFIG remains live —
+    // the device is capable, so it is NOT the capability floor. The Stage must
+    // keep the page scroll-locked + the SSR directory hidden on Still.
+    const live = makeConfig({ route: 'live' });
+    expect(isCapabilityFloor(live)).toBe(false);
+    // Even though the user is in Still, the resolved route is poster …
+    expect(resolveRenderRoute(live, 'still')).toBe('poster');
+    // … but the floor decision keys off the CONFIG, not the resolved route.
+    expect(isCapabilityFloor(live)).toBe(false);
+  });
+
+  it('is FALSE on a reduced-motion (calm) capable config', () => {
+    const calm = makeConfig({
+      route: 'calm',
+      audioReactive: false,
+      pointerWake: false,
+    });
+    expect(isCapabilityFloor(calm)).toBe(false);
+  });
+
+  it('distinguishes config.route===poster (floor) from motionMode===still (capable)', () => {
+    const floor = makeConfig({
+      route: 'poster',
+      audioReactive: false,
+      pointerWake: false,
+      posterReason: 'software-webgl',
+    });
+    const capable = makeConfig({ route: 'live' });
+    // Both resolve to the poster route …
+    expect(resolveRenderRoute(floor, 'still')).toBe('poster');
+    expect(resolveRenderRoute(capable, 'still')).toBe('poster');
+    // … but only the genuine floor IS the capability floor.
+    expect(isCapabilityFloor(floor)).toBe(true);
+    expect(isCapabilityFloor(capable)).toBe(false);
   });
 });
 
