@@ -1,0 +1,15 @@
+{
+  "name": "nocturne",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "NOCTURNE — web-only, GPU-accelerated, audio-reactive generative particle experience (slot 8). A GPGPU curl-noise field of ~262k particles breathing with music, rendered with cinematic post-processing in a sovereign dark-cinematic UI. Animation: R3F + drei + @react-three/postprocessing (single family) with custom GLSL; no GSAP, no Motion. See DECISIONS.md ADR-001..ADR-004.",
+  "scripts": {
+    "dev": "pnpm -F nocturne-web dev",
+    "build": "pnpm -F nocturne-web build",
+    "start": "pnpm -F nocturne-web start",
+    "lint": "pnpm -F nocturne-web lint",
+    "typecheck": "pnpm -F nocturne-web typecheck",
+    "test": "pnpm -F nocturne-web test"
+  }
+}

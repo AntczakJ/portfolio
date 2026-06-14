@@ -12,6 +12,7 @@
   - `apex` — v1 shipped + deployed, web-only EV car-rental showcase (R3F 3D configurator), slot 5, demo at https://apex-rentals.fly.dev
   - `atlas` — v1 shipped + deployed, api-heavy live geospatial fleet tracking (Fastify + WebSocket + MapLibre, keyless Protomaps basemap), slot 6, demo at https://atlas-ops.fly.dev
   - `atrium` — v1 shipped + deployed, web-only GSAP scroll-driven portfolio landing page / lobby, slot 7, demo at https://atrium-demo.fly.dev (the bare `atrium` Fly name was taken). Lighthouse 99/100/96/100, Vitest 54/54 + Playwright 18/18 green.
+  - `nocturne` — **PLANNED (2026-06-14), not yet built**, web-only creative slot 8: a GPU-accelerated, audio-reactive generative particle experience (GPGPU FBO ping-pong curl-noise field, 100k–1M particles, Web Audio FFT reactivity, cinematic post — bloom/vignette/chromatic-aberration). R3F single-family (R3F + drei + @react-three/postprocessing) + custom GLSL, no GSAP/Motion. Dev port 3100. Deliberate web-only creative piece (backend axis already complete); the portfolio's second R3F project, distinct from apex (abstract generative GPGPU art vs product configurator — the § 14 re-skin gate is argued in its ADR-001). Awaiting the architect's Phase-0 ADRs (ADR-002 GPGPU+R3F/Next+tiers, ADR-003 Web Audio pipeline, ADR-004 reduced-motion+degradation+poster hand-off) before build.
 - **Scaffold:** done (2026-05-28)
 - **CI:** green
 - **First commit:** done (repo has full history)
@@ -58,7 +59,7 @@ fly machine start <id> -a <app>            # start; DB first, then api/server, t
 
 ## In progress
 
-- Nothing in active build. All seven projects are v1-complete and deployed.
+- **`nocturne` (slot 8) — PLANNED, awaiting architecture.** Planner authored `projects/nocturne/PLAN.md` + `DECISIONS.md` (ADR-001) + `PROGRESS.md` + `AGENT_NOTES.md` (2026-06-14). Web-only creative; composition tracker updated (slot 8, web-only creative, backend "—"). Next: the `architect` authors ADR-002/003/004 (GPGPU+R3F/Next+tiers · Web Audio pipeline · reduced-motion+degradation+poster hand-off), then `frontend-engineer` Phase 1. The other seven projects are v1-complete and deployed.
 
 ## Next
 
@@ -79,5 +80,6 @@ Per `docs/conventions.md` § 12 — minimum 2–3 `api-heavy` projects with back
 | 5    | apex        | web-only (creative)     | — (mocked)   |
 | 6    | atlas       | api-heavy               | Fastify      |
 | 7    | atrium      | web-only (landing page) | — (none)     |
+| 8    | nocturne    | web-only (creative)     | — (none)     |
 
 Composition status: 7 shipped + deployed projects, including **atrium (slot 7), deployed 2026-06-10 at https://atrium-demo.fly.dev** — the portfolio landing page / lobby (web-only, GSAP scroll-driven; full build+review+test+docs+deploy pipeline complete; presents the six showcases as the front door). **4 api-heavy across FOUR distinct backends** (tape Elysia/Bun + meld Hono/Node + pulse NestJS/Node + atlas Fastify/Node) + 2 web-only creative (razors-edge, apex). The § 12 constraint (2–3 api-heavy, ≥ 2 backends — ideally Hono + Fastify + one of NestJS / Elysia) is **fully satisfied and the backend-variance story is COMPLETE**: atlas (slot 6) claims the last unused § 11 backend (Fastify), so the portfolio demonstrates all four cutting-edge Node/Bun backends (thin-and-fast Elysia/Bun · multi-runtime-edge Hono · opinionated-enterprise NestJS · focused-performance Fastify). The two web-only creative slots (razors-edge dark-luxe marketing, apex 3D-configurator) round out the range. No backend axis remains to fill.

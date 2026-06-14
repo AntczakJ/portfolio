@@ -1,0 +1,267 @@
+import {
+  tierConfigSchema,
+  type PostQuality,
+  type RenderRoute,
+  type TierConfig,
+  type TierName,
+} from '@/lib/schemas';
+
+/**
+ * The capability probe + tier router (Task 1.3 / Task 3.4, ADR-002 §4 /
+ * ADR-004 §1).
+ *
+ * `detectGpuTier()` is a synchronous, PURE-ISH client probe that decides what
+ * the `/` stage renders BEFORE the Canvas mounts:
+ *   - the live GPGPU field (Tier 1/2) at a particle count + DPR clamp + post
+ *     quality, OR
+ *   - the reduced-motion calm autonomous drift (Tier 3-RM), OR
+ *   - the static AVIF poster + preset directory DOM (Tier 4).
+ *
+ * It does NOT touch the real GPU at IMPORT time — the WebGL probe runs only when
+ * the function is CALLED, and all environment access (the WebGL2 context, the
+ * float-render-target extension, `matchMedia`, `navigator`) is injectable via
+ * `DetectGpuTierDeps` so the whole decision tree is unit-testable without a GPU
+ * or a browser (Phase 7). Called with no deps in the browser, it uses the real
+ * environment; on the server (no `window`) it returns the poster route so the
+ * SSR/no-JS floor renders.
+ *
+ * The decision tree (ADR-004 §1), in order:
+ *   1. no `window` / SSR ─────────────────────────────▶ poster
+ *   2. getContext('webgl2') === null ─────────────────▶ poster
+ *   3. EXT_color_buffer_float === null ───────────────▶ poster   ← the float gate
+ *   4. prefers-reduced-motion: reduce ────────────────▶ calm (drift, audio muted)
+ *   5. prefers-reduced-data: reduce ──────────────────▶ live @ low
+ *   6. coarse-pointer AND viewport < 768px ───────────▶ live @ low (mobile floor)
+ *   7. cores/deviceMemory heuristic ──────────────────▶ live @ high|mid|low
+ *
+ * Reduced-motion (step 4) governs MOTION/AUDIO; the capability heuristic
+ * (steps 5–7) governs COUNT/DPR/POST — they compose: a reduced-motion client
+ * that is also low-capability gets the calm route AT a lower count. A
+ * reduced-motion client that fails the float gate still routes to the poster
+ * (the poster is a valid reduced-motion surface). This composition is applied
+ * after the route is chosen.
+ */
+
+/** Injectable environment probes (all default to the real browser env). */
+export interface DetectGpuTierDeps {
+  /** Whether a WebGL2 context is obtainable. Default: a throwaway-canvas probe. */
+  hasWebgl2?: () => boolean;
+  /** Whether `EXT_color_buffer_float` is present. Default: probe the context. */
+  hasColorBufferFloat?: () => boolean;
+  /** `matchMedia(query).matches`. Default: `window.matchMedia`. */
+  matchMedia?: (query: string) => boolean;
+  /** Logical CPU cores. Default: `navigator.hardwareConcurrency`. */
+  hardwareConcurrency?: number;
+  /** Device memory (GB), where the signal exists. Default: `navigator.deviceMemory`. */
+  deviceMemory?: number | undefined;
+  /** Viewport width in px. Default: `window.innerWidth`. */
+  viewportWidth?: number;
+  /** Force the SSR/no-window branch (for tests). Default: `typeof window`. */
+  hasWindow?: boolean;
+}
+
+export interface DetectGpuTierOptions {
+  /** The viewport-width threshold (px) below which a coarse-pointer device is mobile. */
+  mobileWidthThreshold?: number;
+}
+
+const DEFAULT_MOBILE_WIDTH_THRESHOLD = 768;
+const MIN_CORES_MID = 4;
+const MIN_CORES_HIGH = 8;
+const MIN_DEVICE_MEMORY_MID_GB = 4;
+
+/** The per-tier sim parameters (ADR-002 §4 tier table). */
+interface TierSpec {
+  simResolution: number;
+  dprClamp: [number, number];
+  postQuality: PostQuality;
+}
+
+const TIER_SPECS: Record<TierName, TierSpec> = {
+  low: { simResolution: 256, dprClamp: [1, 1.25], postQuality: 'bloom-only' },
+  mid: { simResolution: 384, dprClamp: [1, 1.5], postQuality: 'bloom-vignette' },
+  high: { simResolution: 512, dprClamp: [1, 2], postQuality: 'full' },
+  ultra: { simResolution: 1024, dprClamp: [1, 2], postQuality: 'full' },
+};
+
+/** Build a validated `TierConfig` for a chosen tier + route + behaviour. */
+function buildConfig(
+  tier: TierName,
+  route: RenderRoute,
+  reason: string,
+  behaviour: { audioReactive: boolean; pointerWake: boolean },
+): TierConfig {
+  const spec = TIER_SPECS[tier];
+  const particleCount = route === 'poster' ? 0 : spec.simResolution * spec.simResolution;
+  return tierConfigSchema.parse({
+    tier,
+    route,
+    simResolution: spec.simResolution,
+    particleCount,
+    dprClamp: spec.dprClamp,
+    postQuality: spec.postQuality,
+    audioReactive: behaviour.audioReactive,
+    pointerWake: behaviour.pointerWake,
+    reason,
+  });
+}
+
+/** The poster config (Tier 4) — no live render. */
+function posterConfig(reason: string): TierConfig {
+  return buildConfig('low', 'poster', reason, {
+    audioReactive: false,
+    pointerWake: false,
+  });
+}
+
+/**
+ * Build a config at an explicit tier — used only by the headless verifier
+ * (`?tier=low`) so software-GL can complete frames + screenshots; never reached
+ * in normal operation (the real path goes through `detectGpuTier`). When
+ * `reducedMotion` is true it still composes the calm route (audio muted, no
+ * wake) so the reduced-motion path can be exercised at a fast low tier.
+ */
+export function forceTierConfig(
+  tier: TierName,
+  reducedMotion = false,
+): TierConfig {
+  if (reducedMotion) {
+    return buildConfig(tier, 'calm', `forced ${tier} tier, reduced-motion (dev/verify)`, {
+      audioReactive: false,
+      pointerWake: false,
+    });
+  }
+  return buildConfig(tier, 'live', `forced ${tier} tier (dev/verify)`, {
+    audioReactive: true,
+    pointerWake: true,
+  });
+}
+
+/** A real-browser WebGL2 probe, disposing the throwaway context immediately. */
+function realHasWebgl2(): boolean {
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl2');
+    if (!gl) return false;
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A real-browser `EXT_color_buffer_float` probe — the HARD GPGPU gate (ADR-002
+ * §1/§4). Rendering TO a half/full-float texture is NOT core WebGL2; without
+ * this extension no float ping-pong is possible and the client routes to the
+ * poster.
+ */
+function realHasColorBufferFloat(): boolean {
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl2');
+    if (!gl) return false;
+    const ext = gl.getExtension('EXT_color_buffer_float');
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return ext !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** Choose the capability tier (low|mid|high) from cores + memory. */
+function chooseCapabilityTier(
+  cores: number,
+  deviceMemory: number | undefined,
+): TierName {
+  // Penalise only when the memory signal EXISTS and is below the mid floor.
+  if (typeof deviceMemory === 'number' && deviceMemory < MIN_DEVICE_MEMORY_MID_GB) {
+    return 'low';
+  }
+  if (cores >= MIN_CORES_HIGH) return 'high';
+  if (cores >= MIN_CORES_MID) return 'mid';
+  return 'low';
+}
+
+/**
+ * Detect the GPU tier + render route for the current client. NOTE: never
+ * promotes to `ultra` at boot — `ultra` (1M) is adapt-UP-only on proven runtime
+ * headroom (ADR-002 §4); the conservative boot default is `high` (262k).
+ */
+export function detectGpuTier(
+  deps: DetectGpuTierDeps = {},
+  options: DetectGpuTierOptions = {},
+): TierConfig {
+  const hasWindow = deps.hasWindow ?? typeof window !== 'undefined';
+  if (!hasWindow) {
+    return posterConfig('server / no window — static poster + directory DOM');
+  }
+
+  const mobileWidthThreshold =
+    options.mobileWidthThreshold ?? DEFAULT_MOBILE_WIDTH_THRESHOLD;
+  const matchMedia =
+    deps.matchMedia ?? ((q: string) => window.matchMedia(q).matches);
+  const webgl2 = deps.hasWebgl2 ?? realHasWebgl2;
+  const colorBufferFloat = deps.hasColorBufferFloat ?? realHasColorBufferFloat;
+  // `navigator.hardwareConcurrency` is typed as a required `number` by lib.dom,
+  // but it is genuinely absent on some embedded/older browsers; model it as
+  // optional so the `?? 0` floor is a real runtime guard, not dead code.
+  const cores =
+    deps.hardwareConcurrency ??
+    (navigator as Omit<Navigator, 'hardwareConcurrency'> & {
+      hardwareConcurrency?: number;
+    }).hardwareConcurrency ??
+    0;
+  const deviceMemory =
+    deps.deviceMemory ??
+    (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  const viewportWidth = deps.viewportWidth ?? window.innerWidth;
+
+  // Step 2: WebGL2 must be available.
+  if (!webgl2()) {
+    return posterConfig('no WebGL2 context — static poster + directory DOM');
+  }
+
+  // Step 3: the float-render-target hard gate.
+  if (!colorBufferFloat()) {
+    return posterConfig(
+      'EXT_color_buffer_float unavailable — no GPGPU float ping-pong; poster',
+    );
+  }
+
+  // Steps 5–7: the capability tier (count/DPR/post).
+  const reducedData = matchMedia('(prefers-reduced-data: reduce)');
+  const coarsePointer = matchMedia('(pointer: coarse)');
+  const narrowViewport = viewportWidth < mobileWidthThreshold;
+
+  let tier: TierName;
+  let capabilityReason: string;
+  if (reducedData) {
+    tier = 'low';
+    capabilityReason = 'prefers-reduced-data — low tier';
+  } else if (coarsePointer && narrowViewport) {
+    tier = 'low';
+    capabilityReason = 'coarse pointer + small viewport — mobile floor (low)';
+  } else {
+    tier = chooseCapabilityTier(cores, deviceMemory);
+    capabilityReason = `cores=${String(cores)}${
+      typeof deviceMemory === 'number' ? ` mem=${String(deviceMemory)}GB` : ''
+    } — ${tier} tier`;
+  }
+
+  // Step 4: reduced-motion governs MOTION/AUDIO; compose it over the tier.
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  if (reducedMotion) {
+    return buildConfig(
+      tier,
+      'calm',
+      `prefers-reduced-motion — calm drift, audio muted (${capabilityReason})`,
+      { audioReactive: false, pointerWake: false },
+    );
+  }
+
+  return buildConfig(tier, 'live', capabilityReason, {
+    audioReactive: true,
+    pointerWake: true,
+  });
+}

@@ -1,0 +1,84 @@
+name: nocturne-lighthouse
+
+# slot 8, PLAN Phase 7 — Lighthouse CI for nocturne.
+#
+# Audits the BUILT + SERVED production surface on :3100 (next build --webpack &&
+# next start, NOT next dev — the strict ADR-002 §6 CSP forbids unsafe-eval and
+# next dev cannot run under it; the meld/atrium/apex lesson).
+#
+# TARGET = /about, NOT /. The / route is a continuously-animating, audio-reactive
+# WebGL canvas (frameloop='always' while armed); headless Lighthouse runs on
+# software-GL (SwiftShader), so a headless performance measurement of the live
+# field measures SwiftShader, not the product — and a continuous render loop is
+# intrinsically not a fair Lighthouse-TBT subject (the deliberate apex
+# divergence). The canvas route's 60fps + the four perf tiers are measured and
+# documented SEPARATELY (the engine verifier + the real-GPU deploy), NOT
+# Lighthouse-asserted — exactly the honest stance apex / tape took for their
+# canvas / live routes. /about is the clean static NON-canvas surface and is the
+# right Lighthouse subject.
+#
+# Asserts CLAUDE.md § 4 / PLAN success criteria on /about: >= 95 in ALL FOUR
+# categories, median of 5 runs, plus the Core Web Vitals / first-paint targets.
+# Config + assertions live in projects/nocturne/lighthouserc.json; LHCI starts
+# the server itself via startServerCommand.
+#
+# Trigger model (mirrors atrium-lighthouse):
+#   - push to main touching projects/nocturne/** — gate the project on every
+#     change.
+#   - workflow_dispatch — manual run on demand.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - 'projects/nocturne/**'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/nocturne-lighthouse.yml'
+
+concurrency:
+  group: nocturne-lighthouse-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lighthouse:
+    name: Lighthouse (>= 95 all categories, /about)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build nocturne-web
+        run: pnpm -F nocturne-web build
+
+      - name: Run Lighthouse CI
+        run: |
+          npx --yes @lhci/cli@0.15.x autorun \
+            --config=projects/nocturne/lighthouserc.json
+        env:
+          # LHCI uploads to temporary public storage; no token needed.
+          LHCI_BUILD_CONTEXT__CURRENT_HASH: ${{ github.sha }}
+
+      - name: Upload Lighthouse report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nocturne-lighthouse-${{ github.run_id }}
+          path: .lighthouseci
+          retention-days: 30

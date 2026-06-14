@@ -1,0 +1,21 @@
+# Build / deps
+.next/
+node_modules/
+*.tsbuildinfo
+next-env.d.ts
+
+# Local env
+.env
+.env.local
+.env*.local
+
+# Test / Lighthouse outputs (Phase 7)
+test-results/
+playwright-report/
+.lighthouseci/
+scripts/.screenshots/
+
+# Raw audio/asset sources — only the optimized bundled CC0 track + the
+# generated poster/preset stills (Phase 5.4) ship under public/. Any raw
+# capture/export scratch never commits.
+scripts/.assets-src/

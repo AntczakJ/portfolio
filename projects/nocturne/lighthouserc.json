@@ -1,0 +1,61 @@
+{
+  "$comment": [
+    "Lighthouse CI config for nocturne (slot 8, PLAN Phase 7) — DESKTOP profile.",
+    "Audits the BUILT + SERVED production surface on :3100 (next build --webpack",
+    "&& next start, NEVER next dev — the strict ADR-002 §6 CSP forbids unsafe-eval",
+    "and next dev cannot run under it; the meld/atrium/apex lesson).",
+    "",
+    "TARGET = /about, NOT /. This is the apex precedent applied to a generative",
+    "piece. The / route is a CONTINUOUSLY-ANIMATING, audio-reactive WebGL canvas",
+    "(frameloop='always' while armed — ADR-002 §5). Two facts make / an unfair,",
+    "confounded Lighthouse-performance subject, and BOTH are by design:",
+    "  1. Headless Lighthouse runs on software-GL (SwiftShader): a 262k additive",
+    "     field + bloom takes multi-second frames there (an artefact of no GPU,",
+    "     not the app). On a real GPU the field holds 60fps (the zero-per-particle-",
+    "     CPU-work invariant, ADR-002 §1) — but a headless TBT/CPU measurement of",
+    "     the live canvas measures SwiftShader, not the product.",
+    "  2. A continuous render loop intrinsically spends main-thread time every",
+    "     frame; an audio-reactive field cannot be 'demand'-driven like apex's",
+    "     idle configurator (the deliberate apex divergence, ADR-002 §5).",
+    "The canvas route's 60fps + the four perf tiers are therefore measured and",
+    "documented SEPARATELY (the engine verifier + the real-GPU deploy GIF), NOT",
+    "Lighthouse-asserted — exactly the honest stance apex took for its canvas",
+    "section and tape took for its live route. /about is the clean, static,",
+    "server-rendered NON-canvas surface (no WebGL, no audio, no canvas at all):",
+    "the right Lighthouse subject, and it is the SEO + screen-reader view of the",
+    "piece anyway.",
+    "",
+    "Asserts CLAUDE.md § 4 / PLAN success criteria on /about: >= 95 in ALL FOUR",
+    "categories, median of 5 runs, plus the Core Web Vitals / first-paint targets",
+    "(LCP < 2.5s, CLS < 0.1, FCP < 1.8s, TBT proxy for INP < 200ms).",
+    "LHCI starts the server itself via startServerCommand."
+  ],
+  "ci": {
+    "collect": {
+      "startServerCommand": "pnpm -F nocturne-web exec next start -p 3100",
+      "startServerReadyPattern": "Ready in|started server on|Local:",
+      "startServerReadyTimeout": 60000,
+      "url": ["http://localhost:3100/about"],
+      "numberOfRuns": 5,
+      "settings": {
+        "preset": "desktop",
+        "chromeFlags": "--no-sandbox --headless=new"
+      }
+    },
+    "assert": {
+      "assertions": {
+        "categories:performance": ["error", { "minScore": 0.95 }],
+        "categories:accessibility": ["error", { "minScore": 0.95 }],
+        "categories:best-practices": ["error", { "minScore": 0.95 }],
+        "categories:seo": ["error", { "minScore": 0.95 }],
+        "largest-contentful-paint": ["error", { "maxNumericValue": 2500 }],
+        "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1 }],
+        "first-contentful-paint": ["error", { "maxNumericValue": 1800 }],
+        "total-blocking-time": ["warn", { "maxNumericValue": 200 }]
+      }
+    },
+    "upload": {
+      "target": "temporary-public-storage"
+    }
+  }
+}

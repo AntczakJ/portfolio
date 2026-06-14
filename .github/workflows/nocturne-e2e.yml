@@ -1,0 +1,122 @@
+name: nocturne-e2e
+
+# slot 8, PLAN Phase 7 — Playwright E2E harness for nocturne.
+#
+# Deterministic critical-path coverage for the GPU audio-reactive particle
+# field. Headless chromium is software-GL (SwiftShader), so the suite NEVER
+# asserts the live 60fps GPU field; it covers the deterministic surfaces: the
+# intro gesture gate (no autoplay), full HUD keyboard reachability + the WAI-ARIA
+# preset radiogroup, the chrome theme (light/dark) with the canvas stage staying
+# dark in both, the reduced-motion calm/still path, the Tier-4 / no-WebGL / no-JS
+# poster + directory floor, mute store behaviour, the canvas a11y + aria-live
+# text alternative, the SEO surface, and 320px no-overflow.
+#
+# The surface under test is the BUILT + SERVED app on :3100 (next start, NOT
+# next dev — the strict ADR-002 §6 CSP forbids unsafe-eval and next dev cannot
+# run under it; the zero-CSP-violation assertions are only meaningful against the
+# production surface).
+#
+# Trigger model (mirrors atrium-e2e):
+#   - workflow_dispatch with an optional target_url — run against any deployed
+#     URL (a pre-promotion gate). Defaults to the in-job local stack.
+#   - push to main touching projects/nocturne/** — gate the project on a passing
+#     E2E sweep against the in-job built + served app.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target URL to test against (defaults to the in-job local build)'
+        required: false
+        type: string
+        default: ''
+  push:
+    branches: [main]
+    paths:
+      - 'projects/nocturne/**'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/nocturne-e2e.yml'
+
+concurrency:
+  group: nocturne-e2e-${{ github.event.inputs.target_url || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+jobs:
+  e2e:
+    name: e2e (built + served :3100)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # When a target_url is supplied (dispatch), test that; otherwise the
+      # in-job local build on :3100.
+      NOCTURNE_E2E_TARGET_URL: ${{ github.event.inputs.target_url }}
+      BASE_URL: ${{ github.event.inputs.target_url || 'http://localhost:3100' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright (chromium only)
+        run: pnpm -F nocturne-e2e exec playwright install --with-deps chromium
+
+      - name: Build nocturne-web
+        if: github.event.inputs.target_url == ''
+        run: pnpm -F nocturne-web build
+
+      - name: Start nocturne-web (next start on :3100)
+        if: github.event.inputs.target_url == ''
+        run: |
+          nohup pnpm -F nocturne-web exec next start -p 3100 > /tmp/nocturne-web.log 2>&1 &
+          echo "NOCTURNE_WEB_PID=$!" >> $GITHUB_ENV
+
+      - name: Wait for the app on :3100
+        if: github.event.inputs.target_url == ''
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3100 > /dev/null; then
+              echo "nocturne-web up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "nocturne-web never came up. Last log:"
+          tail -n 200 /tmp/nocturne-web.log || true
+          exit 1
+
+      - name: Run Playwright tests
+        run: pnpm -F nocturne-e2e test --project=chromium
+
+      - name: Stop background process
+        if: always() && github.event.inputs.target_url == ''
+        run: |
+          if [ -n "${NOCTURNE_WEB_PID:-}" ]; then kill "$NOCTURNE_WEB_PID" || true; fi
+
+      - name: Upload web log on failure
+        if: failure() && github.event.inputs.target_url == ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: nocturne-web-log-${{ github.run_id }}
+          path: /tmp/nocturne-web.log
+          retention-days: 14
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nocturne-e2e-report-${{ github.run_id }}
+          path: projects/nocturne/e2e/playwright-report
+          retention-days: 30

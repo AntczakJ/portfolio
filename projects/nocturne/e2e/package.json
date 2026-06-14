@@ -1,0 +1,28 @@
+{
+  "name": "nocturne-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Playwright E2E harness for nocturne (slot 8, PLAN Phase 7) — deterministic critical-path coverage for the GPU audio-reactive particle field. Headless chromium is software-GL (SwiftShader), so the suite NEVER asserts the live 60fps GPU field; it covers the things that ARE deterministic headless: the intro gesture gate (no autoplay), full HUD keyboard reachability + the WAI-ARIA preset radiogroup, the chrome theme (light/dark) with the canvas stage staying dark in both, the reduced-motion calm/still path, the Tier-4 / no-WebGL / no-JS poster + directory floor, mute store behaviour, the canvas a11y + aria-live text alternative, the SEO surface, and 320px no-overflow. Runs against a BUILT + SERVED app on :3100 (next build --webpack then next start, NOT next dev — the strict CSP forbids unsafe-eval). Point at any deployed URL via BASE_URL.",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report",
+    "trace": "playwright show-trace",
+    "list": "playwright test --list",
+    "install:browsers": "playwright install --with-deps chromium",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^25.9.3",
+    "dotenv": "^17.4.2",
+    "typescript": "^6.0.3",
+    "zod": "^4.4.3"
+  }
+}

@@ -1,0 +1,345 @@
+@import 'tailwindcss';
+
+/* Tailwind v4 class-strategy dark variant. next-themes is configured with
+ * `attribute="class"` + `defaultTheme="dark"`, so it writes `class="dark"`
+ * (or `class="light"`) on <html>. This custom variant makes the `dark:`
+ * utilities resolve against that class. DARK is the canonical default and the
+ * `:root` token set below IS the dark chrome, so `dark:` utilities and the
+ * `:root` tokens agree on first paint (no dark flash; ADR-001/ADR-004). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* =========================================================================
+ * NOCTURNE — sovereign dark-cinematic design tokens (Task 2.1).
+ *
+ * Two TOKEN FAMILIES, kept strictly separate per ADR-004 §4:
+ *
+ *   1. STAGE tokens (`--stage-*`) — theme-INVARIANT. The canvas backdrop and
+ *      the luminous palette context the particle field glows against. The
+ *      field is additive luminous colour on near-black; it NEEDS the dark to
+ *      glow (you do not "light-mode" a fireworks display). So the stage is a
+ *      fixed dark-cinematic ground in BOTH chrome themes — these tokens do NOT
+ *      vary with `.dark` / light.
+ *
+ *   2. CHROME tokens (`--color-*`, `--hud-*`) — theme-VARIANT. The HUD ink,
+ *      scrims, hairlines, focus-ring, and the non-canvas surfaces (`/about`,
+ *      credits, the poster surround). DARK is canonical (`:root`), with a clean
+ *      LIGHT reading mode (`.light` override) for that content only.
+ *
+ * SOVEREIGN — built from scratch in OKLCH. NO token value is reused from tape,
+ * meld, razors-edge, pulse, apex, or atrium (docs/conventions.md § 14,
+ * ADR-001). Tailwind v4 is CSS-first: theme tokens are CSS custom properties in
+ * @theme; there is NO tailwind.config.js.
+ *
+ * The nocturne identity: a deep indigo-black "midnight" ground (a cool blue-
+ * violet near-black, distinct from apex's neutral charcoal and razors-edge's
+ * warm near-black), a cool near-white chrome ink with a faint periwinkle cast,
+ * and a luminous violet/cyan accent reserved for focus + the play affordance —
+ * the field's preset palette ramps carry the real colour energy, so the chrome
+ * accent stays restrained.
+ *
+ * Contrast (WCAG 2.2 AA — verified, see AGENT_NOTES.md Task 2.1; measured as
+ * sRGB after OKLCH→sRGB, ratios computed against the SCRIMMED chrome ground
+ * the HUD text actually sits on):
+ *   DARK (canonical)
+ *     ink / bg         #e7e9f5 on #07080f  → 16.8:1  (AAA)
+ *     muted / bg       #a4a9c4 on #07080f  →  8.4:1  (AAA)
+ *     subtle / bg      #767c9c on #07080f  →  4.7:1  (AA)
+ *     accent / bg      #9d8cff on #07080f  →  7.4:1  (AAA)
+ *     ink-on-accent    #0a0716 on #9d8cff  →  9.2:1  (AAA)
+ *   LIGHT (chrome reading mode — non-canvas surfaces)
+ *     ink / bg         #16181f on #eef0f6  → 15.1:1  (AAA)
+ *     muted / bg       #4a4f63 on #eef0f6  →  7.4:1  (AAA)
+ *     subtle / bg      #5f6479 on #eef0f6  →  5.2:1  (AA)
+ *     accent-ink / bg  #5b3fd6 on #eef0f6  →  5.6:1  (AA)
+ *     ink-on-accent    #ffffff on #5b3fd6  →  6.0:1  (AA)
+ * ===================================================================== */
+
+@theme {
+  /* --- Type --------------------------------------------------------------
+   * Task 2.2 loads the real variable faces via next/font and binds their CSS
+   * variables on <html>; these reference them with a system fallback so the
+   * page is legible before the web fonts resolve (next/font adds size-adjust
+   * metrics so the fallback swap does not shift layout). */
+  --font-sans:
+    var(--font-nocturne-sans), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-display:
+    var(--font-nocturne-display), var(--font-nocturne-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+
+  /* --- Type scale (fluid, clamp-based) -----------------------------------
+   * A precise, technological hierarchy (Klim / Linear register). Steps are
+   * fluid between a 360 px floor and a 1440 px ceiling. Body sits at 1rem. The
+   * display steps drive the NOCTURNE wordmark + preset/source labels. */
+  --text-2xs: 0.6875rem; /* 11px — micro-labels */
+  --text-xs: 0.78125rem; /* 12.5px — eyebrows, HUD captions */
+  --text-sm: 0.875rem; /* 14px — secondary UI */
+  --text-base: 1rem; /* 16px — body */
+  --text-lg: clamp(1.0625rem, 1rem + 0.3vw, 1.1875rem); /* lead body */
+  --text-xl: clamp(1.25rem, 1.1rem + 0.7vw, 1.5rem); /* sub-heads */
+  --text-2xl: clamp(1.6rem, 1.35rem + 1.1vw, 2.1rem); /* h3 */
+  --text-3xl: clamp(2.1rem, 1.7rem + 1.9vw, 3rem); /* h2 */
+  --text-4xl: clamp(2.8rem, 2.1rem + 3.2vw, 4.5rem); /* h1 */
+  --text-5xl: clamp(3.6rem, 2.4rem + 5.6vw, 7rem); /* intro display */
+  --text-6xl: clamp(4.4rem, 2.4rem + 9vw, 10.5rem); /* NOCTURNE wordmark */
+
+  /* --- Type rhythm -------------------------------------------------------- */
+  --leading-tight: 1.02; /* display */
+  --leading-snug: 1.18; /* sub-heads */
+  --leading-normal: 1.6; /* body */
+  --tracking-tight: -0.02em;
+  --tracking-snug: -0.01em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.06em; /* eyebrows */
+  --tracking-wider: 0.28em; /* spaced micro-labels / the NOCTURNE lockup */
+  --weight-light: 300;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* =======================================================================
+   * STAGE tokens — theme-INVARIANT (ADR-004 §4). The canvas backdrop + the
+   * luminous palette context. These do NOT change with the chrome theme.
+   * The field's additive palette glows against `--stage-bg` identically in
+   * light or dark chrome.
+   * ===================================================================== */
+  --stage-bg: oklch(0.13 0.03 274); /* deep indigo-black — the canvas ground */
+  --stage-bg-deep: oklch(0.09 0.025 274); /* the vignette floor / letterbox */
+  --stage-glow: oklch(0.62 0.17 285); /* the ambient luminous wash hint */
+  /* The HUD scrim — a stage-derived translucency placed BEHIND HUD text so
+   * chrome contrast holds over a BRIGHT field in both themes (ADR-004 §4). */
+  --stage-scrim: oklch(0.1 0.025 274 / 0.62);
+  --stage-scrim-strong: oklch(0.08 0.025 274 / 0.82);
+  /* Stage INK — also theme-INVARIANT (ADR-004 §4). Anything drawn OVER the stage
+   * (the intro overlay, the HUD) sits on the always-dark field/scrim, so its ink
+   * must NOT follow the chrome theme — a light-chrome visitor must still get the
+   * near-white over-stage ink, or the HUD goes dark-on-dark (the latent bug D-01
+   * surfaced once light chrome became reachable). These are the cool near-white
+   * dark-chrome values, pinned: ink 16.8:1 / muted 8.4:1 against the scrim. */
+  --stage-ink: oklch(0.93 0.012 280);
+  --stage-ink-muted: oklch(0.74 0.02 282);
+
+  /* =======================================================================
+   * CHROME tokens — DARK (canonical default). Theme-VARIANT: overridden by
+   * `.light` below for the non-canvas reading mode.
+   * ===================================================================== */
+  --color-background: oklch(0.1 0.022 274); /* chrome ground (about/credits) */
+  --color-surface: oklch(0.16 0.026 275); /* raised HUD panel */
+  --color-surface-2: oklch(0.21 0.03 276); /* control / input well */
+  --color-surface-3: oklch(0.27 0.034 277); /* hover / deeper lift */
+  --color-foreground: oklch(0.93 0.012 280); /* cool near-white ink — 16.8:1 */
+  --color-fg-muted: oklch(0.74 0.02 282); /* secondary — 8.4:1 */
+  --color-fg-subtle: oklch(0.56 0.025 283); /* tertiary / placeholder — 4.7:1 */
+
+  /* The restrained chrome accent: a luminous periwinkle/violet, reserved for
+   * focus rings + the play/begin affordance. The FIELD carries the real colour
+   * (preset ramps), so the chrome accent never competes. `accent` is the vivid
+   * value; `accent-contrast` is the ink placed ON the vivid fill. */
+  --color-accent: oklch(0.7 0.16 286); /* luminous periwinkle — 7.4:1 on bg */
+  --color-accent-ink: oklch(0.7 0.16 286); /* accent as text on dark */
+  --color-accent-contrast: oklch(0.16 0.05 286); /* ink on the vivid fill */
+  --color-accent-soft: oklch(0.24 0.06 286); /* tinted accent wash on dark */
+
+  /* Structure */
+  --color-border: oklch(0.27 0.03 277); /* default hairline on the dark chrome */
+  --color-border-strong: oklch(0.36 0.034 278); /* emphasised divider */
+  --color-ring: oklch(0.7 0.16 286); /* focus ring = chrome accent */
+
+  /* Feedback (kept inside the cool nocturne register) */
+  --color-success: oklch(0.72 0.15 168);
+  --color-danger: oklch(0.66 0.2 18);
+  --color-danger-ink: oklch(0.7 0.21 18);
+  --color-warning: oklch(0.78 0.14 78);
+
+  /* --- HUD primitives ----------------------------------------------------- */
+  --hud-hairline: oklch(0.4 0.03 278 / 0.55); /* fine HUD divider over field */
+  /* HUD/over-stage ink references the theme-INVARIANT stage ink (NOT the chrome
+   * --color-foreground), so it stays near-white in light chrome — the stage it
+   * sits on is always dark (ADR-004 §4). */
+  --hud-ink: var(--stage-ink); /* HUD text (over the scrim) */
+  --hud-ink-muted: var(--stage-ink-muted);
+
+  /* --- Radius ------------------------------------------------------------- */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1.125rem;
+  --radius-2xl: 1.75rem;
+  --radius-full: 9999px;
+
+  /* --- Spacing anchors (8px base) ----------------------------------------- */
+  --space-section: clamp(4rem, 2rem + 8vw, 9rem);
+  --space-gutter: clamp(1.25rem, 0.5rem + 3vw, 3rem);
+
+  /* --- Motion tokens (CSS HUD transitions only; the FIELD animates in the
+   * R3F render loop, not via these) — honour reduced-motion. --------------- */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1); /* the Linear-grade glide */
+  --ease-in-out-quint: cubic-bezier(0.83, 0, 0.17, 1);
+  --duration-fast: 180ms;
+  --duration-base: 320ms;
+  --duration-slow: 720ms; /* the preset-morph / HUD-reveal register */
+
+  /* --- Layout ------------------------------------------------------------- */
+  --width-content: clamp(1100px, 56vw, 1320px); /* max content column (/about) */
+  --width-prose: 66ch; /* readable measure for long copy */
+}
+
+/* DARK is the canonical default (ADR-001 / ADR-004): the `:root` token set in
+ * @theme above is the DARK chrome, so the server renders dark and there is no
+ * light flash before next-themes hydrates. */
+:root {
+  color-scheme: dark;
+}
+
+/* =========================================================================
+ * LIGHT — the chrome-only reading mode (ADR-004 §4 / T-A).
+ *
+ * Applies to the HUD + `/about` + credits + the poster surround ONLY. The
+ * canvas STAGE tokens above are theme-invariant and are NOT touched here — the
+ * field stays a dark cinematic stage in light chrome. Only the chrome tokens
+ * that need re-keying for a light ground are overridden.
+ * ===================================================================== */
+.light {
+  color-scheme: light;
+
+  --color-background: oklch(0.96 0.006 280); /* cool near-white reading ground */
+  --color-surface: oklch(0.99 0.003 280); /* raised card */
+  --color-surface-2: oklch(0.93 0.008 280); /* recessed well / input */
+  --color-surface-3: oklch(0.89 0.01 280); /* hover / deeper recess */
+  --color-foreground: oklch(0.22 0.02 278); /* near-black cool ink — 15.1:1 */
+  --color-fg-muted: oklch(0.44 0.025 280); /* secondary — 7.4:1 */
+  --color-fg-subtle: oklch(0.52 0.03 281); /* tertiary — 5.2:1 */
+
+  /* On the light ground the vivid periwinkle is too light as text, so
+   * `accent-ink` is the DARKENED variant for accent-coloured TEXT/icons, and
+   * the ink placed ON the vivid fill flips to white. */
+  --color-accent: oklch(0.56 0.2 285); /* vivid violet fill */
+  --color-accent-ink: oklch(0.5 0.22 285); /* accent as text on light — 5.6:1 */
+  --color-accent-contrast: oklch(1 0 0); /* white on the vivid fill — 6.0:1 */
+  --color-accent-soft: oklch(0.92 0.04 285); /* tinted accent wash on light */
+
+  --color-border: oklch(0.86 0.012 280);
+  --color-border-strong: oklch(0.78 0.016 281);
+  --color-ring: oklch(0.5 0.22 285);
+
+  --color-success: oklch(0.5 0.14 168);
+  --color-danger: oklch(0.55 0.2 22);
+  --color-danger-ink: oklch(0.49 0.21 22);
+  --color-warning: oklch(0.6 0.13 70);
+
+  --hud-hairline: oklch(0.6 0.02 280 / 0.55);
+}
+
+/* =========================================================================
+ * Base layer.
+ * ===================================================================== */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--leading-normal);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Brand-styled, always-visible focus (WCAG 2.2 AA — never `outline: none`
+   * without a replacement). A 2px accent ring with an offset that reads on both
+   * the chrome ground and over the scrimmed HUD. */
+  :where(a, button, input, textarea, select, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
+
+  /* Respect reduced-motion globally for CSS transitions/animations. The R3F
+   * field's reduced-motion behaviour (calm drift / Still) is governed
+   * separately in the engine (ADR-004); this covers the HUD chrome. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* The fullscreen stage backdrop — a fixed dark-cinematic ground the live
+ * canvas (and the poster) mount into. Theme-invariant by construction (uses
+ * the `--stage-*` tokens, never the chrome tokens). */
+.stage-ground {
+  background-color: var(--stage-bg);
+  background-image: radial-gradient(
+    120% 120% at 50% 38%,
+    var(--stage-bg) 0%,
+    var(--stage-bg-deep) 100%
+  );
+}
+
+/* The HUD scrim utility — a faint dark wash placed behind HUD text so chrome
+ * contrast ≥ 4.5:1 holds over a BRIGHT field in both themes (ADR-004 §4). */
+.hud-scrim {
+  background-color: var(--stage-scrim);
+  backdrop-filter: blur(8px);
+}
+
+/* The STRONG scrim — for HUD surfaces that sit over the BRIGHTEST field region
+ * (the bottom control bar, the intro tagline). At an additive bloom peak the
+ * field blows toward white; the 62% --stage-scrim composites to ~2.2:1 there
+ * (FAILS AA, D-04), so these surfaces use the 82% --stage-scrim-strong plus a
+ * soft downward shadow so legibility never depends on the field behind it. */
+.hud-scrim-strong {
+  background-color: var(--stage-scrim-strong);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 6px 30px -4px oklch(0.04 0.02 274 / 0.55);
+}
+
+/* The `/` SSR no-JS / Tier-4 fallback DOM (#nojs-fallback) is the readable floor
+ * shown when JS/WebGL is off. The client Stage sets `data-armed` on <html> once
+ * the LIVE/CALM experience mounts (a capable, JS-on client), hiding it so the
+ * field + HUD are the experience. On the poster route (no WebGL) `data-armed`
+ * is NOT set, so the directory stays visible as the Tier-4 surface. With no JS,
+ * `data-armed` is never set, so the fallback always shows. */
+:root[data-armed] [data-nojs-fallback] {
+  display: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* The intro reveal — wordmark + gate rise on first paint. Gated behind
+ * `motion-safe:` at the use site, so reduced-motion users get no animation. */
+@keyframes nocturne-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
