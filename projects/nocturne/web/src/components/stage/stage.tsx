@@ -86,13 +86,29 @@ export function Stage(): ReactNode {
   // `[data-armed] [data-nojs-fallback] { display: none }` does the hiding.
   useEffect(() => {
     const root = document.documentElement;
+    const { body } = document;
     if (route === 'poster') {
+      // Tier-4: the SSR directory is the readable surface — keep scroll.
       root.removeAttribute('data-armed');
-    } else {
-      root.setAttribute('data-armed', '');
+      return;
     }
+    root.setAttribute('data-armed', '');
+    // The live/calm experience is a FIXED fullscreen stage (the field, the
+    // intro gate, and the HUD are all `fixed` / `absolute inset-0`), so the page
+    // never needs to scroll. Lock page overflow while it is mounted: without
+    // this, a HiDPI device or a classic OS scrollbar can introduce a sub-pixel
+    // horizontal overflow that lets the viewport pan right and pulls the centred
+    // intro wordmark off-centre (the reported bug — not reproducible at DPR 1
+    // without a scrollbar). The poster route keeps its scroll, and `/about` is a
+    // separate route where this island is unmounted (the cleanup restores it).
+    const prevRootOverflow = root.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    root.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
     return () => {
       root.removeAttribute('data-armed');
+      root.style.overflow = prevRootOverflow;
+      body.style.overflow = prevBodyOverflow;
     };
   }, [route]);
 
