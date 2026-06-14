@@ -227,18 +227,24 @@ export function isSoftwareRendererString(renderer: string): boolean {
 }
 
 /**
- * The PURE software-decision combinator (unit-testable without a GPU). Software
- * iff the unmasked renderer string names a known software backend, OR the only
- * available context is a major-perf-caveat one (`caveatOnly` — a normal context
- * succeeded but `failIfMajorPerformanceCaveat: true` returned null). `renderer`
- * may be `''` when `WEBGL_debug_renderer_info` is hidden; then only the caveat
- * signal decides.
+ * The PURE software-decision combinator (unit-testable without a GPU).
+ *
+ * The unmasked renderer string is AUTHORITATIVE when present: a known hardware
+ * GPU (NVIDIA / AMD / Intel / Apple / Adreno / Mali / an ANGLE-over-D3D11 string
+ * …) is NEVER treated as software, even if the `failIfMajorPerformanceCaveat`
+ * probe came back null. That probe is unreliable on real hardware — several
+ * legitimate drivers (notably some Intel / laptop ANGLE configs) return null for
+ * a no-caveat context despite being fully hardware-accelerated, so trusting it
+ * over a real renderer string would wrongly strand a GPU user on the poster
+ * (the reported regression). The caveat signal ONLY decides when the renderer
+ * string is hidden (`''`, locked-down browsers) — the last-resort fallback.
  */
 export function decideSoftwareRenderer(
   renderer: string,
   caveatOnly: boolean,
 ): boolean {
-  return (renderer !== '' && isSoftwareRendererString(renderer)) || caveatOnly;
+  if (renderer !== '') return isSoftwareRendererString(renderer);
+  return caveatOnly;
 }
 
 /**

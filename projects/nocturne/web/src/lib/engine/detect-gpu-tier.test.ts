@@ -139,10 +139,19 @@ describe('detectGpuTier — software-renderer gate (the 0% GPU / 100% CPU fix)',
       expect(decideSoftwareRenderer('', true)).toBe(true);
     });
 
-    it('is software when a HARDWARE string still carries a caveat-only context', () => {
-      // A masked/hidden hardware string but a caveat-only context still routes to
-      // the poster (the caveat is the browser saying "this is slow/software").
-      expect(decideSoftwareRenderer('Apple M2 Pro', true)).toBe(true);
+    it('is NOT software for a hardware string even when the caveat probe is null', () => {
+      // The renderer string is AUTHORITATIVE: several legitimate hardware drivers
+      // (some Intel / laptop ANGLE configs) return null for a no-caveat context
+      // while being fully accelerated. Trusting the spurious caveat over a real
+      // GPU string wrongly stranded a hardware user on the poster — the regression
+      // this guards. A real renderer + caveat-null must stay LIVE.
+      expect(decideSoftwareRenderer('Apple M2 Pro', true)).toBe(false);
+      expect(
+        decideSoftwareRenderer(
+          'ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)',
+          true,
+        ),
+      ).toBe(false);
     });
 
     it('is NOT software for a hardware string with a clean no-caveat context', () => {
