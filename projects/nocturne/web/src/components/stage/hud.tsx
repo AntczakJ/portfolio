@@ -170,7 +170,10 @@ export function Hud({
       className="pointer-events-none absolute inset-0 transition-opacity duration-[var(--duration-slow)] ease-[var(--ease-out-expo)] data-[dimmed]:opacity-25 motion-reduce:transition-none"
     >
       {/* ---- top bar: wordmark + chrome controls --------------------------- */}
-      <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-center justify-between gap-3 p-4 sm:p-5">
+      {/* Capped to the same max-w as the bottom bar (D-08) and centred, so the
+       * HUD stays a compact instrument on ultra-wide (2560px) instead of the
+       * wordmark + chrome drifting into far corners with a large dead middle. */}
+      <header className="pointer-events-auto absolute inset-x-0 top-0 mx-auto flex max-w-[min(96vw,64rem)] items-center justify-between gap-3 p-4 sm:p-5">
         <span
           className="font-[family-name:var(--font-display)] text-sm font-semibold tracking-[0.34em] uppercase"
           style={{ color: 'var(--hud-ink)' }}
@@ -333,11 +336,16 @@ export function Hud({
 }
 
 function Divider(): ReactNode {
+  // The control-group divider sits ON the scrimmed bottom bar (--stage-scrim-
+  // strong), so its colour is derived from the SCRIM layer (--hud-divider — a
+  // faint near-white over the dark panel), not from a translucent dark hairline
+  // floating over the field. It therefore stays legible at peak bloom, when the
+  // old --hud-hairline vanished into a bright field (D-05).
   return (
     <span
       aria-hidden
       className="hidden h-5 w-px self-center sm:block"
-      style={{ backgroundColor: 'var(--hud-hairline)' }}
+      style={{ backgroundColor: 'var(--hud-divider)' }}
     />
   );
 }

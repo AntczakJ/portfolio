@@ -31,7 +31,11 @@ export function IntroOverlay({ route, onBegin }: IntroOverlayProps): ReactNode {
         // a 320px viewport minus the px-6 gutter. Tracking is TIGHT, not the
         // spaced --tracking-wider micro-label value (D-06): large display type
         // wants negative tracking so the eight glyphs read as one lockup.
-        className="block max-w-full font-[family-name:var(--font-display)] font-semibold motion-safe:animate-[nocturne-rise_900ms_var(--ease-out-expo)_both]"
+        // `.nocturne-wordmark` carries the reveal rise AND eases the Sora `wght`
+        // axis in over the same window (the signature variable-font moment,
+        // D-07). Under reduced-motion the global transition/animation reset runs
+        // it to its final state instantly, landing on the resting 640 weight.
+        className="nocturne-wordmark block max-w-full font-[family-name:var(--font-display)]"
         style={{
           color: 'var(--hud-ink)',
           fontSize: 'clamp(2.4rem, 13vw, 10.5rem)',
@@ -59,7 +63,11 @@ export function IntroOverlay({ route, onBegin }: IntroOverlayProps): ReactNode {
       <button
         type="button"
         onClick={() => void onBegin()}
-        className="hud-scrim pointer-events-auto mt-9 rounded-full px-9 py-4 text-sm font-medium tracking-[0.16em] uppercase transition-[transform,background-color,box-shadow] duration-[var(--duration-base)] ease-[var(--ease-out-expo)] hover:scale-[1.03] focus-visible:outline-2 focus-visible:outline-offset-4 motion-safe:animate-[nocturne-rise_900ms_var(--ease-out-expo)_240ms_both]"
+        // `.nocturne-begin` adds a motion-safe breathing accent ring (D-12) — a
+        // faint "about to happen" idle shimmer that never appears under reduced
+        // motion (the ring is opacity 0 at rest and only animates under
+        // no-preference). The rise entrance and hover scale are unchanged.
+        className="nocturne-begin hud-scrim pointer-events-auto mt-9 rounded-full px-9 py-4 text-sm font-medium tracking-[0.16em] uppercase transition-[transform,background-color,box-shadow] duration-[var(--duration-base)] ease-[var(--ease-out-expo)] hover:scale-[1.03] focus-visible:outline-2 focus-visible:outline-offset-4 motion-safe:animate-[nocturne-rise_900ms_var(--ease-out-expo)_240ms_both]"
         style={{
           color: 'var(--hud-ink)',
           boxShadow: '0 0 0 1px var(--hud-hairline), 0 8px 40px rgba(0,0,0,0.4)',

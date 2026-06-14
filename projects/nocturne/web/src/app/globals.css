@@ -154,6 +154,14 @@
 
   /* --- HUD primitives ----------------------------------------------------- */
   --hud-hairline: oklch(0.4 0.03 278 / 0.55); /* fine HUD divider over field */
+  /* The control-group divider (D-05). The old --hud-hairline floated over the
+   * FIELD: a translucent dark line that vanished when an additive bloom blew the
+   * field toward white, collapsing the bottom-bar grouping exactly when the
+   * field was most active. This divider is instead derived from the SCRIM layer
+   * the bar sits on — a faint near-WHITE line composited over the opaque
+   * --stage-scrim-strong panel (not the field), so the grouping stays legible at
+   * peak bloom. Light-keyed near-white, low alpha; lifted off the dark panel. */
+  --hud-divider: oklch(0.93 0.012 280 / 0.22);
   /* HUD/over-stage ink references the theme-INVARIANT stage ink (NOT the chrome
    * --color-foreground), so it stays near-white in light chrome — the stage it
    * sits on is always dark (ADR-004 §4). */
@@ -341,5 +349,99 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* =========================================================================
+ * D-07 — the variable-font (Sora `wght` axis) signature moment.
+ *
+ * The display face was chosen for its weight axis (AGENT_NOTES Fonts), but the
+ * axis was only ever used as static steps. These two moments animate the axis
+ * itself — the reason a variable face was loaded — at NO per-frame JS cost
+ * (pure CSS, GPU-cheap `font-variation-settings`). Both are motion-safe-gated at
+ * the use site; under prefers-reduced-motion the element renders at its FINAL
+ * weight (the static class / the resting wght), never mid-animation.
+ * ===================================================================== */
+
+/* The intro wordmark settles its weight as it rises on reveal: it eases in from
+ * a light axis to its final semibold over the reveal window, so the lockup
+ * "sets" rather than simply fading in at a fixed weight. The wordmark carries
+ * BOTH the rise (translate/opacity) and the weight settle as ONE composed
+ * animation list (a single `animation` declaration — the rise can't also live
+ * in a Tailwind `animate-[]` utility or it would clobber this list). Under
+ * reduced-motion the global reset runs the animations to their `to` state
+ * instantly, landing on opacity 1 / translateY 0 / wght 640 — the final look. */
+.nocturne-wordmark {
+  font-variation-settings: 'wght' 640;
+  transform: translateY(0);
+  animation:
+    nocturne-rise 900ms var(--ease-out-expo) both,
+    nocturne-weight-settle 1100ms var(--ease-out-expo) both;
+}
+@keyframes nocturne-weight-settle {
+  from {
+    font-variation-settings: 'wght' 300;
+  }
+  to {
+    font-variation-settings: 'wght' 640;
+  }
+}
+
+/* The ACTIVE preset label gains weight as the cross-fade settles (it ties to
+ * the eased field morph): the picker's checked radio eases its `wght` up to a
+ * heavier axis over the same Linear-grade curve, so chrome and field agree on
+ * timing. The transition (not a keyframe) means a NEW selection animates the
+ * weight up while the previously-active label eases back down — symmetric, and
+ * disabled under reduced-motion by the global transition-duration reset. */
+.nocturne-preset-label {
+  font-variation-settings: 'wght' 500;
+  /* Both the colour swap (was the Tailwind `transition-colors`) and the weight
+   * settle, in one declaration so neither clobbers the other: the colour eases
+   * fast, the weight over the slow cross-fade register. */
+  transition:
+    color var(--duration-fast) ease,
+    background-color var(--duration-fast) ease,
+    font-variation-settings var(--duration-slow) var(--ease-out-expo);
+}
+.nocturne-preset-label[aria-checked='true'] {
+  font-variation-settings: 'wght' 720;
+}
+
+/* =========================================================================
+ * D-12 — the begin button "alive / about to happen" cue.
+ *
+ * The gesture gate was fully static until clicked. A faint accent ring breathes
+ * around the begin button (a slow idle shimmer) so it signals interactivity
+ * before the click. CSS keyframes only (no GSAP/Motion). MOTION-SAFE ONLY: the
+ * animation lives on a `::before` ring that is invisible (opacity 0) at rest and
+ * is only animated under prefers-reduced-motion: no-preference — under reduced
+ * motion the ring never appears and the button is fully static.
+ * ===================================================================== */
+.nocturne-begin {
+  position: relative;
+}
+.nocturne-begin::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: 0 0 0 0 var(--color-accent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .nocturne-begin::before {
+    animation: nocturne-breathe 3200ms ease-in-out infinite;
+  }
+}
+@keyframes nocturne-breathe {
+  0%,
+  100% {
+    opacity: 0;
+    box-shadow: 0 0 0 0 oklch(0.7 0.16 286 / 0);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 22px 1px oklch(0.7 0.16 286 / 0.32);
   }
 }

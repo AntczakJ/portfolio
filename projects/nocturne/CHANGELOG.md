@@ -4,7 +4,19 @@ All notable changes to **nocturne** are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-- Deferred designer-critic mediums (D-05/07/09/10/11/12 — real-GPU look judgement / art-direction) and the v2 path: a real CC0 track option, recording/export, MIDI input, and `PerformanceMonitor`-to-`ultra` (1M) promotion tuning against the deployed profile.
+### Polished (finish-off pass — the deferred designer-critic mediums/lows closed)
+
+- **D-05** — The HUD control-group dividers are now derived from the scrim layer (a faint near-white line over the always-dark `--stage-scrim-strong` panel via a new `--hud-divider` token) instead of a translucent dark hairline floating over the field, so the bottom-bar grouping stays legible at peak bloom (when the old `--hud-hairline` vanished into a bright field).
+- **D-07** — The Sora variable-font weight axis is now animated on two signature moments (CSS `font-variation-settings` only, no per-frame JS): the intro wordmark eases its `wght` in over the reveal (300 → 640), and the active preset label gains weight (500 → 720) as the cross-fade settles, tying chrome weight to the eased field morph. Both are motion-safe — under `prefers-reduced-motion` the elements land on their final weight, never mid-animation.
+- **D-08 (top bar)** — The HUD top bar is now capped to the same `max-w` as the bottom bar and centred, so the wordmark and chrome stay a compact instrument on ultra-wide (2560 px) instead of drifting into far corners.
+- **D-09** — The arm-in default preset is now **Ink Bloom** (the only alpha-blend look — soft indigo/violet, tied to nocturne's identity) instead of the Codrops-generic Aurora; all six presets remain. The poster, store, and OG card follow the new default.
+- **D-10** — The OG card tagline now sits on its own dark scrim band dropped below the glow core (mirroring the D-02 intro scrim) instead of running through the centre of the bloom, so the share card reads cleanly; the card motif now matches the new default look.
+- **D-11** — The `/about` section headings now chunk via the Linear long-form pattern: a per-section accent eyebrow (`01 / Method` …), a hairline rule across the top of each section, and a heading weight/size jump (text-2xl/medium → text-3xl/semibold). AA contrast holds in both chrome themes.
+- **D-12** — The begin button now carries a faint motion-safe breathing accent ring (a slow idle "about to happen" shimmer, CSS keyframes on a `::before` pseudo-element); nothing animates under `prefers-reduced-motion`.
+
+### Deferred (v2 path)
+
+- The v2 path: a real CC0 track option, recording/export, MIDI input, and `PerformanceMonitor`-to-`ultra` (1M) promotion tuning against the deployed profile.
 
 ## [0.1.1] — 2026-06-14
 
@@ -18,7 +30,7 @@ All notable changes to **nocturne** are documented here. The format follows [Kee
 - **Recording / export** — capture the canvas to a video, GIF, or image sequence in-app.
 - **MIDI / external control** via Web MIDI.
 - **`PerformanceMonitor` adapt-up-to-`ultra` tuning** — the runtime headroom rule that promotes a capable desktop toward the ~1M `ultra` tier, tuned against the deployed profile (boot default stays the conservative `high` ≈ 262k).
-- **Deferred designer-critic mediums** (none AA-blocking; flagged for a later art-direction or real-GPU pass): D-05 (HUD hairline dividers may vanish over a bright field — decorative only), D-07 (animate the Sora variable-font weight axis on a signature moment), D-09 (arm into a less-Codrops-generic default preset), D-10 (re-render the OG image with the tagline clear of the glow core), D-11 (vary the `/about` heading rhythm), D-12 (an idle shimmer cue on the begin button).
+- **Deferred designer-critic mediums** (none AA-blocking; flagged at deploy for a later art-direction pass) — **all CLOSED in the [Unreleased] finish-off pass above:** D-05 (scrim-derived dividers), D-07 (animated Sora weight axis), D-09 (Ink Bloom default), D-10 (OG tagline scrim band), D-11 (`/about` heading rhythm), D-12 (idle button shimmer).
 
 ## [0.1.0] - 2026-06-14
 

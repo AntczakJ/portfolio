@@ -95,7 +95,11 @@ export function PresetPicker({
             onClick={() => {
               onSelect(preset.id);
             }}
-            className="rounded-[var(--radius-md)] px-2.5 py-1.5 text-xs font-medium tracking-[0.02em] whitespace-nowrap transition-colors duration-[var(--duration-fast)] focus-visible:outline-2 focus-visible:outline-offset-2 aria-checked:bg-[var(--stage-scrim-strong)] aria-checked:text-[var(--hud-ink)]"
+            // `.nocturne-preset-label` eases the Sora `wght` axis up on the
+            // checked label as the cross-fade settles (D-07) — chrome weight and
+            // the eased field morph agree on timing. Motion-safe by the global
+            // reduced-motion transition reset (lands on the final weight).
+            className="nocturne-preset-label rounded-[var(--radius-md)] px-2.5 py-1.5 text-xs tracking-[0.02em] whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 aria-checked:bg-[var(--stage-scrim-strong)] aria-checked:text-[var(--hud-ink)]"
             style={{
               // Over-stage ink: theme-INVARIANT (ADR-004 §4) so the inactive
               // labels stay legible on the dark scrim in light chrome too.

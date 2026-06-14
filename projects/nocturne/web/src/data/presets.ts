@@ -242,8 +242,18 @@ export const PRESETS: readonly Preset[] = [
   }),
 ];
 
-/** The default preset (the field arms into this). */
-export const DEFAULT_PRESET_ID = 'aurora';
+/**
+ * The default preset — the look the field arms into (D-09).
+ *
+ * Deliberately NOT `aurora` (cool-green ribbons are the single most-seen audio-
+ * reactive demo on Codrops/Awwwards; the most generic of the six). The arm-in
+ * default is `ink-bloom`: the only ALPHA-blend look in the set — soft indigo/
+ * violet pigment blossoming slowly through still water. It is the least-seen of
+ * the six, ties tightly to nocturne's sovereign indigo-violet identity (the
+ * --stage-* / --color-accent register), and holds the five-second first
+ * impression longer than the green nebula. All six presets remain in the set.
+ */
+export const DEFAULT_PRESET_ID = 'ink-bloom';
 
 /** O(1) lookup by id. */
 const PRESET_BY_ID: ReadonlyMap<string, Preset> = new Map(

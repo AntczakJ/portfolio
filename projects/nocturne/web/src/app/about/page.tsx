@@ -93,7 +93,7 @@ export default function AboutPage(): ReactNode {
         </p>
       </div>
 
-      <Section heading="The technique">
+      <Section eyebrow="01 / Method" heading="The technique">
         <p>
           The simulation runs as a <Term>GPGPU ping-pong</Term>. Each particle&apos;s
           position and velocity live in floating-point textures. Every frame a
@@ -124,7 +124,7 @@ export default function AboutPage(): ReactNode {
         </p>
       </Section>
 
-      <Section heading="The presets">
+      <Section eyebrow="02 / Looks" heading="The presets">
         <p className="mb-6">
           One engine, many looks. Switching a preset cross-fades the entire
           parameter set — palette, flow, particle treatment, and post-processing
@@ -133,7 +133,7 @@ export default function AboutPage(): ReactNode {
         <PresetDirectory heading="" />
       </Section>
 
-      <Section heading="Credits">
+      <Section eyebrow="03 / Provenance" heading="Credits">
         <ul className="space-y-2">
           <li>
             <strong style={{ color: 'var(--color-foreground)' }}>Type.</strong>{' '}
@@ -157,7 +157,7 @@ export default function AboutPage(): ReactNode {
         </ul>
       </Section>
 
-      <Section heading="Accessibility">
+      <Section eyebrow="04 / Inclusive by design" heading="Accessibility">
         <ul className="space-y-2">
           <li>
             The animated canvas is <Term>decorative</Term> (
@@ -199,19 +199,39 @@ export default function AboutPage(): ReactNode {
 }
 
 function Section({
+  eyebrow,
   heading,
   children,
 }: {
+  eyebrow: string;
   heading: string;
   children: ReactNode;
 }): ReactNode {
+  // D-11: sections were monotone (one ink/weight) so the eye did not chunk them.
+  // The Linear long-form pattern — a hairline rule across the top of the
+  // section, an accent eyebrow, and a heading weight/size jump (from text-2xl/
+  // medium to text-3xl/semibold) — chunks the sections. The accent eyebrow uses
+  // --color-accent-ink (7.4:1 dark / 5.6:1 light — AA in both chrome themes).
   return (
-    <section className="mt-[var(--space-section)]">
+    <section
+      className="mt-[var(--space-section)] border-t pt-8"
+      style={{ borderColor: 'var(--color-border)' }}
+    >
+      <p
+        className="text-xs font-semibold uppercase"
+        style={{
+          color: 'var(--color-accent-ink)',
+          letterSpacing: 'var(--tracking-wide)',
+        }}
+      >
+        {eyebrow}
+      </p>
       <h2
-        className="font-[family-name:var(--font-display)] font-medium"
+        className="mt-3 font-[family-name:var(--font-display)] font-semibold"
         style={{
           color: 'var(--color-foreground)',
-          fontSize: 'var(--text-2xl)',
+          fontSize: 'var(--text-3xl)',
+          lineHeight: 'var(--leading-snug)',
           letterSpacing: 'var(--tracking-snug)',
         }}
       >
