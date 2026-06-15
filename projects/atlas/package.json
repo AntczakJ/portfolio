@@ -48,6 +48,6 @@
     "@types/geojson": "^7946.0.16",
     "@types/node": "^25.9.3",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.9"
   }
 }
