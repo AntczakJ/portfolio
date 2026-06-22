@@ -52,7 +52,7 @@ jobs:
       BASE_URL: ${{ github.event.inputs.target_url || 'http://localhost:3080' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
