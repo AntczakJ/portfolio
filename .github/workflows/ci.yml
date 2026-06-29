@@ -75,7 +75,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo registry + git
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -85,7 +85,7 @@ jobs:
             cargo-${{ runner.os }}-
 
       - name: Cache worker target
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: projects/tape/worker/target
           key: worker-target-${{ runner.os }}-${{ hashFiles('projects/tape/worker/Cargo.lock', 'projects/tape/worker/src/**') }}
