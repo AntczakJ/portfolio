@@ -22,7 +22,7 @@
     "seed": "node --import tsx scripts/seed.ts"
   },
   "dependencies": {
-    "@faker-js/faker": "^10.4.0",
+    "@faker-js/faker": "^10.5.0",
     "@fastify/cors": "^11.0.1",
     "@fastify/rate-limit": "^10.3.0",
     "@fastify/websocket": "^11.2.0",
@@ -30,7 +30,7 @@
     "@turf/length": "^7.3.5",
     "atlas-shared": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "fastify": "^5.8.0",
+    "fastify": "^5.10.0",
     "fastify-type-provider-zod": "^6.1.0",
     "postgres": "^3.4.9",
     "ws": "^8.21.0",
