@@ -23,17 +23,17 @@
     "meld:e2e:smoke": "pnpm -F meld-e2e test --grep @smoke"
   },
   "devDependencies": {
-    "@commitlint/cli": "^21.0.2",
-    "@commitlint/config-conventional": "^21.0.2",
-    "@eslint/js": "^9.14.0",
-    "eslint": "^9.14.0",
+    "@commitlint/cli": "^21.2.1",
+    "@commitlint/config-conventional": "^21.2.0",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.7.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "husky": "^9.1.6",
-    "lint-staged": "^17.0.7",
-    "prettier": "^3.8.4",
-    "prettier-plugin-tailwindcss": "^0.6.8",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.0"
+    "lint-staged": "^17.1.0",
+    "prettier": "^3.9.5",
+    "prettier-plugin-tailwindcss": "^0.8.1",
+    "typescript": "^7.0.2",
+    "typescript-eslint": "^8.65.0"
   },
   "lint-staged": {
     "projects/tape/server/**/*.{ts,tsx,js,mjs,cjs}": "pnpm -F tape-server lint --fix --quiet",
